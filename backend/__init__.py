@@ -1,0 +1,2 @@
+"""Histosphere FastAPI backend package."""
+

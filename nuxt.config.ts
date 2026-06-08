@@ -27,14 +27,14 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'AI Persona Chat',
+      title: 'Histosphere',
       htmlAttrs: {
         lang: 'zh-TW'
       },
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: '一個沉浸式的互動 AI 聊天機器人' }
+        { name: 'description', content: 'EBL-integrated AI historical persona role-play learning prototype' }
       ]
     }
   },

@@ -306,8 +306,8 @@
             </div>
           </div>
           <button class="px-4 py-2 bg-history-accent/20 rounded-full text-sm font-bold hover:bg-history-accent/40 transition-colors flex items-center gap-2">
-            <Icon name="mdi:cards" />
-            人物卡牌
+            <Icon name="mdi:account-details" />
+            人物資料
           </button>
         </header>
         
