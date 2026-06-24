@@ -301,7 +301,7 @@ Response body:
 
 Error cases: `404` task/session/event/condition not found, `400` task does not belong to session event.
 
-Frontend caller: `pages/task.vue`, then `/conversations/[conversationId]`
+Frontend caller: `pages/sessions/[sessionId]/task.vue` through `useTaskGate`, then `/conversations/[conversationId]`
 
 ---
 
@@ -380,7 +380,7 @@ Frontend caller: `useConversationSession`
 ### Session Endpoints
 
 - `GET /api/sessions/progress` — returns user progress across sessions.
-- `GET /api/sessions/{session_id}/state` — reload session state for `/task` refresh safety.
+- `GET /api/sessions/{session_id}/state` — reload session state for `/sessions/[sessionId]/task` refresh safety.
 
 Response: `UserProgressResponse` / `SessionStateResponse`
 
@@ -460,7 +460,7 @@ Current coverage:
 Frontend:
 
 - `pnpm build`
-- Manual/Playwright flow: `/` → `/task` → `/conversations/[conversationId]`
+- Manual/Playwright flow: `/` → `/sessions/[sessionId]/task` → `/conversations/[conversationId]`
 
 ## Maintenance Rules
 

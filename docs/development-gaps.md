@@ -16,6 +16,8 @@ This document tracks what has been completed, what is still missing, and what fr
 - Task draft save endpoint `PATCH /api/tasks/{task_id}/draft` implemented.
 - Frontend event library now reads condition progress from the session progress API, with localStorage only as a fallback.
 - Frontend task gate now reloads from `sessionId` and autosaves draft answers through the task draft API.
+- Task UI moved to `/sessions/[sessionId]/task`; `/task?sessionId=...` remains only as a legacy redirect.
+- Task API orchestration moved from page code into `useTaskGate`.
 - Conversation UI moved to `/conversations/[conversationId]`; `/chat?conversationId=...` remains only as a legacy redirect.
 - Conversation API orchestration moved from page code into `useConversationSession`.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
@@ -71,6 +73,7 @@ This document tracks what has been completed, what is still missing, and what fr
 ## Learning Flow & Conversation Gaps
 
 - Keep `/chat?conversationId=...` as legacy redirect only; new links should use `/conversations/[conversationId]`.
+- Keep `/task?sessionId=...` as legacy redirect only; new links should use `/sessions/[sessionId]/task`.
 - Formalize participant ID ↔ Supabase user ID ↔ experiment session ID mapping.
 - Keep localStorage progress only as a temporary fallback; production flow should depend on backend session APIs.
 - Add UI/interaction audit log for formal experiment sessions.
@@ -88,16 +91,14 @@ This document tracks what has been completed, what is still missing, and what fr
 2. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
 3. Auth pages exist but are not connected to participant/session assignment.
 4. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
-5. Some API orchestration still lives in pages. Future refactor should add `useExperimentSession`, `useTaskGate`, and `useAdminSnapshot` composables.
-6. Remaining route hierarchy work: normalize task routes around session resources, for example `/sessions/[session_id]/task`.
+5. Some API orchestration still lives in pages. Future refactor should add `useExperimentSession` and `useAdminSnapshot` composables.
 
 ## Suggested Next Milestones
 
 1. Move remaining `$fetch` calls into composables.
 2. Add explicit participant/session ID handling.
-3. Normalize task routes around session resources.
-4. Harden LiteLLM structured outputs for task generation and judgement.
-5. Add save status/toasts to admin edits.
-6. Decide blank-level scoring and EBL coding with advisor.
-7. Add export format for thesis analysis.
-8. Rewrite tutorial as formal experiment instructions.
+3. Harden LiteLLM structured outputs for task generation and judgement.
+4. Add save status/toasts to admin edits.
+5. Decide blank-level scoring and EBL coding with advisor.
+6. Add export format for thesis analysis.
+7. Rewrite tutorial as formal experiment instructions.

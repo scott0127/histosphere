@@ -235,13 +235,9 @@ const startCondition = async (condition: ExperimentCondition) => {
   }
   if (progress?.sessionId && progress.taskId) {
     await navigateTo({
-      path: '/task',
+      path: `/sessions/${progress.sessionId}/task`,
       query: {
-        taskId: progress.taskId,
-        sessionId: progress.sessionId,
         participantId: participantId.value,
-        eventId: detailEvent.value.id,
-        conditionKey: condition.condition_key,
       },
     });
     return;
@@ -280,13 +276,9 @@ const initializeEvent = async (
       const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
       taskData.value = response;
       await navigateTo({
-        path: '/task',
+        path: `/sessions/${response.session_id}/task`,
         query: {
-          taskId: response.task.id,
-          sessionId: response.session_id,
           participantId: participantId.value,
-          eventId: response.event_id,
-          conditionKey,
         },
       });
     }
