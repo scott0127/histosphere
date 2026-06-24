@@ -157,10 +157,10 @@ Controls:
 
 Output:
 
-- stores `EventInitializeResponse` in `useState('taskData')`.
-- navigates to `/task`.
+- starts an experiment session through `useExperimentSession`.
+- navigates to `/sessions/[sessionId]/task`.
 
-### `/task`
+### `/sessions/[sessionId]/task`
 
 Purpose: learner task gate.
 
@@ -175,9 +175,9 @@ Output:
 
 - calls `POST /api/tasks/{task_id}/submit`.
 - stores `TaskSubmitResponse` in `useState('chatData')`.
-- navigates to `/chat`.
+- navigates to `/conversations/[conversationId]`.
 
-### `/chat`
+### `/conversations/[conversationId]`
 
 Purpose: conversation after task completion.
 

@@ -15,6 +15,7 @@ This document tracks what has been completed, what is still missing, and what fr
 - Session state reload endpoint `GET /api/sessions/{session_id}/state` implemented.
 - Task draft save endpoint `PATCH /api/tasks/{task_id}/draft` implemented.
 - Frontend event library now reads condition progress from the session progress API, with localStorage only as a fallback.
+- Event initialize/progress orchestration moved from homepage code into `useExperimentSession`.
 - Frontend task gate now reloads from `sessionId` and autosaves draft answers through the task draft API.
 - Task UI moved to `/sessions/[sessionId]/task`; `/task?sessionId=...` remains only as a legacy redirect.
 - Task API orchestration moved from page code into `useTaskGate`.
@@ -91,7 +92,7 @@ This document tracks what has been completed, what is still missing, and what fr
 2. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
 3. Auth pages exist but are not connected to participant/session assignment.
 4. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
-5. Some API orchestration still lives in pages. Future refactor should add `useExperimentSession` and `useAdminSnapshot` composables.
+5. Some API orchestration still lives in pages. Future refactor should add `useAdminSnapshot` and focused event-library composables for list/delete/refresh behavior.
 
 ## Suggested Next Milestones
 

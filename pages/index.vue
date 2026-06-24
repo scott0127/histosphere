@@ -35,8 +35,8 @@
         v-model:event-name="eventName"
         :events="events"
         :loading-events="loadingEvents"
-        :creating-event="isLoading"
-        :create-error="error"
+        :creating-event="isInitializing"
+        :create-error="initializeError"
         @create="handleCreateEvent"
         @open="openEventDetail"
       />
@@ -68,32 +68,20 @@
 // 設計原則：
 // - historical event 是素材單位，source、task、primary persona 應由四種 condition 共用。
 // - experiment condition 是活動策略，不應造成事件素材被複製成四份。
-// - 目前受測者進度先存在 localStorage，未來可改接 experiment_sessions/research_logs API。
 import { computed, onMounted, ref, watch } from 'vue';
 import EventCreatePanel from '~/components/event-library/EventCreatePanel.vue';
 import EventDetailModal from '~/components/event-library/EventDetailModal.vue';
 import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vue';
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
-import type { ConditionKey, EventInitializeResponse, EventWithPersonas, ExperimentCondition, UserProgressItem, UserProgressResponse, UserProgressStatus } from '~/types';
+import type { EventWithPersonas, ExperimentCondition } from '~/types';
 
 definePageMeta({
   layout: false,
   name: 'event-library',
 });
 
-type LocalConditionProgress = {
-  status: 'not_started' | UserProgressStatus;
-  sessionId?: string;
-  taskId?: string;
-  attemptId?: string;
-  conversationId?: string;
-  updatedAt: string;
-};
-
 const eventName = ref('');
-const isLoading = ref(false);
-const error = ref<string | null>(null);
 const showDeleteConfirmDialog = ref(false);
 const pendingDeleteEventId = ref<string | null>(null);
 const events = ref<EventWithPersonas[]>([]);
@@ -103,8 +91,6 @@ const loadingEvents = ref(false);
 const isRefreshing = ref(false);
 const adminModePending = ref(false);
 const adminModeError = ref<string | null>(null);
-const participantId = ref('scott-test');
-const localProgress = ref<Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>>>({});
 const { displayName, initialize: initializeAuth, isAuthenticated, user } = useAuth();
 const {
   activityMode,
@@ -115,28 +101,42 @@ const {
   isAdminMode,
   setAdminViewMode,
 } = useAdminMode();
+const authStorageScope = computed(() => user.value?.id || 'guest');
+const defaultParticipantId = computed(() => {
+  const emailPrefix = user.value?.email?.split('@')[0]?.trim();
+  return emailPrefix || 'scott-test';
+});
+const {
+  initializeError,
+  initializeEvent,
+  initializeParticipant,
+  isInitializing,
+  loadProgressFromApi,
+  participantId,
+  progressByEvent,
+  resetForAuthScope,
+  saveParticipant,
+  startCondition: startExperimentCondition,
+} = useExperimentSession(authStorageScope, defaultParticipantId);
 
 // 詳情彈窗只需要目前事件的 condition 進度，避免元件知道整包 localStorage 結構。
 const detailConditionProgress = computed(() => {
   if (!detailEvent.value) return {};
-  return localProgress.value[detailEvent.value.id] || {};
+  return progressByEvent.value[detailEvent.value.id] || {};
 });
-const authStorageScope = computed(() => user.value?.id || 'guest');
 
 // 保留未來 avatar 顯示規則；目前首頁 UI 暫時不使用 persona 頭像。
 onMounted(async () => {
   initAdminMode();
   await initializeAuth();
-  participantId.value = loadParticipantId();
+  initializeParticipant();
   await Promise.all([fetchConditions(), fetchEvents(), loadProgressFromApi()]);
 });
 
-watch(authStorageScope, () => {
+watch(authStorageScope, async () => {
   handleExitAdminMode();
   detailEvent.value = null;
-  localProgress.value = {};
-  participantId.value = loadParticipantId();
-  loadProgressFromApi();
+  await resetForAuthScope();
 });
 
 watch(isAuthenticated, (authenticated) => {
@@ -226,69 +226,7 @@ const handleCreateEvent = async () => {
 // 啟動指定 condition；若本機已有對話紀錄，直接回到該 conversation。
 const startCondition = async (condition: ExperimentCondition) => {
   if (!detailEvent.value) return;
-  const progress = progressFor(condition.condition_key);
-  if (progress?.conversationId) {
-    await navigateTo({
-      path: `/conversations/${progress.conversationId}`,
-    });
-    return;
-  }
-  if (progress?.sessionId && progress.taskId) {
-    await navigateTo({
-      path: `/sessions/${progress.sessionId}/task`,
-      query: {
-        participantId: participantId.value,
-      },
-    });
-    return;
-  }
-  await initializeEvent(detailEvent.value.canonical_name, condition.condition_key, false, true);
-};
-
-// 呼叫後端初始化流程；同一事件會重用同一組素材，condition 只建立 session。
-const initializeEvent = async (
-  name: string,
-  conditionKey: ConditionKey,
-  rebuild: boolean,
-  navigateToTask: boolean,
-) => {
-  isLoading.value = true;
-  error.value = null;
-  try {
-    const response = await $fetch<EventInitializeResponse>('/api/event/initialize', {
-      method: 'POST',
-      body: {
-        event_name: name,
-        condition_key: conditionKey,
-        rebuild,
-        user_id: participantUuid(participantId.value),
-      },
-    });
-
-    if (navigateToTask) {
-      markProgress(response.event_id, conditionKey, {
-        status: 'task_started',
-        sessionId: response.session_id,
-        taskId: response.task.id,
-        updatedAt: new Date().toISOString(),
-      });
-      await loadProgressFromApi();
-      const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
-      taskData.value = response;
-      await navigateTo({
-        path: `/sessions/${response.session_id}/task`,
-        query: {
-          participantId: participantId.value,
-        },
-      });
-    }
-    return response;
-  } catch (e: any) {
-    error.value = e.data?.detail || e.data?.message || '建立流程失敗，請稍後再試。';
-    return null;
-  } finally {
-    isLoading.value = false;
-  }
+  await startExperimentCondition(detailEvent.value, condition);
 };
 
 // 開啟事件詳情，讓主頁維持單純的輸入與列表。
@@ -299,109 +237,6 @@ const openEventDetail = (event: EventWithPersonas) => {
 // 關閉事件詳情彈窗。
 const closeEventDetail = () => {
   detailEvent.value = null;
-};
-
-// 儲存目前測試用受測者代號；後端仍使用 deterministic UUID。
-const saveParticipant = () => {
-  const next = participantId.value.trim() || defaultParticipantId();
-  participantId.value = next;
-  localStorage.setItem(participantStorageKey(), next);
-  loadProgressFromApi();
-};
-
-const defaultParticipantId = () => {
-  const emailPrefix = user.value?.email?.split('@')[0]?.trim();
-  return emailPrefix || 'scott-test';
-};
-
-const participantStorageKey = () => `histosphere-participant-id:${authStorageScope.value}`;
-
-const loadParticipantId = () => {
-  if (!import.meta.client) return defaultParticipantId();
-  return localStorage.getItem(participantStorageKey()) || defaultParticipantId();
-};
-
-// 將受測者代號轉成穩定 UUID，避免 Supabase uuid 欄位收到任意字串。
-const participantUuid = (value: string) => {
-  let hash = 2166136261;
-  for (const char of value || 'scott-test') {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  const hex = Math.abs(hash).toString(16).padStart(8, '0');
-  return `${hex}${hex}${hex}${hex}`.replace(
-    /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
-    '$1-$2-$3-$4-$5',
-  );
-};
-
-const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}:${participantId.value || defaultParticipantId()}`;
-
-// 優先從後端讀取目前受測者的 condition 進度；localStorage 僅作為開發 fallback。
-const loadProgressFromApi = async () => {
-  const userId = participantUuid(participantId.value);
-  try {
-    const response = await $fetch<UserProgressResponse>('/api/sessions/progress', {
-      query: { user_id: userId },
-    });
-    localProgress.value = progressItemsToLocalMap(response.progress || []);
-    saveLocalProgress();
-  } catch (e) {
-    console.warn('Failed to load session progress, using local fallback:', e);
-    loadLocalProgress();
-  }
-};
-
-const progressItemsToLocalMap = (items: UserProgressItem[]) => {
-  const next: Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>> = {};
-  for (const item of items) {
-    next[item.event_id] = {
-      ...(next[item.event_id] || {}),
-      [item.condition_key]: {
-        status: item.status,
-        sessionId: item.session_id,
-        taskId: item.task_id || undefined,
-        attemptId: item.attempt_id || undefined,
-        conversationId: item.conversation_id || undefined,
-        updatedAt: item.updated_at,
-      },
-    };
-  }
-  return next;
-};
-
-// 從 localStorage 讀取目前受測者的 condition 完成狀態，僅供 API 暫時失敗時 fallback。
-const loadLocalProgress = () => {
-  if (!import.meta.client) return;
-  try {
-    localProgress.value = JSON.parse(localStorage.getItem(progressStorageKey()) || '{}');
-  } catch {
-    localProgress.value = {};
-  }
-};
-
-// 寫回本機進度；第一版先供開發測試，後續可改接 research/session API。
-const saveLocalProgress = () => {
-  if (!import.meta.client) return;
-  localStorage.setItem(progressStorageKey(), JSON.stringify(localProgress.value));
-};
-
-// 更新某事件某 condition 的本機進度。
-const markProgress = (eventId: string, conditionKey: ConditionKey, progress: LocalConditionProgress) => {
-  localProgress.value = {
-    ...localProgress.value,
-    [eventId]: {
-      ...(localProgress.value[eventId] || {}),
-      [conditionKey]: progress,
-    },
-  };
-  saveLocalProgress();
-};
-
-// 取得目前詳情事件在某 condition 的本機進度。
-const progressFor = (conditionKey: ConditionKey) => {
-  if (!detailEvent.value) return null;
-  return localProgress.value[detailEvent.value.id]?.[conditionKey] || null;
 };
 
 // 開啟刪除確認。

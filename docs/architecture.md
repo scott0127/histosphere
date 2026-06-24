@@ -232,7 +232,7 @@ Response body:
 
 Error cases: `400` empty event name, `404` condition not found, `5xx` Wikipedia/provider/Supabase failures.
 
-Frontend caller: `pages/index.vue`
+Frontend caller: `pages/index.vue` through `useExperimentSession`
 
 ---
 
