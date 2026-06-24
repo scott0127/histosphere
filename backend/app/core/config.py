@@ -101,6 +101,7 @@ def get_settings() -> Settings:
     )
     service_role_key = (
         os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY")
         or os.getenv("SUPABASE_KEY_SERVICE_ROLE")
         or os.getenv("SUPABASE_KEY_service_role")
     )
