@@ -1,3 +1,10 @@
+"""Conversation loading and compatibility creation service.
+
+本模組負責讀取 conversation 狀態，供前端聊天頁重新載入。
+V1 正常流程由 TaskService 在 learner 完成 task 後建立 conversation；
+create_conversation 主要保留給相容舊 API 或管理端手動建立。
+"""
+
 from fastapi import HTTPException, status
 
 from app.models.domain import ChatMessage, Conversation
@@ -7,6 +14,8 @@ from app.crud.protocols import RepositoryProtocol
 
 
 class ConversationService:
+    """管理 conversation 建立與回放資料載入。"""
+
     def __init__(self, repository: RepositoryProtocol, llm_provider: LLMProvider) -> None:
         self.repository = repository
         self.llm_provider = llm_provider
@@ -18,6 +27,7 @@ class ConversationService:
         session_id: str | None = None,
         user_id: str | None = None,
     ) -> ConversationCreateResponse:
+        """相容性建立 conversation；新版主要流程通常不直接呼叫此方法。"""
         event = self.repository.get_event(event_id)
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -58,6 +68,7 @@ class ConversationService:
         )
 
     def load_conversation(self, conversation_id: str) -> ConversationLoadResponse:
+        """載入聊天頁需要的 event、personas、messages、condition 與 task_attempt。"""
         conversation = self.repository.get_conversation(conversation_id)
         if not conversation:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")

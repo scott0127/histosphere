@@ -161,6 +161,10 @@ class InMemoryRepository(RepositoryProtocol):
     def list_sessions(self) -> list[ExperimentSession]:
         return sorted(self.sessions.values(), key=lambda item: item.created_at, reverse=True)
 
+    def list_sessions_for_user(self, user_id: str) -> list[ExperimentSession]:
+        sessions = [session for session in self.sessions.values() if session.user_id == user_id]
+        return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
+
     def save_event_task(self, task: EventTask) -> EventTask:
         task.updated_at = utc_now()
         self.event_tasks[task.id] = task
@@ -184,6 +188,13 @@ class InMemoryRepository(RepositoryProtocol):
 
     def get_task_attempt(self, attempt_id: str) -> TaskAttempt | None:
         return self.task_attempts.get(attempt_id)
+
+    def get_task_attempt_for_session(self, session_id: str, task_id: str | None = None) -> TaskAttempt | None:
+        attempts = [attempt for attempt in self.task_attempts.values() if attempt.session_id == session_id]
+        if task_id:
+            attempts = [attempt for attempt in attempts if attempt.task_id == task_id]
+        attempts.sort(key=lambda item: item.updated_at, reverse=True)
+        return attempts[0] if attempts else None
 
     def save_persona(self, persona: Persona) -> Persona:
         persona.updated_at = utc_now()
@@ -216,6 +227,11 @@ class InMemoryRepository(RepositoryProtocol):
 
     def get_conversation(self, conversation_id: str) -> Conversation | None:
         return self.conversations.get(conversation_id)
+
+    def get_conversation_by_session(self, session_id: str) -> Conversation | None:
+        conversations = [conversation for conversation in self.conversations.values() if conversation.session_id == session_id]
+        conversations.sort(key=lambda item: item.updated_at, reverse=True)
+        return conversations[0] if conversations else None
 
     def next_message_sequence(self, conversation_id: str) -> int:
         return len(self.messages.get(conversation_id, []))

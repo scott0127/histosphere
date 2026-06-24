@@ -45,6 +45,10 @@ class TaskSubmitResponse(BaseModel):
     history: list[ChatMessage] = Field(default_factory=list)
 
 
+class TaskDraftResponse(BaseModel):
+    attempt: TaskAttempt
+
+
 class ConversationCreateResponse(BaseModel):
     conversation_id: str
     event: Event
@@ -80,3 +84,28 @@ class AdminSnapshotResponse(BaseModel):
     conditions: list[ExperimentCondition] = Field(default_factory=list)
     sessions: list[ExperimentSession] = Field(default_factory=list)
     research_logs: list[ResearchLog] = Field(default_factory=list)
+
+
+class SessionStateResponse(BaseModel):
+    session: ExperimentSession
+    event: Event
+    task: EventTask | None = None
+    personas: list[Persona] = Field(default_factory=list)
+    condition: ExperimentCondition | None = None
+    attempt: TaskAttempt | None = None
+    conversation_id: str | None = None
+
+
+class UserProgressItem(BaseModel):
+    event_id: str
+    condition_key: str
+    session_id: str
+    task_id: str | None = None
+    attempt_id: str | None = None
+    conversation_id: str | None = None
+    status: str
+    updated_at: str
+
+
+class UserProgressResponse(BaseModel):
+    progress: list[UserProgressItem] = Field(default_factory=list)

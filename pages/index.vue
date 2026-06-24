@@ -1,110 +1,59 @@
 <template>
-  <div class="min-h-screen bg-slate-50 font-sans text-slate-950">
-    <header class="border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <NuxtLink to="/" class="flex items-center gap-3 font-bold">
-          <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-950 text-white">
-            <Icon name="mdi:history" class="h-5 w-5" />
-          </span>
-          <span>Histosphere</span>
-        </NuxtLink>
-        <nav class="flex items-center gap-2 text-sm">
-          <NuxtLink class="rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" to="/admin">
-            Admin
-          </NuxtLink>
-          <NuxtLink class="rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" to="/tutorial">
-            Tutorial
-          </NuxtLink>
-        </nav>
-      </div>
-    </header>
+  <!--
+    首頁是目前前端的「事件素材庫」入口：
+    1. 左側建立或重用歷史事件素材。
+    2. 右側列出同一批可被四種實驗活動共用的事件、task、persona。
+    3. 點事件卡後才選活動條件，避免把 condition 當成不同素材來源。
+  -->
+  <div class="historical-home relative min-h-screen overflow-x-hidden bg-[var(--admin-page)] text-[var(--admin-text)]">
+    <!-- 背景保留舊 prototype 的歷史地圖質感，但降透明度，避免干擾可讀性。 -->
+    <div class="pointer-events-none fixed inset-0 z-0">
+      <img src="~/assets/images/landing-bg.png" alt="" class="h-full w-full object-cover opacity-[0.35]" />
+      <div class="absolute inset-0 bg-[rgba(242,240,236,0.8)]"></div>
+      <div class="absolute inset-0 bg-[radial-gradient(circle_at_26%_42%,rgba(168,141,123,0.18),transparent_45%),linear-gradient(90deg,rgba(47,41,36,0.03),transparent_48%,rgba(47,41,36,0.05))]"></div>
+    </div>
 
-    <main class="mx-auto grid max-w-6xl gap-6 px-5 py-8 lg:grid-cols-[minmax(0,1fr)_420px]">
-      <section class="space-y-6">
-        <div>
-          <h1 class="text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">
-            建立 EBL × AI historical role-play 學習流程
-          </h1>
-          <p class="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-            輸入歷史事件後，系統會建立事件資料、可編輯 task 與 1-3 位相關歷史人物。學生完成 task 後才會進入對話。
-          </p>
-        </div>
+    <EventLibraryHeader
+      :is-refreshing="isRefreshing"
+      :is-authenticated="isAuthenticated"
+      :is-admin-mode="isAdminMode"
+      :admin-view-mode="adminViewMode"
+      :display-name="displayName"
+      :admin-mode-pending="adminModePending"
+      :admin-mode-error="adminModeError"
+      @refresh="refreshEvents"
+      @enter-admin-mode="verifyAndEnterAdminMode"
+      @exit-admin-mode="handleExitAdminMode"
+      @update:admin-view-mode="setAdminViewMode"
+    />
 
-        <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">Experiment Condition</h2>
-              <p class="mt-1 text-sm text-slate-600">第一版先手動選擇，後續可改為 admin 指派。</p>
-            </div>
-            <button
-              class="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700"
-              @click="fetchConditions"
-            >
-              <Icon name="mdi:refresh" class="h-4 w-4" />
-              更新
-            </button>
-          </div>
+    <main class="relative z-10 mx-auto grid min-h-[calc(100vh-68px)] w-full max-w-[1480px] gap-10 px-6 py-10 lg:h-[calc(100vh-68px)] lg:grid-cols-[430px_minmax(0,1fr)] lg:items-stretch xl:gap-14">
+      <EventCreatePanel
+      />
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <button
-              v-for="condition in conditions"
-              :key="condition.id"
-              type="button"
-              :class="[
-                'rounded-lg border p-4 text-left transition',
-                selectedConditionKey === condition.condition_key
-                  ? 'border-teal-500 bg-teal-50 ring-4 ring-teal-100'
-                  : 'border-slate-200 bg-white hover:border-slate-300'
-              ]"
-              @click="selectedConditionKey = condition.condition_key"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-bold text-slate-950">{{ compactConditionLabel(condition) }}</span>
-                <Icon
-                  :name="selectedConditionKey === condition.condition_key ? 'mdi:check-circle' : 'mdi:circle-outline'"
-                  class="h-5 w-5 text-teal-600"
-                />
-              </div>
-              <p class="mt-2 text-xs leading-5 text-slate-600">{{ condition.description }}</p>
-            </button>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <PersonaInputForm :is-loading="isLoading" :error="error" @event-submit="handleEventSubmit" />
-        </div>
-      </section>
-
-      <aside class="space-y-4">
-        <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <h2 class="font-bold text-slate-950">已建立事件</h2>
-              <p class="text-sm text-slate-500">可用目前選擇的 condition 重新開一輪 session。</p>
-            </div>
-            <button
-              class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-teal-500 hover:text-teal-700"
-              @click="refreshEvents"
-            >
-              <Icon name="mdi:refresh" class="h-5 w-5" :class="{ 'animate-spin': isRefreshing }" />
-            </button>
-          </div>
-        </div>
-
-        <div v-if="loadingEvents" class="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
-          <Icon name="mdi:loading" class="mx-auto h-6 w-6 animate-spin" />
-        </div>
-        <EventListClassic
-          v-else-if="events.length > 0"
-          :events="events"
-          @enter-story="handleEnterStory"
-          @delete-event="handleDeleteEvent"
-        />
-        <div v-else class="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-          尚未建立歷史事件
-        </div>
-      </aside>
+      <EventLibraryList
+        v-model:event-name="eventName"
+        :events="events"
+        :loading-events="loadingEvents"
+        :creating-event="isLoading"
+        :create-error="error"
+        @create="handleCreateEvent"
+        @open="openEventDetail"
+      />
     </main>
+
+    <EventDetailModal
+      v-if="detailEvent"
+      v-model:participant-id="participantId"
+      :event="detailEvent"
+      :conditions="conditions"
+      :progress-by-condition="detailConditionProgress"
+      :activity-mode="activityMode"
+      @close="closeEventDetail"
+      @delete="handleDeleteEvent"
+      @participant-change="saveParticipant"
+      @start-condition="startCondition"
+    />
 
     <DeleteConfirmationModal
       :show="showDeleteConfirmDialog"
@@ -115,58 +64,141 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
-import type { ConditionKey, EventInitializeResponse, EventWithPersonas, ExperimentCondition } from '~/types';
-import EventListClassic from '~/components/EventListClassic.vue';
+// 首頁負責事件素材入口：建立/選擇歷史事件，並在詳情彈窗中啟動 2x2 實驗 condition。
+// 設計原則：
+// - historical event 是素材單位，source、task、primary persona 應由四種 condition 共用。
+// - experiment condition 是活動策略，不應造成事件素材被複製成四份。
+// - 目前受測者進度先存在 localStorage，未來可改接 experiment_sessions/research_logs API。
+import { computed, onMounted, ref, watch } from 'vue';
+import EventCreatePanel from '~/components/event-library/EventCreatePanel.vue';
+import EventDetailModal from '~/components/event-library/EventDetailModal.vue';
+import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vue';
+import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
+import type { ConditionKey, EventInitializeResponse, EventWithPersonas, ExperimentCondition } from '~/types';
 
 definePageMeta({
   layout: false,
-  name: 'event-selection',
+  name: 'event-library',
 });
 
+type LocalConditionProgress = {
+  status: 'not_started' | 'task_started' | 'chat_started';
+  sessionId?: string;
+  taskId?: string;
+  conversationId?: string;
+  updatedAt: string;
+};
+
+const eventName = ref('');
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 const showDeleteConfirmDialog = ref(false);
 const pendingDeleteEventId = ref<string | null>(null);
 const events = ref<EventWithPersonas[]>([]);
 const conditions = ref<ExperimentCondition[]>([]);
-const selectedConditionKey = ref<ConditionKey>('ebl_roleplay');
+const detailEvent = ref<EventWithPersonas | null>(null);
 const loadingEvents = ref(false);
 const isRefreshing = ref(false);
+const adminModePending = ref(false);
+const adminModeError = ref<string | null>(null);
+const participantId = ref('scott-test');
+const localProgress = ref<Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>>>({});
+const { displayName, initialize: initializeAuth, isAuthenticated, user } = useAuth();
+const {
+  activityMode,
+  adminViewMode,
+  enterAdminMode,
+  exitAdminMode,
+  initAdminMode,
+  isAdminMode,
+  setAdminViewMode,
+} = useAdminMode();
 
-const currentCondition = computed(() =>
-  conditions.value.find((condition) => condition.condition_key === selectedConditionKey.value),
-);
+// 詳情彈窗只需要目前事件的 condition 進度，避免元件知道整包 localStorage 結構。
+const detailConditionProgress = computed(() => {
+  if (!detailEvent.value) return {};
+  return localProgress.value[detailEvent.value.id] || {};
+});
+const authStorageScope = computed(() => user.value?.id || 'guest');
 
+// 保留未來 avatar 顯示規則；目前首頁 UI 暫時不使用 persona 頭像。
 onMounted(async () => {
+  initAdminMode();
+  await initializeAuth();
+  participantId.value = loadParticipantId();
+  loadLocalProgress();
   await Promise.all([fetchConditions(), fetchEvents()]);
+});
 
-  const pendingEvent = localStorage.getItem('pendingEventSearch');
-  if (pendingEvent) {
-    nextTick(() => {
-      window.dispatchEvent(new CustomEvent('fillEventName', { detail: pendingEvent }));
-      localStorage.removeItem('pendingEventSearch');
-    });
+watch(participantId, () => loadLocalProgress());
+
+watch(authStorageScope, () => {
+  handleExitAdminMode();
+  detailEvent.value = null;
+  localProgress.value = {};
+  participantId.value = loadParticipantId();
+  loadLocalProgress();
+});
+
+watch(isAuthenticated, (authenticated) => {
+  if (!authenticated) {
+    handleExitAdminMode();
   }
 });
 
+const verifyAndEnterAdminMode = async (adminKey: string) => {
+  const trimmedKey = adminKey.trim();
+  if (!trimmedKey) {
+    adminModeError.value = '請輸入 admin key。';
+    return;
+  }
+
+  adminModePending.value = true;
+  adminModeError.value = null;
+  try {
+    await $fetch('/api/admin/snapshot', {
+      headers: {
+        'x-admin-key': trimmedKey,
+      },
+    });
+    localStorage.setItem('histosphere_admin_key', trimmedKey);
+    enterAdminMode();
+    await navigateTo('/admin');
+  } catch (e: any) {
+    exitAdminMode();
+    localStorage.removeItem('histosphere_admin_key');
+    adminModeError.value = e.data?.detail || 'Admin key 無效，無法進入管理員檢視。';
+  } finally {
+    adminModePending.value = false;
+  }
+};
+
+const handleExitAdminMode = () => {
+  exitAdminMode();
+  adminModeError.value = null;
+  if (import.meta.client) {
+    localStorage.removeItem('histosphere_admin_key');
+  }
+};
+
+// 讀取 2x2 實驗條件，讓前端不把 condition 寫死。
 const fetchConditions = async () => {
   try {
-    const data = await $fetch<ExperimentCondition[]>('/api/conditions');
-    conditions.value = data;
-    if (!data.some((condition) => condition.condition_key === selectedConditionKey.value) && data[0]) {
-      selectedConditionKey.value = data[0].condition_key;
-    }
+    conditions.value = await $fetch<ExperimentCondition[]>('/api/conditions');
   } catch (e) {
     console.error('Failed to fetch conditions:', e);
   }
 };
 
+// 讀取事件列表；若詳情彈窗已開啟，重新對齊最新事件資料。
 const fetchEvents = async () => {
   loadingEvents.value = true;
   try {
     events.value = await $fetch<EventWithPersonas[]>('/api/events');
+    if (detailEvent.value) {
+      detailEvent.value = events.value.find((event) => event.id === detailEvent.value?.id) || null;
+    }
   } catch (e) {
     console.error('Failed to fetch events:', e);
   } finally {
@@ -174,65 +206,182 @@ const fetchEvents = async () => {
   }
 };
 
+// 手動重新整理事件素材列表。
 const refreshEvents = async () => {
   isRefreshing.value = true;
   await fetchEvents();
   isRefreshing.value = false;
 };
 
-const compactConditionLabel = (condition: ExperimentCondition) => {
-  const ebl = condition.ebl_enabled ? 'With EBL' : 'Without EBL';
-  const roleplay = condition.roleplay_enabled ? 'Role-play' : 'Generic chat';
-  return `${ebl} / ${roleplay}`;
+// 建立或重用歷史事件素材；首頁建立時不直接跳 task。
+const handleCreateEvent = async () => {
+  const trimmed = eventName.value.trim();
+  if (!trimmed) return;
+  const response = await initializeEvent(trimmed, 'ebl_roleplay', false, false);
+  if (response) {
+    await fetchEvents();
+    detailEvent.value = events.value.find((event) => event.id === response.event_id) || null;
+    eventName.value = '';
+  }
 };
 
-const handleEventSubmit = async (eventName: string) => {
-  await initializeEvent(eventName, false);
+// 啟動指定 condition；若本機已有對話紀錄，直接回到該 conversation。
+const startCondition = async (condition: ExperimentCondition) => {
+  if (!detailEvent.value) return;
+  const progress = progressFor(condition.condition_key);
+  if (progress?.status === 'chat_started' && progress.conversationId) {
+    await navigateTo({
+      path: '/chat',
+      query: {
+        conversationId: progress.conversationId,
+      },
+    });
+    return;
+  }
+  await initializeEvent(detailEvent.value.canonical_name, condition.condition_key, false, true);
 };
 
-const handleEnterStory = async (event: EventWithPersonas) => {
-  await initializeEvent(event.canonical_name, false);
-};
-
-const initializeEvent = async (eventName: string, rebuild: boolean) => {
+// 呼叫後端初始化流程；同一事件會重用同一組素材，condition 只建立 session。
+const initializeEvent = async (
+  name: string,
+  conditionKey: ConditionKey,
+  rebuild: boolean,
+  navigateToTask: boolean,
+) => {
   isLoading.value = true;
   error.value = null;
   try {
     const response = await $fetch<EventInitializeResponse>('/api/event/initialize', {
       method: 'POST',
       body: {
-        event_name: eventName,
-        condition_key: selectedConditionKey.value,
+        event_name: name,
+        condition_key: conditionKey,
         rebuild,
+        user_id: participantUuid(participantId.value),
       },
     });
 
-    const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
-    taskData.value = response;
-
-    await navigateTo({
-      path: '/task',
-      query: {
-        taskId: response.task.id,
+    if (navigateToTask) {
+      markProgress(response.event_id, conditionKey, {
+        status: 'task_started',
         sessionId: response.session_id,
-      },
-    });
+        taskId: response.task.id,
+        updatedAt: new Date().toISOString(),
+      });
+      const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
+      taskData.value = response;
+      await navigateTo({
+        path: '/task',
+        query: {
+          taskId: response.task.id,
+          sessionId: response.session_id,
+          participantId: participantId.value,
+          eventId: response.event_id,
+          conditionKey,
+        },
+      });
+    }
+    return response;
   } catch (e: any) {
     error.value = e.data?.detail || e.data?.message || '建立流程失敗，請稍後再試。';
+    return null;
   } finally {
     isLoading.value = false;
   }
 };
 
+// 開啟事件詳情，讓主頁維持單純的輸入與列表。
+const openEventDetail = (event: EventWithPersonas) => {
+  detailEvent.value = event;
+};
+
+// 關閉事件詳情彈窗。
+const closeEventDetail = () => {
+  detailEvent.value = null;
+};
+
+// 儲存目前測試用受測者代號；後端仍使用 deterministic UUID。
+const saveParticipant = () => {
+  const next = participantId.value.trim() || defaultParticipantId();
+  participantId.value = next;
+  localStorage.setItem(participantStorageKey(), next);
+  loadLocalProgress();
+};
+
+const defaultParticipantId = () => {
+  const emailPrefix = user.value?.email?.split('@')[0]?.trim();
+  return emailPrefix || 'scott-test';
+};
+
+const participantStorageKey = () => `histosphere-participant-id:${authStorageScope.value}`;
+
+const loadParticipantId = () => {
+  if (!import.meta.client) return defaultParticipantId();
+  return localStorage.getItem(participantStorageKey()) || defaultParticipantId();
+};
+
+// 將受測者代號轉成穩定 UUID，避免 Supabase uuid 欄位收到任意字串。
+const participantUuid = (value: string) => {
+  let hash = 2166136261;
+  for (const char of value || 'scott-test') {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hex = Math.abs(hash).toString(16).padStart(8, '0');
+  return `${hex}${hex}${hex}${hex}`.replace(
+    /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+    '$1-$2-$3-$4-$5',
+  );
+};
+
+const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}:${participantId.value || defaultParticipantId()}`;
+
+// 從 localStorage 讀取目前受測者的 condition 完成狀態。
+const loadLocalProgress = () => {
+  if (!import.meta.client) return;
+  try {
+    localProgress.value = JSON.parse(localStorage.getItem(progressStorageKey()) || '{}');
+  } catch {
+    localProgress.value = {};
+  }
+};
+
+// 寫回本機進度；第一版先供開發測試，後續可改接 research/session API。
+const saveLocalProgress = () => {
+  if (!import.meta.client) return;
+  localStorage.setItem(progressStorageKey(), JSON.stringify(localProgress.value));
+};
+
+// 更新某事件某 condition 的本機進度。
+const markProgress = (eventId: string, conditionKey: ConditionKey, progress: LocalConditionProgress) => {
+  localProgress.value = {
+    ...localProgress.value,
+    [eventId]: {
+      ...(localProgress.value[eventId] || {}),
+      [conditionKey]: progress,
+    },
+  };
+  saveLocalProgress();
+};
+
+// 取得目前詳情事件在某 condition 的本機進度。
+const progressFor = (conditionKey: ConditionKey) => {
+  if (!detailEvent.value) return null;
+  return localProgress.value[detailEvent.value.id]?.[conditionKey] || null;
+};
+
+// 開啟刪除確認。
 const handleDeleteEvent = (eventId: string) => {
   pendingDeleteEventId.value = eventId;
   showDeleteConfirmDialog.value = true;
 };
 
+// 確認刪除事件素材。
 const confirmDelete = async () => {
   if (!pendingDeleteEventId.value) return;
   try {
     await $fetch(`/api/event/${pendingDeleteEventId.value}`, { method: 'DELETE' });
+    if (detailEvent.value?.id === pendingDeleteEventId.value) detailEvent.value = null;
     await fetchEvents();
   } catch (e) {
     console.error('Failed to delete event:', e);
@@ -243,3 +392,14 @@ const confirmDelete = async () => {
   }
 };
 </script>
+
+<style scoped>
+.historical-home {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.historical-home :deep(.font-serif),
+.historical-home .font-serif {
+  font-family: Georgia, "Times New Roman", "Noto Serif TC", serif;
+}
+</style>

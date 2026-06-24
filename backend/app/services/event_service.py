@@ -1,18 +1,30 @@
+"""Event utility service.
+
+本模組提供事件查詢、列表、刪除與 LLM profile 轉換等輔助功能。
+事件初始化的完整流程放在 EventInitializationService，避免本服務過度膨脹。
+"""
+
 from fastapi import HTTPException, status
 
 from app.models.domain import Event
 from app.schemas.responses import EventListItem
 from app.crud.protocols import RepositoryProtocol
+from app.utils.text_normalizer import normalize_display_text
 
 
 class EventService:
+    """封裝事件相關的簡單 CRUD 與轉換邏輯。"""
+
     def __init__(self, repository: RepositoryProtocol) -> None:
         self.repository = repository
 
     def check_exists(self, event_name: str) -> bool:
-        return self.repository.find_event_by_name(event_name) is not None
+        """檢查 canonical_name 是否已存在可重用事件。"""
+        normalized_name = normalize_display_text(event_name.strip()) or event_name.strip()
+        return self.repository.find_event_by_name(normalized_name) is not None
 
     def list_events(self) -> list[EventListItem]:
+        """列出事件，並附上最新 task 與 personas 給首頁使用。"""
         items: list[EventListItem] = []
         for event in self.repository.list_events():
             payload = event.model_dump()
@@ -22,12 +34,14 @@ class EventService:
         return items
 
     def delete_event(self, event_id: str) -> dict[str, bool]:
+        """刪除事件；關聯資料由資料庫 cascade 或 repository 實作處理。"""
         deleted = self.repository.delete_event(event_id)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
         return {"success": True}
 
     def regenerate_background(self, event_id: str) -> dict[str, str | None]:
+        """舊圖片背景功能的相容入口；新版研究 UI 不再產生背景圖。"""
         event = self.repository.get_event(event_id)
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -35,8 +49,10 @@ class EventService:
 
     @staticmethod
     def build_event_from_profile(event_name: str, profile: dict) -> Event:
+        """把 LLM event profile 轉成 Event domain model。"""
+        canonical_name = normalize_display_text(profile.get("canonical_name") or event_name.strip())
         return Event(
-            canonical_name=profile.get("canonical_name") or event_name.strip(),
+            canonical_name=canonical_name or event_name.strip(),
             description=profile.get("description"),
             century=profile.get("century"),
             start_year=profile.get("start_year"),

@@ -295,10 +295,10 @@
         <header class="bg-history-dark text-history-paper p-5 flex justify-between items-center shadow-lg">
           <div class="flex items-center gap-4">
             <div class="w-14 h-14 rounded-full border-3 border-history-accent overflow-hidden shadow-lg">
-              <img :src="demoPersonas[0].avatar" :alt="demoPersonas[0].name" class="w-full h-full object-cover" />
+              <img :src="primaryDemoPersona.avatar" :alt="primaryDemoPersona.name" class="w-full h-full object-cover" />
             </div>
             <div>
-              <h3 class="text-xl font-bold">{{ demoPersonas[0].name }}</h3>
+              <h3 class="text-xl font-bold">{{ primaryDemoPersona.name }}</h3>
               <p class="text-sm opacity-70 flex items-center gap-1">
                 <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
                 正在對話中
@@ -320,7 +320,7 @@
               :class="['flex items-end gap-4', msg.role === 'user' ? 'justify-end' : 'justify-start']"
             >
               <div v-if="msg.role === 'model'" class="w-12 h-12 rounded-full border-2 border-history-brown overflow-hidden flex-shrink-0 shadow-md">
-                <img :src="demoPersonas[0].avatar" class="w-full h-full object-cover" />
+                <img :src="primaryDemoPersona.avatar" class="w-full h-full object-cover" />
               </div>
               
               <div :class="['max-w-lg rounded-2xl p-5 shadow-lg', 
@@ -343,7 +343,7 @@
           <!-- Elegant typing indicator -->
           <div v-if="isAiTyping" class="flex items-end gap-4 justify-start">
             <div class="w-12 h-12 rounded-full border-2 border-history-brown overflow-hidden flex-shrink-0 shadow-md">
-              <img :src="demoPersonas[0].avatar" class="w-full h-full object-cover" />
+              <img :src="primaryDemoPersona.avatar" class="w-full h-full object-cover" />
             </div>
             <div class="bg-white border border-history-brown/10 rounded-2xl rounded-bl-sm p-5 shadow-lg">
               <div class="flex gap-2">
@@ -503,6 +503,7 @@ const demoPersonas = [
   { name: '尼可拉斯·哥白尼', role: '天文學家', avatar: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Nikolaus_Kopernikus_MOT.jpg/330px-Nikolaus_Kopernikus_MOT.jpg' },
   { name: '佩脫拉克', role: '人文主義之父', avatar: '/static/avatars/%E4%BD%A9%E8%84%AB%E6%8B%89%E5%85%8B_5fdfbe11.png' }
 ];
+const primaryDemoPersona = demoPersonas[0]!;
 
 // Step 5: Chat
 const visibleMessages = ref<any[]>([]);

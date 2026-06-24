@@ -9,6 +9,17 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 let supabase: ReturnType<typeof createClient> | null = null
+let authInitialized = false
+let authListenerInitialized = false
+let authInitializePromise: Promise<void> | null = null
+
+function clearSharedBrowserSessionState() {
+  if (!import.meta.client) return
+  localStorage.removeItem('histosphere_admin_key')
+  localStorage.removeItem('histosphere-admin-view-mode')
+  localStorage.removeItem('histosphere-admin-mode')
+  localStorage.removeItem('histosphere-participant-id')
+}
 
 function getSupabaseClient() {
   if (!supabase && supabaseUrl && supabaseAnonKey) {
@@ -36,19 +47,45 @@ export function useAuth() {
       return
     }
 
-    try {
+    if (authInitialized) {
+      loading.value = false
+      return
+    }
+
+    if (authInitializePromise) {
+      await authInitializePromise
+      loading.value = false
+      return
+    }
+
+    authInitializePromise = (async () => {
       // 取得目前 session
       const { data: { session: currentSession } } = await client.auth.getSession()
       session.value = currentSession
       user.value = currentSession?.user ?? null
 
       // 監聽認證狀態變化
-      client.auth.onAuthStateChange((_event, newSession) => {
-        session.value = newSession
-        user.value = newSession?.user ?? null
-      })
+      if (!authListenerInitialized) {
+        client.auth.onAuthStateChange((event, newSession) => {
+          const previousUserId = user.value?.id || null
+          const nextUserId = newSession?.user?.id || null
+          session.value = newSession
+          user.value = newSession?.user ?? null
+
+          if (event === 'SIGNED_OUT' || (previousUserId && nextUserId && previousUserId !== nextUserId)) {
+            clearSharedBrowserSessionState()
+          }
+        })
+        authListenerInitialized = true
+      }
+      authInitialized = true
+    })()
+
+    try {
+      await authInitializePromise
     } catch (e) {
       console.error('[useAuth] Initialize error:', e)
+      authInitializePromise = null
     } finally {
       loading.value = false
     }
@@ -65,6 +102,7 @@ export function useAuth() {
 
     error.value = null
     loading.value = true
+    const previousUserId = user.value?.id || null
 
     try {
       const { data, error: authError } = await client.auth.signInWithPassword({
@@ -79,6 +117,9 @@ export function useAuth() {
 
       user.value = data.user
       session.value = data.session
+      if (previousUserId && data.user?.id && previousUserId !== data.user.id) {
+        clearSharedBrowserSessionState()
+      }
       return { success: true }
     } catch (e: any) {
       error.value = e.message
@@ -140,6 +181,7 @@ export function useAuth() {
     await client.auth.signOut()
     user.value = null
     session.value = null
+    clearSharedBrowserSessionState()
   }
 
   /**

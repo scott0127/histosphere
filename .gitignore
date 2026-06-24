@@ -35,9 +35,6 @@ backend/.venv/
 .agents/
 .codex/
 
-# One-off media generation scripts from the old prototype
-scripts/experince/
-
 # Media assets / generated files
 *.png
 *.jpg
@@ -56,6 +53,11 @@ scripts/experince/
 *.wav
 *.ogg
 *.m4a
+
+# Required UI motif masks
+!public/images/
+!public/images/activity-motifs/
+!public/images/activity-motifs/*.png
 
 # Build and hosting metadata
 .vercel

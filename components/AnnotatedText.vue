@@ -25,7 +25,13 @@ const props = defineProps<{
   annotations: Annotation[];
 }>();
 
-const segments = computed(() => {
+type TextSegment = {
+  text: string;
+  isAnnotation: boolean;
+  explanation?: string;
+};
+
+const segments = computed<TextSegment[]>(() => {
   if (!props.annotations || props.annotations.length === 0) {
     return [{ text: props.content, isAnnotation: false }];
   }

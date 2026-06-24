@@ -1,3 +1,10 @@
+"""Event initialization service.
+
+本模組負責 V1 的起始流程：接收歷史事件名稱、抓取 Wikipedia、
+建立 events/wiki_sources/event_tasks/primary persona，並建立 experiment session。
+注意：這裡不建立 conversation，conversation 會等 learner 完成 task 後才建立。
+"""
+
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
@@ -7,9 +14,12 @@ from app.providers.wikipedia_provider import WikipediaProvider
 from app.schemas.requests import EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse
 from app.services.event_service import EventService
+from app.utils.text_normalizer import normalize_display_text
 
 
 class EventInitializationService:
+    """建立可被 learner 使用的事件學習工作區。"""
+
     def __init__(
         self,
         repository: RepositoryProtocol,
@@ -21,7 +31,8 @@ class EventInitializationService:
         self.llm_provider = llm_provider
 
     async def initialize(self, request: EventInitializeRequest) -> EventInitializeResponse:
-        event_name = request.event_name.strip()
+        """初始化事件、task、primary persona 與 session，供前端導向 task 頁。"""
+        event_name = normalize_display_text(request.event_name.strip()) or request.event_name.strip()
         if not event_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Event name is required")
 
@@ -30,34 +41,31 @@ class EventInitializationService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
 
         existing = self.repository.find_event_by_name(event_name)
-        if existing and request.rebuild:
-            self.repository.delete_event(existing.id)
-            existing = None
+        rebuild_ignored = bool(existing and request.rebuild)
 
         if existing:
+            # 已存在事件可重用，但仍要補齊 task/primary persona，避免舊資料不完整。
             event = existing
             sources = self.repository.list_wiki_sources(event.id)
             task = self._ensure_task(event, sources)
             personas = await self._ensure_personas(event, sources)
         else:
             draft_event = Event(canonical_name=event_name)
+            # Supabase 有 foreign key 約束；必須先建立 event row，wiki_sources 才能引用 event_id。
+            event = self.repository.save_event(draft_event)
             sources = await self.wikipedia_provider.fetch_sources(draft_event.id, event_name, fetch_mode="full")
             for source in sources:
                 self.repository.save_wiki_source(source)
 
             profile = await self.llm_provider.generate_event_profile(event_name, sources)
-            event = EventService.build_event_from_profile(event_name, profile)
-            event.id = draft_event.id
-            event = self.repository.save_event(event)
+            profiled_event = EventService.build_event_from_profile(event_name, profile)
+            profiled_event.id = event.id
+            event = self.repository.save_event(profiled_event)
 
             task = await self.llm_provider.generate_task(event, sources)
             task = self.repository.save_event_task(task)
 
-            generated_personas = await self.llm_provider.generate_personas(event, sources)
-            personas = [
-                self.repository.save_persona(persona)
-                for persona in generated_personas[:3]
-            ]
+            personas = await self._generate_primary_persona(event, sources)
 
         session = self.repository.save_session(
             ExperimentSession(
@@ -78,6 +86,7 @@ class EventInitializationService:
                     "event_name": event_name,
                     "condition_key": condition.condition_key,
                     "rebuild": request.rebuild,
+                    "rebuild_ignored": rebuild_ignored,
                 },
             )
         )
@@ -92,6 +101,7 @@ class EventInitializationService:
         )
 
     def _ensure_task(self, event: Event, sources) -> EventTask:
+        """確保事件至少有一份可作答 task；缺少時建立保守 fallback。"""
         task = self.repository.get_latest_event_task(event.id)
         if task:
             return task
@@ -108,10 +118,17 @@ class EventInitializationService:
         )
 
     async def _ensure_personas(self, event: Event, sources) -> list:
+        """確保事件有一位 primary persona；舊資料若有多位，只回傳排序第一位。"""
         personas = self.repository.list_personas(event.id)
         if personas:
-            return personas
-        return [
-            self.repository.save_persona(persona)
-            for persona in (await self.llm_provider.generate_personas(event, sources))[:3]
-        ]
+            return personas[:1]
+        return await self._generate_primary_persona(event, sources)
+
+    async def _generate_primary_persona(self, event: Event, sources) -> list:
+        """用 LLM provider 產生最能代表事件的一位 historical persona。"""
+        generated_personas = await self.llm_provider.generate_personas(event, sources)
+        if not generated_personas:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Persona generation failed")
+        primary_persona = generated_personas[0]
+        primary_persona.sort_order = 0
+        return [self.repository.save_persona(primary_persona)]

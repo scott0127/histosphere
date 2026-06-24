@@ -11,7 +11,7 @@ module.exports = {
     extend: {
       fontFamily: {
         serif: ['"Crimson Text"', 'Georgia', 'Cambria', '"Times New Roman"', 'Times', 'serif'],
-        sans: ['"Inter"', 'system-ui', 'sans-serif'],
+        sans: ['"Crimson Text"', 'Georgia', '"Inter"', 'system-ui', 'sans-serif'],
       },
       colors: {
         // 定義歷史感主題色 (參考附圖風格)
@@ -23,6 +23,20 @@ module.exports = {
           light: '#D7CCC8', // 極淺褐 (輸入框背景)
           cream: '#FFF8E1', // 亮米色 (卡片背景)
           gold: '#BCAAA4', // 點綴色
+        },
+        'admin': {
+          page: '#F2F0EC',
+          surface: '#FFFDF8',
+          muted: '#F7F5F1',
+          sunken: '#EBE7E0',
+          border: '#D6CEC4',
+          line: '#2F2924',
+          text: '#352F29',
+          copy: '#675E55',
+          soft: '#8A7B6F',
+          coffee: '#7B5D4B',
+          'coffee-soft': '#EDE3DA',
+          'coffee-muted': '#A88D7B',
         }
       },
       backgroundImage: {

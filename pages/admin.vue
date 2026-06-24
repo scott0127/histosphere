@@ -1,133 +1,395 @@
 <template>
-  <div class="min-h-screen bg-slate-50 font-sans text-slate-950">
-    <header class="border-b border-slate-200 bg-white">
-      <div class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <NuxtLink to="/" class="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
-          <Icon name="mdi:arrow-left" class="h-5 w-5" />
-          回首頁
+  <!--
+    Admin 是第一版研究用簡易後台：
+    使用 x-admin-key 保護，用來調整 condition 設定、task 與 persona prompt_profile。
+    目前不是正式 Supabase Auth/RLS 後台，請勿把它當成 production 權限模型。
+  -->
+  <div class="historical-admin min-h-screen font-sans">
+    <header class="admin-topbar">
+      <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
+        <NuxtLink to="/" class="flex items-center gap-3">
+          <span class="admin-back-button">
+            <Icon name="mdi:arrow-left" class="h-5 w-5" />
+          </span>
+          <span>
+            <span class="admin-brand block font-serif text-lg font-bold tracking-[0.08em]">Histosphere</span>
+            <span class="admin-caption block text-xs font-semibold tracking-[0.08em]">研究者 / 老師操作端</span>
+          </span>
         </NuxtLink>
-        <h1 class="font-bold">Histosphere Admin</h1>
+        <span class="admin-badge">
+          Admin
+        </span>
       </div>
     </header>
 
-    <main class="mx-auto max-w-6xl space-y-6 px-5 py-8">
-      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <label class="text-sm font-semibold text-slate-700" for="admin-key">Admin key</label>
-        <div class="mt-2 flex flex-col gap-2 sm:flex-row">
-          <input
-            id="admin-key"
-            v-model="adminKey"
-            type="password"
-            class="min-w-0 flex-1 rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
-            placeholder="HISTOSPHERE_ADMIN_KEY"
-          />
-          <button
-            class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-            @click="loadSnapshot"
-          >
-            <Icon name="mdi:database-search" class="h-5 w-5" />
-            載入後台資料
-          </button>
-        </div>
-        <p v-if="error" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</p>
+    <main class="mx-auto max-w-7xl space-y-6 px-5 py-10 md:py-12">
+      <section v-if="authLoading" class="admin-hero p-6 text-center">
+        <Icon name="mdi:loading" class="mx-auto h-8 w-8 animate-spin text-[var(--admin-coffee)]" />
+        <p class="admin-copy mt-3 text-sm font-bold">正在確認登入狀態...</p>
       </section>
 
-      <section v-if="snapshot" class="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside class="space-y-4">
-          <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 class="font-bold">2x2 Conditions</h2>
-            <div class="mt-4 space-y-3">
-              <article v-for="condition in snapshot.conditions" :key="condition.id" class="rounded-lg border border-slate-200 p-3">
-                <input v-model="condition.label" class="w-full rounded border border-slate-200 px-2 py-1 text-sm font-semibold" />
-                <textarea v-model="condition.description" rows="3" class="mt-2 w-full rounded border border-slate-200 px-2 py-1 text-sm leading-6" />
-                <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
-                  <label class="flex items-center gap-2">
-                    <input v-model="condition.ebl_enabled" type="checkbox" />
-                    EBL
-                  </label>
-                  <label class="flex items-center gap-2">
-                    <input v-model="condition.roleplay_enabled" type="checkbox" />
-                    Role-play
-                  </label>
-                  <select v-model="condition.response_policy" class="rounded border border-slate-200 px-2 py-1">
-                    <option value="direct">direct</option>
-                    <option value="scaffold">scaffold</option>
-                  </select>
-                  <label class="flex items-center gap-2">
-                    <input v-model="condition.active" type="checkbox" />
-                    active
-                  </label>
-                </div>
-                <button class="mt-3 rounded-lg border border-teal-300 px-3 py-2 text-xs font-bold text-teal-700 hover:bg-teal-50" @click="saveCondition(condition)">
-                  儲存 condition
-                </button>
-              </article>
-            </div>
-          </div>
+      <section v-else-if="!isAuthenticated" class="admin-hero p-6">
+        <p class="admin-kicker">Admin access</p>
+        <h1 class="admin-heading mt-1 font-serif text-3xl font-bold">請先登入管理員帳號</h1>
+        <p class="admin-copy mt-2 max-w-2xl text-sm font-semibold leading-7">
+          後台需要 Supabase Auth 登入，再輸入 admin key 才會載入任何管理資料。
+        </p>
+        <NuxtLink to="/auth/login" class="admin-button-primary mt-5 inline-flex min-h-11 items-center justify-center gap-2 px-5 text-sm font-bold">
+          <Icon name="mdi:login" class="h-5 w-5" />
+          前往登入
+        </NuxtLink>
+      </section>
 
-          <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 class="font-bold">Research logs</h2>
-            <div class="mt-3 max-h-96 space-y-2 overflow-auto text-xs">
-              <div v-for="log in snapshot.research_logs" :key="String(log.id)" class="rounded border border-slate-200 p-2">
-                <p class="font-semibold text-slate-800">{{ log.action_type }}</p>
-                <p class="text-slate-500">{{ log.created_at }}</p>
-              </div>
+      <template v-else>
+      <section class="admin-hero">
+        <div class="p-5 md:p-6">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p class="admin-kicker">Admin access</p>
+              <h1 class="admin-heading mt-1 font-serif text-3xl font-bold">
+                {{ snapshot ? '管理後台' : '需要 admin key' }}
+              </h1>
+              <p class="admin-copy mt-2 max-w-2xl text-sm font-semibold leading-7">
+                {{ snapshot ? '先選擇歷史事件，再進入該事件的 task、事件資料與人物設定。' : '驗證成功後才會載入後台資料與管理工具。' }}
+              </p>
+              <p class="admin-caption mt-2 text-xs font-bold">
+                已登入：{{ displayName || 'admin' }}
+              </p>
             </div>
-          </div>
-        </aside>
-
-        <section class="space-y-4">
-          <article v-for="event in snapshot.events" :key="event.id" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h2 class="text-xl font-bold">{{ event.canonical_name }}</h2>
-                <p class="mt-1 text-sm leading-6 text-slate-600">{{ event.description || event.context }}</p>
-              </div>
-              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {{ event.personas.length }} personas
-              </span>
-            </div>
-
-            <div v-if="event.latest_task" class="mt-5 rounded-lg border border-slate-200 p-4">
-              <h3 class="font-bold">Task</h3>
-              <input v-model="event.latest_task.title" class="mt-3 w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold" />
-              <textarea v-model="event.latest_task.display_text" rows="4" class="mt-2 w-full rounded border border-slate-200 px-3 py-2 text-sm leading-6" />
-              <textarea v-model="event.latest_task.story_text" rows="4" class="mt-2 w-full rounded border border-slate-200 px-3 py-2 text-sm leading-6" />
-              <label class="mt-2 block text-xs font-semibold text-slate-500">evaluation_payload JSON</label>
-              <textarea v-model="taskJson[event.latest_task.id]" rows="4" class="mt-1 w-full rounded border border-slate-200 px-3 py-2 font-mono text-xs leading-5" />
-              <button class="mt-3 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800" @click="saveTask(event.latest_task)">
-                儲存 task
+            <div class="flex w-full flex-col gap-2 sm:flex-row lg:w-[520px]">
+              <input
+                id="admin-key"
+                v-model="adminKey"
+                type="password"
+                class="admin-field min-h-12 min-w-0 flex-1 px-4 text-base font-semibold"
+                placeholder="管理金鑰"
+              />
+              <button
+                class="admin-button-primary inline-flex min-h-12 items-center justify-center gap-2 px-5 text-sm font-bold"
+                @click="loadSnapshot"
+              >
+                <Icon name="mdi:database-search" class="h-5 w-5" />
+                {{ snapshot ? '重新載入' : '載入資料' }}
               </button>
             </div>
+          </div>
+          <p v-if="error" class="admin-error mt-4 px-3 py-2 text-sm font-semibold">
+            {{ error }}
+          </p>
+        </div>
+      </section>
 
-            <div class="mt-5 grid gap-3 md:grid-cols-2">
-              <div v-for="persona in event.personas" :key="persona.id" class="rounded-lg border border-slate-200 p-4">
-                <input v-model="persona.name" class="w-full rounded border border-slate-200 px-3 py-2 text-sm font-semibold" />
-                <input v-model="persona.role" class="mt-2 w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="role" />
-                <textarea v-model="persona.biography" rows="3" class="mt-2 w-full rounded border border-slate-200 px-3 py-2 text-sm leading-6" />
-                <label class="mt-2 block text-xs font-semibold text-slate-500">prompt_profile JSON</label>
-                <textarea v-model="personaJson[persona.id]" rows="5" class="mt-1 w-full rounded border border-slate-200 px-3 py-2 font-mono text-xs leading-5" />
-                <div class="mt-3 flex items-center justify-between gap-2">
-                  <label class="flex items-center gap-2 text-xs">
-                    <input v-model="persona.active" type="checkbox" />
-                    active
-                  </label>
-                  <button class="rounded-lg border border-teal-300 px-3 py-2 text-xs font-bold text-teal-700 hover:bg-teal-50" @click="savePersona(persona)">
-                    儲存 persona
+      <section v-if="snapshot" class="space-y-5">
+        <section v-if="!selectedEvent" class="admin-panel">
+          <div class="admin-accordion-header">
+            <span>
+              <span class="admin-kicker">Admin workspace</span>
+              <span class="admin-accordion-title">選擇要管理的歷史事件</span>
+            </span>
+            <span class="admin-accordion-meta">
+              {{ snapshot.events.length }} 個事件
+            </span>
+          </div>
+
+          <div class="admin-accordion-body">
+            <div class="grid gap-4">
+              <article
+                v-for="event in snapshot.events"
+                :key="event.id"
+                class="admin-panel-inner p-5"
+              >
+                <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px_140px] lg:items-center">
+                  <div>
+                    <p class="admin-kicker">歷史事件</p>
+                    <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ event.canonical_name }}</h2>
+                    <p class="admin-copy mt-2 line-clamp-2 max-w-4xl text-sm font-semibold leading-7">
+                      {{ event.description || event.context || '尚未建立事件描述。' }}
+                    </p>
+                  </div>
+
+                  <div class="grid gap-2 text-sm">
+                    <div class="admin-info-row">
+                      <span>年代</span>
+                      <strong>{{ eventYearRange(event) }}</strong>
+                    </div>
+                    <div class="admin-info-row">
+                      <span>Task</span>
+                      <strong>{{ event.latest_task ? `${taskQuestionCount(event.latest_task)} 題` : '未建立' }}</strong>
+                    </div>
+                    <div class="admin-info-row">
+                      <span>人物</span>
+                      <strong>{{ event.personas.length }} 人</strong>
+                    </div>
+                  </div>
+
+                  <button
+                    class="admin-button-primary inline-flex min-h-11 items-center justify-center px-4 text-sm font-bold"
+                    type="button"
+                    @click="selectEvent(event.id)"
+                  >
+                    管理
                   </button>
                 </div>
+              </article>
+
+              <div v-if="!snapshot.events.length" class="admin-empty-state p-6">
+                目前沒有歷史事件。請先在首頁建立事件素材。
               </div>
             </div>
-          </article>
+          </div>
         </section>
+
+        <template v-else>
+        <section class="admin-panel">
+          <div class="admin-accordion-header flex-col items-stretch gap-4 md:flex-row md:items-center">
+            <span>
+              <span class="admin-kicker">Selected event</span>
+              <span class="admin-accordion-title">{{ selectedEvent.canonical_name }}</span>
+            </span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="admin-accordion-meta">
+                {{ eventYearRange(selectedEvent) }}
+              </span>
+              <button class="admin-button-secondary px-3 py-2 text-xs font-bold" type="button" @click="selectedEventId = null">
+                返回事件列表
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <button class="admin-accordion-header" type="button" @click="toggleSection('tasks')">
+            <span>
+              <span class="admin-kicker">Section 01</span>
+              <span class="admin-accordion-title">管理 task</span>
+            </span>
+            <span class="admin-accordion-meta">
+              {{ selectedEvent.latest_task ? `${taskQuestionCount(selectedEvent.latest_task)} 題` : '未建立 task' }}
+              <Icon :name="openSections.tasks ? 'mdi:chevron-down' : 'mdi:arrow-right'" class="h-5 w-5" />
+            </span>
+          </button>
+
+          <div v-show="openSections.tasks" class="admin-accordion-body">
+            <div>
+              <article v-if="selectedEvent.latest_task" class="admin-panel-inner p-5 md:p-6">
+                <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p class="admin-kicker">Task source</p>
+                    <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ selectedEvent.canonical_name }}</h2>
+                    <p class="admin-copy mt-2 max-w-3xl text-sm font-semibold leading-7">
+                      {{ selectedEvent.latest_task.title || '尚未命名的任務' }}
+                    </p>
+                  </div>
+                  <span class="admin-badge">{{ taskQuestionCount(selectedEvent.latest_task) }} 題</span>
+                </div>
+
+                <TaskControlEditor
+                  :evaluation-json="taskJson[selectedEvent.latest_task.id] || '{}'"
+                  class="mt-5"
+                  :task="selectedEvent.latest_task"
+                  @update:evaluation-json="taskJson[selectedEvent.latest_task.id] = $event"
+                  @save="saveTask(selectedEvent.latest_task)"
+                />
+              </article>
+
+              <div v-else class="admin-empty-state p-5">
+                這個歷史事件目前沒有可編輯的 task。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <button class="admin-accordion-header" type="button" @click="toggleSection('events')">
+            <span>
+              <span class="admin-kicker">Section 02</span>
+              <span class="admin-accordion-title">管理歷史事件資料</span>
+            </span>
+            <span class="admin-accordion-meta">
+              基礎素材
+              <Icon :name="openSections.events ? 'mdi:chevron-down' : 'mdi:arrow-right'" class="h-5 w-5" />
+            </span>
+          </button>
+
+          <div v-show="openSections.events" class="admin-accordion-body">
+            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <article class="admin-panel-inner p-5">
+                  <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div>
+                      <p class="admin-kicker">歷史事件</p>
+                      <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ selectedEvent.canonical_name }}</h2>
+                      <p class="admin-copy mt-3 text-sm font-semibold leading-7">{{ selectedEvent.description || selectedEvent.context || '尚未建立事件描述。' }}</p>
+                    </div>
+                    <div class="grid gap-2 text-sm">
+                      <div class="admin-info-row">
+                        <span>年代</span>
+                        <strong>{{ eventYearRange(selectedEvent) }}</strong>
+                      </div>
+                      <div class="admin-info-row">
+                        <span>人物</span>
+                        <strong>{{ selectedEvent.personas.length }}</strong>
+                      </div>
+                      <div class="admin-info-row">
+                        <span>Task</span>
+                        <strong>{{ selectedEvent.latest_task ? '已建立' : '未建立' }}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-3 md:grid-cols-2">
+                    <label class="block">
+                      <span class="admin-label">事件名稱</span>
+                      <input v-model="selectedEvent.canonical_name" class="admin-field mt-1 w-full px-3 py-2 text-sm font-bold" />
+                    </label>
+                    <label class="block">
+                      <span class="admin-label">事件期間</span>
+                      <input :value="eventYearRange(selectedEvent)" class="admin-field mt-1 w-full px-3 py-2 text-sm" disabled />
+                    </label>
+                    <label class="block md:col-span-2">
+                      <span class="admin-label">事件描述</span>
+                      <textarea v-model="selectedEvent.description" rows="4" class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6" />
+                    </label>
+                    <label class="block md:col-span-2">
+                      <span class="admin-label">背景脈絡</span>
+                      <textarea v-model="selectedEvent.context" rows="4" class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6" />
+                    </label>
+                  </div>
+
+                  <div class="mt-4 flex justify-end">
+                    <button class="admin-button-secondary px-3 py-2 text-xs font-bold" type="button" @click="saveEvent(selectedEvent)">
+                      儲存事件資料
+                    </button>
+                  </div>
+                </article>
+
+              <aside class="admin-panel-inner p-5">
+                <p class="admin-kicker">研究紀錄</p>
+                <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">操作 logs</h2>
+                <div class="mt-4 max-h-[520px] space-y-2 overflow-auto text-xs">
+                  <div v-for="log in snapshot.research_logs" :key="String(log.id)" class="admin-log-item p-3">
+                    <p class="font-bold">{{ log.action_type }}</p>
+                    <p class="admin-caption mt-1">{{ log.created_at }}</p>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <button class="admin-accordion-header" type="button" @click="toggleSection('personas')">
+            <span>
+              <span class="admin-kicker">Section 03</span>
+              <span class="admin-accordion-title">管理歷史人物與 prompt</span>
+            </span>
+            <span class="admin-accordion-meta">
+              {{ selectedEvent.personas.length }} 個人物
+              <Icon :name="openSections.personas ? 'mdi:chevron-down' : 'mdi:arrow-right'" class="h-5 w-5" />
+            </span>
+          </button>
+
+          <div v-show="openSections.personas" class="admin-accordion-body">
+            <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <section class="space-y-4">
+                <article class="admin-panel-inner p-5">
+                  <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p class="admin-kicker">歷史人物</p>
+                      <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ selectedEvent.canonical_name }}</h2>
+                    </div>
+                    <span class="admin-badge">{{ selectedEvent.personas.length }} 人</span>
+                  </div>
+
+                  <div class="mt-4 space-y-3">
+                    <div v-for="persona in selectedEvent.personas" :key="persona.id" class="admin-subpanel p-4">
+                      <input v-model="persona.name" class="admin-field w-full px-3 py-2 text-sm font-bold" />
+                      <input v-model="persona.role" class="admin-field mt-2 w-full px-3 py-2 text-sm" placeholder="角色定位" />
+                      <textarea v-model="persona.biography" rows="3" class="admin-textarea mt-2 w-full px-3 py-2 text-sm leading-6" />
+                      <label class="admin-label mt-3 block">prompt_profile JSON</label>
+                      <textarea v-model="personaJson[persona.id]" rows="5" class="admin-textarea admin-code-editor mt-1 w-full px-3 py-2 font-mono text-xs leading-5" />
+                      <div class="mt-3 flex items-center justify-between gap-2">
+                        <span class="admin-caption text-xs font-bold">{{ persona.active ? '使用中' : '停用' }}</span>
+                        <button class="admin-button-primary px-3 py-2 text-xs font-bold" @click="savePersona(persona)">
+                          儲存人物
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-if="!selectedEvent.personas.length" class="admin-empty-state p-5">
+                      這個事件目前沒有歷史人物資料。
+                    </div>
+                  </div>
+                </article>
+              </section>
+
+              <section class="admin-panel-inner admin-panel-muted p-5">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <p class="admin-kicker">Condition design</p>
+                    <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">條件設定</h2>
+                  </div>
+                  <span class="admin-code-badge">2x2</span>
+                </div>
+
+                <div class="mt-4 grid grid-cols-4 gap-2">
+                  <button
+                    v-for="condition in promptConditions"
+                    :key="condition.id"
+                    type="button"
+                    :title="conditionModeLabel(condition)"
+                    :aria-label="conditionModeLabel(condition)"
+                    :class="[
+                      'condition-tab px-3 py-3 text-center text-xs font-black',
+                      selectedCondition?.id === condition.id
+                        ? 'condition-tab-active'
+                        : 'condition-tab-idle'
+                    ]"
+                    @click="selectedConditionId = condition.id"
+                  >
+                    <span class="block font-mono text-sm">{{ conditionOrdinal(condition) }}</span>
+                    <span class="admin-caption mt-1 block text-[11px] font-bold">模式</span>
+                  </button>
+                </div>
+
+                <div v-if="selectedCondition" class="mt-5 space-y-4">
+                  <label class="block">
+                    <span class="admin-label">活動名稱</span>
+                    <input
+                      v-model="selectedCondition.label"
+                      class="admin-field mt-1 w-full px-3 py-2 text-sm font-bold"
+                    />
+                  </label>
+
+                  <label class="block">
+                    <span class="admin-label">研究者備註</span>
+                    <textarea
+                      v-model="selectedCondition.description"
+                      rows="4"
+                      class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6"
+                    />
+                  </label>
+
+                  <button class="admin-button-primary w-full px-3 py-3 text-xs font-bold" @click="saveCondition(selectedCondition)">
+                    儲存 condition 設定
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+        </template>
       </section>
+      </template>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import type { AdminSnapshotResponse, EventTask, ExperimentCondition, Persona } from '~/types';
+// 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
+// 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
+import { computed, onMounted, ref, watch } from 'vue';
+import { taskControlQuestions } from '~/composables/useTaskControl';
+import type { AdminSnapshotResponse, EventTask, EventWithPersonas, ExperimentCondition, Persona } from '~/types';
 
 definePageMeta({
   layout: false,
@@ -139,28 +401,179 @@ const snapshot = ref<AdminSnapshotResponse | null>(null);
 const error = ref<string | null>(null);
 const taskJson = ref<Record<string, string>>({});
 const personaJson = ref<Record<string, string>>({});
+const selectedConditionId = ref<string | null>(null);
+const selectedEventId = ref<string | null>(null);
 
-onMounted(() => {
-  adminKey.value = localStorage.getItem('histosphere_admin_key') || '';
+type AdminSectionKey = 'tasks' | 'events' | 'personas';
+
+const openSections = ref<Record<AdminSectionKey, boolean>>({
+  tasks: true,
+  events: true,
+  personas: true,
+});
+
+const {
+  displayName,
+  initialize: initializeAuth,
+  isAuthenticated,
+  loading: authLoading,
+  user,
+} = useAuth();
+const authUserId = computed(() => user.value?.id || null);
+
+const conditionModeOrder: ExperimentCondition['condition_key'][] = [
+  'no_ebl_no_roleplay',
+  'ebl_no_roleplay',
+  'no_ebl_roleplay',
+  'ebl_roleplay',
+];
+
+const conditionModeLabels: Record<ExperimentCondition['condition_key'], string> = {
+  no_ebl_no_roleplay: '01 without EBL + without role-play',
+  ebl_no_roleplay: '02 EBL + without role-play',
+  no_ebl_roleplay: '03 without EBL + role-play',
+  ebl_roleplay: '04 EBL + role-play',
+};
+
+const selectedEvent = computed<EventWithPersonas | null>(() => {
+  if (!snapshot.value || !selectedEventId.value) {
+    return null;
+  }
+  return snapshot.value.events.find((event) => event.id === selectedEventId.value) || null;
+});
+
+const promptConditions = computed(() => {
+  const conditions = snapshot.value?.conditions || [];
+  return [...conditions].sort((a, b) => {
+    const aIndex = conditionModeOrder.indexOf(a.condition_key);
+    const bIndex = conditionModeOrder.indexOf(b.condition_key);
+    const normalizedA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
+    const normalizedB = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
+    return normalizedA - normalizedB;
+  });
+});
+
+const selectedCondition = computed<ExperimentCondition | null>(() => {
+  const conditions = promptConditions.value;
+  if (!conditions.length) {
+    return null;
+  }
+  return conditions.find((condition) => condition.id === selectedConditionId.value) || conditions[0];
+});
+
+// 後台採 Supabase Auth + admin key；未登入時不顯示 key 表單，也不載入任何後台資料。
+onMounted(async () => {
+  await initializeAuth();
+  if (isAuthenticated.value) {
+    adminKey.value = localStorage.getItem('histosphere_admin_key') || '';
+    if (adminKey.value) {
+      await loadSnapshot();
+    }
+  }
+});
+
+watch(isAuthenticated, (authenticated) => {
+  if (authenticated) return;
+  adminKey.value = '';
+  snapshot.value = null;
+  selectedEventId.value = null;
+  if (import.meta.client) {
+    localStorage.removeItem('histosphere_admin_key');
+  }
+});
+
+watch(authUserId, (nextUserId, previousUserId) => {
+  if (!nextUserId || !previousUserId || nextUserId === previousUserId) {
+    return;
+  }
+  adminKey.value = '';
+  snapshot.value = null;
+  selectedEventId.value = null;
+  if (import.meta.client) {
+    localStorage.removeItem('histosphere_admin_key');
+  }
 });
 
 const headers = () => ({ 'x-admin-key': adminKey.value });
 
+const toggleSection = (section: AdminSectionKey) => {
+  openSections.value[section] = !openSections.value[section];
+};
+
+const selectEvent = (eventId: string) => {
+  selectedEventId.value = eventId;
+  openSections.value = {
+    tasks: true,
+    events: true,
+    personas: true,
+  };
+};
+
+const conditionOrdinal = (condition: ExperimentCondition) => {
+  const index = conditionModeOrder.indexOf(condition.condition_key);
+  if (index === -1) {
+    return '--';
+  }
+  return String(index + 1).padStart(2, '0');
+};
+
+const conditionModeLabel = (condition: ExperimentCondition) => {
+  return conditionModeLabels[condition.condition_key] || condition.label;
+};
+
+const eventYearRange = (event: EventWithPersonas) => {
+  if (event.start_year && event.end_year && event.start_year !== event.end_year) {
+    return `${event.start_year} - ${event.end_year}`;
+  }
+  if (event.start_year || event.end_year) {
+    return String(event.start_year || event.end_year);
+  }
+  if (event.century) {
+    return `${event.century} 世紀`;
+  }
+  return '未設定';
+};
+
+const taskQuestionCount = (task?: EventTask | null) => {
+  if (!task) {
+    return 0;
+  }
+  const evaluationJson = taskJson.value[task.id] || JSON.stringify(task.evaluation_payload || {}, null, 2);
+  return taskControlQuestions(task, evaluationJson).length;
+};
+
+// 載入後台 snapshot 後，把 JSON 欄位轉成可編輯字串；儲存時再 parse 回物件。
 const loadSnapshot = async () => {
   error.value = null;
+  if (!isAuthenticated.value) {
+    snapshot.value = null;
+    error.value = '請先登入管理員帳號。';
+    return;
+  }
   try {
     localStorage.setItem('histosphere_admin_key', adminKey.value);
     const data = await $fetch<AdminSnapshotResponse>('/api/admin/snapshot', { headers: headers() });
-    snapshot.value = data;
-    taskJson.value = {};
-    personaJson.value = {};
+    const nextTaskJson: Record<string, string> = {};
+    const nextPersonaJson: Record<string, string> = {};
+
     for (const event of data.events) {
       if (event.latest_task) {
-        taskJson.value[event.latest_task.id] = JSON.stringify(event.latest_task.evaluation_payload || {}, null, 2);
+        nextTaskJson[event.latest_task.id] = JSON.stringify(event.latest_task.evaluation_payload || {}, null, 2);
       }
       for (const persona of event.personas) {
-        personaJson.value[persona.id] = JSON.stringify(persona.prompt_profile || {}, null, 2);
+        nextPersonaJson[persona.id] = JSON.stringify(persona.prompt_profile || {}, null, 2);
       }
+    }
+
+    taskJson.value = nextTaskJson;
+    personaJson.value = nextPersonaJson;
+    snapshot.value = data;
+    if (selectedEventId.value && !data.events.some((event) => event.id === selectedEventId.value)) {
+      selectedEventId.value = null;
+    }
+
+    if (!selectedConditionId.value || !data.conditions.some((condition) => condition.id === selectedConditionId.value)) {
+      selectedConditionId.value = promptConditions.value[0]?.id || null;
     }
   } catch (e: any) {
     error.value = e.data?.detail || '後台資料載入失敗，請確認 admin key。';
@@ -201,6 +614,23 @@ const saveTask = async (task: EventTask) => {
       display_text: task.display_text,
       evaluation_payload: evaluationPayload,
       revision_state: 'teacher_modified',
+    },
+  });
+  await loadSnapshot();
+};
+
+const saveEvent = async (event: EventWithPersonas) => {
+  await $fetch(`/api/admin/events/${event.id}`, {
+    method: 'PATCH',
+    headers: headers(),
+    body: {
+      canonical_name: event.canonical_name,
+      description: event.description,
+      century: event.century,
+      start_year: event.start_year,
+      end_year: event.end_year,
+      context: event.context,
+      source_summary: event.source_summary || {},
     },
   });
   await loadSnapshot();

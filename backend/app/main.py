@@ -5,7 +5,7 @@ from app.api.v1.api import api_router
 from app.core.config import get_settings
 from app.db import InMemoryRepository, SupabaseRepository
 from app.providers import WikipediaProvider
-from app.providers.llm import StubLLMProvider
+from app.providers.llm import build_llm_provider
 from app.services import (
     ChatService,
     ConversationService,
@@ -14,6 +14,7 @@ from app.services import (
     PersonaService,
     PromptService,
     RagPipelineService,
+    SessionService,
     TaskService,
 )
 
@@ -30,12 +31,19 @@ def create_app() -> FastAPI:
         expose_headers=["*"],
     )
 
-    if settings.should_use_supabase and settings.supabase_url and settings.supabase_service_role_key:
+    if settings.repository_backend == "in_memory":
+        if not settings.allow_in_memory_repository:
+            raise RuntimeError("In-memory repository is disabled outside explicit tests.")
+        repository = InMemoryRepository()
+    elif settings.should_use_supabase and settings.supabase_url and settings.supabase_service_role_key:
         repository = SupabaseRepository(settings.supabase_url, settings.supabase_service_role_key)
     else:
-        repository = InMemoryRepository()
+        raise RuntimeError(
+            "Supabase repository is required. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, "
+            "or use ALLOW_IN_MEMORY_REPOSITORY=true only for tests."
+        )
     wikipedia_provider = WikipediaProvider(settings)
-    llm_provider = StubLLMProvider()
+    llm_provider = build_llm_provider(settings)
     rag_pipeline = RagPipelineService(repository)
     prompt_service = PromptService()
 
@@ -54,6 +62,7 @@ def create_app() -> FastAPI:
     app.state.chat_service = ChatService(repository, llm_provider, prompt_service, rag_pipeline)
     app.state.persona_service = PersonaService(repository)
     app.state.task_service = TaskService(repository, llm_provider)
+    app.state.session_service = SessionService(repository)
 
     app.include_router(api_router)
 

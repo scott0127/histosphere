@@ -25,7 +25,9 @@ class LLMProvider(Protocol):
         response_payload: dict[str, Any],
     ) -> dict[str, Any]: ...
 
-    async def generate_personas(self, event: Event, sources: list[WikiSource]) -> list[Persona]: ...
+    async def generate_personas(self, event: Event, sources: list[WikiSource]) -> list[Persona]:
+        """產生事件的 primary historical persona；V1 預期只回傳一位。"""
+        ...
 
     async def generate_greeting(
         self,

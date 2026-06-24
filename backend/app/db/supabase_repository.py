@@ -122,7 +122,7 @@ class SupabaseRepository(RepositoryProtocol):
         return bool(data)
 
     def save_wiki_source(self, source: WikiSource) -> WikiSource:
-        return self._upsert("wiki_sources", source)
+        return self._upsert("wiki_sources", source, conflict="event_id,provider,language,fetch_mode")
 
     def list_wiki_sources(self, event_id: str) -> list[WikiSource]:
         return self._select_many("wiki_sources", WikiSource, {"event_id": f"eq.{event_id}", "order": "retrieved_at.asc"})
@@ -157,6 +157,13 @@ class SupabaseRepository(RepositoryProtocol):
     def list_sessions(self) -> list[ExperimentSession]:
         return self._select_many("experiment_sessions", ExperimentSession, {"order": "created_at.desc"})
 
+    def list_sessions_for_user(self, user_id: str) -> list[ExperimentSession]:
+        return self._select_many(
+            "experiment_sessions",
+            ExperimentSession,
+            {"user_id": f"eq.{user_id}", "order": "updated_at.desc"},
+        )
+
     def save_event_task(self, task: EventTask) -> EventTask:
         return self._upsert("event_tasks", task)
 
@@ -179,6 +186,15 @@ class SupabaseRepository(RepositoryProtocol):
     def get_task_attempt(self, attempt_id: str) -> TaskAttempt | None:
         return self._select_one("task_attempts", TaskAttempt, {"id": f"eq.{attempt_id}"})
 
+    def get_task_attempt_for_session(self, session_id: str, task_id: str | None = None) -> TaskAttempt | None:
+        params = {
+            "session_id": f"eq.{session_id}",
+            "order": "updated_at.desc",
+        }
+        if task_id:
+            params["task_id"] = f"eq.{task_id}"
+        return self._select_one("task_attempts", TaskAttempt, params)
+
     def save_persona(self, persona: Persona) -> Persona:
         return self._upsert("personas", persona)
 
@@ -199,6 +215,13 @@ class SupabaseRepository(RepositoryProtocol):
 
     def get_conversation(self, conversation_id: str) -> Conversation | None:
         return self._select_one("conversations", Conversation, {"id": f"eq.{conversation_id}"})
+
+    def get_conversation_by_session(self, session_id: str) -> Conversation | None:
+        return self._select_one(
+            "conversations",
+            Conversation,
+            {"session_id": f"eq.{session_id}", "order": "updated_at.desc"},
+        )
 
     def next_message_sequence(self, conversation_id: str) -> int:
         data = self._request(

@@ -1,16 +1,96 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+const mdiClientIcons = [
+  'mdi:account',
+  'mdi:account-circle-outline',
+  'mdi:account-details',
+  'mdi:account-edit-outline',
+  'mdi:account-group',
+  'mdi:account-group-outline',
+  'mdi:account-outline',
+  'mdi:account-plus',
+  'mdi:account-voice',
+  'mdi:arrow-left',
+  'mdi:arrow-right',
+  'mdi:badge-account-outline',
+  'mdi:bank',
+  'mdi:book-open-blank-variant',
+  'mdi:book-open-page-variant',
+  'mdi:check',
+  'mdi:check-circle',
+  'mdi:check-circle-outline',
+  'mdi:chevron-down',
+  'mdi:clipboard-text-outline',
+  'mdi:clock-time-eight-outline',
+  'mdi:close',
+  'mdi:cog-outline',
+  'mdi:compass',
+  'mdi:compass-rose',
+  'mdi:database-search',
+  'mdi:door-open',
+  'mdi:email-check-outline',
+  'mdi:email-outline',
+  'mdi:eye',
+  'mdi:eye-off',
+  'mdi:feather',
+  'mdi:history',
+  'mdi:incognito',
+  'mdi:library-outline',
+  'mdi:lightbulb-outline',
+  'mdi:loading',
+  'mdi:lock-check-outline',
+  'mdi:lock-outline',
+  'mdi:lock-reset',
+  'mdi:login',
+  'mdi:logout',
+  'mdi:map-legend',
+  'mdi:map-marker-radius',
+  'mdi:message-processing-outline',
+  'mdi:message-text',
+  'mdi:palette',
+  'mdi:pillar',
+  'mdi:play-circle-outline',
+  'mdi:refresh',
+  'mdi:school-outline',
+  'mdi:send',
+  'mdi:shield-account-outline',
+  'mdi:tag-text-outline',
+  'mdi:trash-can-outline',
+  'mdi:trophy',
+  'mdi:unicorn-variant',
+  'mdi:undo-variant',
+  'mdi:redo-variant',
+];
+
 export default defineNuxtConfig({
-  devtools: { enabled: true },
+  // DevTools 會增加本地 dev 啟動與 runtime 負擔；需要時用 NUXT_DEVTOOLS=true 開啟。
+  devtools: { enabled: process.env.NUXT_DEVTOOLS === 'true' },
+
+  css: ['~/assets/css/admin-theme.css'],
   
   modules: ["@nuxtjs/tailwindcss", "@nuxt/icon"],
 
-  icon: {
-    serverBundle: {
-      collections: ['mdi', 'uil', 'heroicons']
+  tailwindcss: {
+    // Tailwind Viewer 會在 dev 額外註冊路由與產物；目前不需要，關閉可降低啟動面積。
+    viewer: false,
+  },
+
+  vite: {
+    ssr: {
+      // Windows dev SSR can emit externalized imports like "C:/..." which Node ESM rejects.
+      // Keep dependencies bundled in dev so generated server imports stay portable.
+      noExternal: process.platform === 'win32' && process.env.NODE_ENV !== 'production' ? true : undefined,
     },
+  },
+
+  icon: {
+    // 專案 icon 名稱目前可枚舉，直接打進 client bundle。
+    // 這可避免 dev 時掃描檔案，也避免 Nitro 建立 /api/_nuxt_icon server bundle。
+    provider: 'none',
+    serverBundle: false,
     clientBundle: {
-      scan: true,
-      includeCustomCollections: true
+      icons: mdiClientIcons,
+      scan: false,
+      includeCustomCollections: false
     }
   },
 
@@ -31,6 +111,11 @@ export default defineNuxtConfig({
       htmlAttrs: {
         lang: 'zh-TW'
       },
+      link: [
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&display=swap' }
+      ],
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

@@ -33,7 +33,7 @@ $$ LANGUAGE plpgsql;
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  canonical_name TEXT NOT NULL,
+  canonical_name TEXT NOT NULL UNIQUE,
   description TEXT,
   century INT,
   start_year INT,
@@ -396,7 +396,7 @@ CREATE TRIGGER update_personas_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
-COMMENT ON TABLE personas IS 'Historical personas generated or edited for an event. Video and persona card fields are deprecated in the EBL rebuild.';
+COMMENT ON TABLE personas IS 'Historical personas generated or edited for an event. V1 expects one primary historical persona per event; video and persona card fields are deprecated in the EBL rebuild.';
 COMMENT ON COLUMN personas.event_id IS 'Parent historical event that this persona belongs to.';
 COMMENT ON COLUMN personas.name IS 'Primary display name shown to learners and used by prompt modules.';
 COMMENT ON COLUMN personas.english_name IS 'Optional English or source-language name for cross-lingual lookup and display.';
@@ -407,7 +407,7 @@ COMMENT ON COLUMN personas.sources IS 'Traceable references used to generate or 
 COMMENT ON COLUMN personas.prompt_profile IS '教師可編輯的 persona/context engineering 設定，例如 stance、speaking_style、knowledge_boundary、teacher_notes、deliberate_error_enabled；不是最終組好的完整 prompt。';
 COMMENT ON COLUMN personas.avatar_url IS 'Reserved for future avatar implementation.';
 COMMENT ON COLUMN personas.active IS 'Teacher/admin control for whether this persona is available in the chat experience.';
-COMMENT ON COLUMN personas.sort_order IS 'Display and default ordering for personas within the same event.';
+COMMENT ON COLUMN personas.sort_order IS 'Display and default ordering for personas within the same event. V1 treats sort_order=0 as the primary persona.';
 COMMENT ON COLUMN personas.revision_state IS 'Tracks whether the persona is LLM-generated, teacher-modified, or manually created.';
 
 -- =============================================================================

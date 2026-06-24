@@ -2,19 +2,35 @@ param(
   [int]$BackendPort = 8000,
   [int]$FrontendPort = 3000,
   [string]$HostAddress = "127.0.0.1",
-  [switch]$Install
+  [switch]$Install,
+  [switch]$UseSupabase,
+  [switch]$StartSupabase,
+  [switch]$KillExisting
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$ProjectName = Split-Path $Root -Leaf
 $BackendDir = Join-Path $Root "backend"
 $PythonExe = Join-Path $BackendDir ".venv\Scripts\python.exe"
 $Requirements = Join-Path $BackendDir "requirements.txt"
+$LogDir = Join-Path $Root ".dev-logs"
 
 function Write-DevLog {
   param([string]$Message)
   Write-Host "[dev] $Message" -ForegroundColor Cyan
+}
+
+function Write-Status {
+  param(
+    [string]$Name,
+    [bool]$Ok,
+    [string]$Message
+  )
+  $Label = if ($Ok) { "OK" } else { "WARN" }
+  $Color = if ($Ok) { "Green" } else { "Yellow" }
+  Write-Host ("[{0}] {1}: {2}" -f $Label, $Name, $Message) -ForegroundColor $Color
 }
 
 function Ensure-Command {
@@ -24,8 +40,223 @@ function Ensure-Command {
   }
 }
 
+function Test-TcpPort {
+  param(
+    [string]$ComputerName,
+    [int]$Port
+  )
+  try {
+    $Client = [System.Net.Sockets.TcpClient]::new()
+    $ConnectTask = $Client.ConnectAsync($ComputerName, $Port)
+    $Connected = $ConnectTask.Wait(1000) -and $Client.Connected
+    $Client.Dispose()
+    return $Connected
+  }
+  catch {
+    return $false
+  }
+}
+
+function Test-HttpOk {
+  param([string]$Url)
+  try {
+    $Response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+    return $Response.StatusCode -ge 200 -and $Response.StatusCode -lt 500
+  }
+  catch {
+    return $false
+  }
+}
+
+function Wait-HttpOk {
+  param(
+    [string]$Name,
+    [string]$Url,
+    [int]$TimeoutSeconds = 30
+  )
+  $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $Deadline) {
+    if (Test-HttpOk $Url) {
+      Write-Status $Name $true $Url
+      return $true
+    }
+    Start-Sleep -Seconds 1
+  }
+  Write-Status $Name $false "not responding at $Url"
+  return $false
+}
+
+function Get-ListeningProcessIds {
+  param([int]$Port)
+  return @(
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty OwningProcess -Unique
+  )
+}
+
+function Stop-ProcessTree {
+  param([int]$ProcessId)
+  if ($ProcessId -eq $PID) {
+    return
+  }
+
+  $Children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue
+  foreach ($Child in $Children) {
+    Stop-ProcessTree -ProcessId $Child.ProcessId
+  }
+
+  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if ($Process) {
+    Write-DevLog "Stopping process $ProcessId ($($Process.ProcessName))"
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Stop-ListeningProcesses {
+  param([int[]]$Ports)
+  foreach ($Port in $Ports) {
+    foreach ($ProcessId in Get-ListeningProcessIds $Port) {
+      Write-DevLog "Port $Port is held by PID $ProcessId; stopping it."
+      Stop-ProcessTree -ProcessId $ProcessId
+    }
+  }
+}
+
+function Wait-PortFree {
+  param(
+    [int]$Port,
+    [int]$TimeoutSeconds = 5
+  )
+
+  $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $Deadline) {
+    $ProcessIds = Get-ListeningProcessIds $Port
+    if ($ProcessIds.Count -eq 0) {
+      return $true
+    }
+    Start-Sleep -Milliseconds 200
+  }
+
+  return $false
+}
+
+function Assert-PortFree {
+  param([int]$Port)
+  $ProcessIds = Get-ListeningProcessIds $Port
+  if ($ProcessIds.Count -eq 0) {
+    return
+  }
+  if ($KillExisting) {
+    Write-Status "Port $Port" $false "occupied by PID(s): $($ProcessIds -join ', '); killing because -KillExisting was set"
+    foreach ($ProcessId in $ProcessIds) {
+      Stop-ProcessTree -ProcessId $ProcessId
+    }
+    if (-not (Wait-PortFree -Port $Port)) {
+      $RemainingProcessIds = Get-ListeningProcessIds $Port
+      throw "Port $Port is still occupied by PID(s): $($RemainingProcessIds -join ', ') after attempting to stop existing processes."
+    }
+    return
+  }
+  throw "Port $Port is already occupied by PID(s): $($ProcessIds -join ', '). Stop them first, or run scripts/dev.ps1 with -KillExisting."
+}
+
+function Reset-LogFiles {
+  param(
+    [string[]]$Paths,
+    [int]$TimeoutSeconds = 10
+  )
+
+  $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ($true) {
+    try {
+      foreach ($Path in $Paths) {
+        Set-Content -LiteralPath $Path -Value "" -Force
+      }
+      return
+    }
+    catch {
+      if ((Get-Date) -ge $Deadline) {
+        throw "Could not clear dev log files after stopping existing dev servers. Last error: $($_.Exception.Message)"
+      }
+      Start-Sleep -Milliseconds 250
+    }
+  }
+}
+
+function Test-DockerRunning {
+  if (-not (Get-Command "docker" -ErrorAction SilentlyContinue)) {
+    Write-Status "Docker" $false "docker command not found"
+    return $false
+  }
+
+  for ($Attempt = 1; $Attempt -le 5; $Attempt++) {
+    $Output = & cmd.exe /c "docker info >NUL 2>NUL"
+    $ExitCode = $LASTEXITCODE
+    if ($ExitCode -eq 0) {
+      Write-Status "Docker" $true "daemon is running"
+      return $true
+    }
+    Start-Sleep -Seconds 2
+  }
+
+  Write-Status "Docker" $false "Docker Desktop UI may be open, but the Docker daemon/CLI is not ready"
+  return $false
+}
+
+function Test-SupabaseRunning {
+  $DbContainer = "supabase_db_$ProjectName"
+  $KongContainer = "supabase_kong_$ProjectName"
+
+  $DbStatus = & cmd.exe /c "docker inspect --format ""{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}"" $DbContainer 2>NUL"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Status "Supabase" $false "DB container '$DbContainer' is missing; local stack is incomplete"
+    return $false
+  }
+
+  $KongStatus = & cmd.exe /c "docker inspect --format ""{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}"" $KongContainer 2>NUL"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Status "Supabase" $false "Kong container '$KongContainer' is missing"
+    return $false
+  }
+
+  $SupabasePortOpen = Test-TcpPort $HostAddress 54321
+  if ($DbStatus -match "^running (healthy|no-healthcheck)" -and $KongStatus -match "^running (healthy|no-healthcheck)" -and $SupabasePortOpen) {
+    Write-Status "Supabase" $true "local stack is running at http://${HostAddress}:54321"
+    return $true
+  }
+
+  Write-Status "Supabase" $false "local stack is not healthy (db: $DbStatus, kong: $KongStatus, port 54321 open: $SupabasePortOpen)"
+  return $false
+}
+
 Ensure-Command "python"
 Ensure-Command "pnpm"
+
+$DockerRunning = Test-DockerRunning
+$SupabaseRunning = Test-SupabaseRunning
+
+if ($StartSupabase) {
+  if (-not $DockerRunning) {
+    throw "Cannot start Supabase because Docker Desktop is not running. Start Docker Desktop first, then run pnpm dev:full:supabase."
+  }
+  if (-not $SupabaseRunning) {
+    Write-DevLog "Starting local Supabase..."
+    pnpm supabase:start
+    $SupabaseRunning = Test-SupabaseRunning
+  }
+}
+
+if (-not $UseSupabase) {
+  $UseSupabase = $true
+}
+
+if ($UseSupabase) {
+  if (-not $SupabaseRunning) {
+    throw "Supabase is required for dev runtime, but local Supabase is not healthy. Run pnpm dev:cleanup:supabase, then pnpm dev:full."
+  }
+  $env:BACKEND_REPOSITORY = "supabase"
+  $env:SUPABASE_URL = "http://${HostAddress}:54321"
+}
 
 if (-not (Test-Path $PythonExe)) {
   Write-DevLog "Creating backend virtual environment..."
@@ -40,41 +271,73 @@ if ($Install) {
 
 $BackendUrl = "http://${HostAddress}:$BackendPort"
 $FrontendUrl = "http://${HostAddress}:$FrontendPort"
+$BackendLog = Join-Path $LogDir "backend.log"
+$BackendErrLog = Join-Path $LogDir "backend.err.log"
+$FrontendLog = Join-Path $LogDir "frontend.log"
+$FrontendErrLog = Join-Path $LogDir "frontend.err.log"
+
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+
+Assert-PortFree $BackendPort
+Assert-PortFree $FrontendPort
+Reset-LogFiles -Paths @($BackendLog, $BackendErrLog, $FrontendLog, $FrontendErrLog)
 
 Write-DevLog "Starting FastAPI backend at $BackendUrl"
-$BackendJob = Start-Job -Name "histosphere-backend" -ArgumentList $BackendDir, $PythonExe, $HostAddress, $BackendPort -ScriptBlock {
-  param($BackendDir, $PythonExe, $HostAddress, $BackendPort)
-  Set-Location $BackendDir
-  & $PythonExe -m uvicorn app.main:app --reload --host $HostAddress --port $BackendPort 2>&1 |
-    ForEach-Object { $_.ToString() }
-}
+$BackendCommand = "& `"$PythonExe`" -m uvicorn app.main:app --reload --host $HostAddress --port $BackendPort"
+$BackendProcess = Start-Process `
+  -FilePath "powershell" `
+  -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $BackendCommand) `
+  -WorkingDirectory $BackendDir `
+  -RedirectStandardOutput $BackendLog `
+  -RedirectStandardError $BackendErrLog `
+  -WindowStyle Hidden `
+  -PassThru
 
 Write-DevLog "Starting Nuxt frontend at $FrontendUrl"
-$FrontendJob = Start-Job -Name "histosphere-frontend" -ArgumentList $Root, $HostAddress, $FrontendPort, $BackendUrl -ScriptBlock {
-  param($Root, $HostAddress, $FrontendPort, $BackendUrl)
-  Set-Location $Root
-  $env:NUXT_API_URL = $BackendUrl
-  pnpm dev --host $HostAddress --port $FrontendPort 2>&1 |
-    ForEach-Object { $_.ToString() }
+$env:NUXT_API_URL = $BackendUrl
+$FrontendCommand = "pnpm dev --host $HostAddress --port $FrontendPort"
+$FrontendProcess = Start-Process `
+  -FilePath "powershell" `
+  -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $FrontendCommand) `
+  -WorkingDirectory $Root `
+  -RedirectStandardOutput $FrontendLog `
+  -RedirectStandardError $FrontendErrLog `
+  -WindowStyle Hidden `
+  -PassThru
+
+Write-DevLog "Startup status"
+Write-Status "Repository" $true $env:BACKEND_REPOSITORY
+if ($env:BACKEND_REPOSITORY -eq "supabase") {
+  Write-Status "Supabase URL" $true $env:SUPABASE_URL
 }
+Wait-HttpOk "Backend" "$BackendUrl/health" 30 | Out-Null
+Wait-HttpOk "Frontend" $FrontendUrl 45 | Out-Null
+Test-SupabaseRunning | Out-Null
 
 Write-DevLog "Frontend: $FrontendUrl"
 Write-DevLog "Backend:  $BackendUrl"
+Write-DevLog "Logs:     $LogDir"
 Write-DevLog "Press Ctrl+C to stop both servers."
 
 try {
   while ($true) {
-    foreach ($Job in @($BackendJob, $FrontendJob)) {
-      Receive-Job -Job $Job -ErrorAction Continue
-      if ($Job.State -in @("Failed", "Stopped", "Completed")) {
-        throw "$($Job.Name) exited with state $($Job.State)."
-      }
+    if ($BackendProcess.HasExited) {
+      throw "FastAPI backend exited with code $($BackendProcess.ExitCode). Check $BackendLog and $BackendErrLog."
     }
-    Start-Sleep -Milliseconds 500
+    if ($FrontendProcess.HasExited) {
+      throw "Nuxt frontend exited with code $($FrontendProcess.ExitCode). Check $FrontendLog and $FrontendErrLog."
+    }
+    Start-Sleep -Seconds 1
   }
 }
 finally {
   Write-DevLog "Stopping dev servers..."
-  Stop-Job -Job $BackendJob, $FrontendJob -ErrorAction SilentlyContinue
-  Remove-Job -Job $BackendJob, $FrontendJob -Force -ErrorAction SilentlyContinue
+  if ($BackendProcess -and -not $BackendProcess.HasExited) {
+    Stop-ProcessTree -ProcessId $BackendProcess.Id
+  }
+  if ($FrontendProcess -and -not $FrontendProcess.HasExited) {
+    Stop-ProcessTree -ProcessId $FrontendProcess.Id
+  }
+  Stop-ListeningProcesses -Ports @($BackendPort, $FrontendPort)
+  Write-DevLog "Stopped. If a browser still shows the app briefly, it is likely cached or a TIME_WAIT socket, not a running server."
 }

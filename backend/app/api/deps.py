@@ -12,6 +12,7 @@ from app.services import (
     PersonaService,
     PromptService,
     RagPipelineService,
+    SessionService,
     TaskService,
 )
 
@@ -58,6 +59,10 @@ def get_persona_service(request: Request) -> PersonaService:
 
 def get_task_service(request: Request) -> TaskService:
     return request.app.state.task_service
+
+
+def get_session_service(request: Request) -> SessionService:
+    return request.app.state.session_service
 
 
 def require_admin_key(x_admin_key: str | None = Header(default=None)) -> None:

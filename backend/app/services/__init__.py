@@ -5,6 +5,7 @@ from .event_service import EventService
 from .persona_service import PersonaService
 from .prompt_service import PromptService
 from .rag_pipeline_service import RagPipelineService
+from .session_service import SessionService
 from .task_service import TaskService
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "PersonaService",
     "PromptService",
     "RagPipelineService",
+    "SessionService",
     "TaskService",
 ]

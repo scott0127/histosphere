@@ -6,6 +6,44 @@ export type ConditionKey =
 
 export type SpeakerType = 'learner' | 'assistant' | 'persona';
 
+export type TaskQuestionType = 'short_answer' | 'cloze' | 'multiple_choice' | 'true_false';
+
+export type TaskAnswerValue = string | boolean | string[] | null;
+
+export interface TaskQuestionOption {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface TaskQuestion {
+  id: string;
+  type: TaskQuestionType;
+  blank_id?: string | null;
+  prompt: string;
+  placeholder?: string | null;
+  source_text?: string | null;
+  options?: TaskQuestionOption[];
+  required?: boolean;
+  correct_answer?: unknown;
+  explanation?: string | null;
+}
+
+export interface TaskEvaluationPayload {
+  questions?: TaskQuestion[];
+  rubric?: string | null;
+  target_misconceptions?: string[];
+  [key: string]: unknown;
+}
+
+export interface TaskStudentAnswer {
+  question_id: string;
+  blank_id?: string | null;
+  type: TaskQuestionType;
+  prompt: string;
+  value: TaskAnswerValue;
+}
+
 export interface HistoricalEvent {
   id: string;
   canonical_name: string;
@@ -40,7 +78,7 @@ export interface EventTask {
   title?: string | null;
   story_text: string;
   display_text: string;
-  evaluation_payload: Record<string, unknown>;
+  evaluation_payload: TaskEvaluationPayload;
   revision_state: 'llm_generated' | 'teacher_modified' | 'manual';
   created_at: string;
   updated_at: string;
@@ -138,6 +176,10 @@ export interface TaskSubmitResponse {
   history: ChatMessage[];
 }
 
+export interface TaskDraftResponse {
+  attempt: TaskAttempt;
+}
+
 export interface ConversationLoadResponse {
   conversation_id: string;
   event: HistoricalEvent;
@@ -146,6 +188,42 @@ export interface ConversationLoadResponse {
   condition?: ExperimentCondition | null;
   task_attempt?: TaskAttempt | null;
   related_events?: RelatedEvent[];
+}
+
+export interface ExperimentSession {
+  id: string;
+  condition_id?: string | null;
+  condition_key_snapshot: ConditionKey;
+  user_id?: string | null;
+  event_id: string;
+  status: 'initialized' | 'task_submitted' | 'conversation_started' | 'completed' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionStateResponse {
+  session: ExperimentSession;
+  event: HistoricalEvent;
+  task?: EventTask | null;
+  personas: Persona[];
+  condition?: ExperimentCondition | null;
+  attempt?: TaskAttempt | null;
+  conversation_id?: string | null;
+}
+
+export interface UserProgressItem {
+  event_id: string;
+  condition_key: ConditionKey;
+  session_id: string;
+  task_id?: string | null;
+  attempt_id?: string | null;
+  conversation_id?: string | null;
+  status: 'task_started' | 'task_draft' | 'task_submitted' | 'chat_started' | 'completed' | 'archived';
+  updated_at: string;
+}
+
+export interface UserProgressResponse {
+  progress: UserProgressItem[];
 }
 
 export interface ChatResponse {
@@ -162,6 +240,6 @@ export interface ChatResponse {
 export interface AdminSnapshotResponse {
   events: EventWithPersonas[];
   conditions: ExperimentCondition[];
-  sessions: Array<Record<string, unknown>>;
+  sessions: ExperimentSession[];
   research_logs: Array<Record<string, unknown>>;
 }

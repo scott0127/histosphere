@@ -1,3 +1,9 @@
+"""Experiment condition API endpoint.
+
+本模組提供前端首頁使用的 2x2 condition 清單。
+condition 決定 EBL 與 AI historical persona role-play 的開關。
+"""
+
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_repository
@@ -11,4 +17,5 @@ router = APIRouter(prefix="/api/conditions", tags=["conditions"])
 def list_conditions(
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> list[ExperimentCondition]:
+    """回傳目前 active 的實驗條件。"""
     return repository.list_conditions(active_only=True)

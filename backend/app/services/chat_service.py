@@ -1,3 +1,10 @@
+"""Chat orchestration service.
+
+本模組是對話流程的核心協調層：讀取 conversation/session/condition，
+決定是否使用 historical persona，組裝 prompt，呼叫 LLM provider，
+最後把 learner 與 AI 回覆都寫入 messages 與 research_logs。
+"""
+
 from fastapi import HTTPException, status
 
 from app.models.domain import ChatMessage, ResearchLog
@@ -10,6 +17,8 @@ from app.services.rag_pipeline_service import RagPipelineService
 
 
 class ChatService:
+    """負責執行一次 learner -> AI 的完整聊天回合。"""
+
     def __init__(
         self,
         repository: RepositoryProtocol,
@@ -23,6 +32,7 @@ class ChatService:
         self.rag_pipeline = rag_pipeline
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
+        """依照 2x2 condition 產生回覆，並保存完整對話與研究紀錄。"""
         conversation = self.repository.get_conversation(request.conversation_id)
         if not conversation:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -37,6 +47,7 @@ class ChatService:
         if not condition:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
 
+        # task_attempt 讓 EBL 條件可以引用 learner 的 productive error / misconception。
         task_attempt = (
             self.repository.get_task_attempt(conversation.task_attempt_id)
             if conversation.task_attempt_id
@@ -49,6 +60,7 @@ class ChatService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active personas found")
             selected = self._select_persona(event.id, personas, request.target_persona_id, conversation.id)
 
+        # learner message 與 AI message 都用 sequence_index，方便前端穩定回放。
         user_message = ChatMessage(
             conversation_id=conversation.id,
             speaker_type="learner",
@@ -58,6 +70,7 @@ class ChatService:
             metadata={"condition_key": condition.condition_key},
         )
         user_message = self.repository.add_message(user_message)
+        # research_logs 記錄行為事件；messages 則保留實際對話內容。
         self.repository.log_research(
             ResearchLog(
                 user_id=conversation.user_id,
@@ -71,6 +84,7 @@ class ChatService:
             )
         )
 
+        # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
         rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
         prompt = self.prompt_service.assemble_chat_prompt(
             event=event,
@@ -91,6 +105,7 @@ class ChatService:
         )
 
         assistant_name = self._assistant_name(condition, selected)
+        # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
         model_message = ChatMessage(
             conversation_id=conversation.id,
             speaker_type="persona" if selected else "assistant",
@@ -137,19 +152,17 @@ class ChatService:
         )
 
     def _select_persona(self, event_id: str, personas, target_persona_id: str | None, conversation_id: str):
+        """選擇要回覆的 persona；V1 預設永遠使用排序第一位 primary persona。"""
         if target_persona_id:
             selected = self.repository.get_persona(target_persona_id)
             if not selected or selected.event_id != event_id or not selected.active:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected persona not found")
             return selected
-        persona_messages = [
-            message for message in self.repository.list_messages(conversation_id)
-            if message.speaker_type == "persona"
-        ]
-        return personas[len(persona_messages) % len(personas)]
+        return personas[0]
 
     @staticmethod
     def _assistant_name(condition, selected) -> str:
+        """回傳前端要顯示的 speaker 名稱。"""
         if selected:
             return selected.name
         return "AI Tutor" if condition.ebl_enabled else "AI Assistant"

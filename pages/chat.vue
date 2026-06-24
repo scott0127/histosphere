@@ -1,4 +1,5 @@
 <template>
+  <!-- chat.vue 是容器頁，只處理資料載入與 API 呼叫；實際對話 UI 在 ChatScreen.vue。 -->
   <ChatScreen
     v-if="chatState"
     :event="chatState.event"
@@ -6,12 +7,12 @@
     :history="history"
     :conversation-id="conversationId"
     :condition="chatState.condition"
-    :task-attempt="chatState.attempt || chatState.task_attempt"
+    :task-attempt="taskAttempt"
     :dynamic-context="dynamicContext"
     @reset="handleReset"
     @send-message="handleSendMessage"
   />
-  <div v-else class="flex h-screen items-center justify-center bg-slate-50 font-sans text-slate-600">
+  <div v-else class="flex h-screen items-center justify-center bg-[var(--admin-page)] font-sans text-[var(--admin-copy)]">
     <div class="text-center">
       <Icon name="mdi:loading" class="mx-auto h-8 w-8 animate-spin" />
       <p class="mt-3">載入對話...</p>
@@ -20,6 +21,10 @@
 </template>
 
 <script setup lang="ts">
+// 對話頁資料流：
+// - 若從 task submit 導入，優先使用 useState('chatData')，避免剛建立 conversation 後再打一輪載入。
+// - 若使用者重新整理或直接進入網址，改用 conversationId 從後端重新載入。
+// - 傳送訊息時先做 optimistic UI，再用後端回傳的正式 message 替換。
 import type {
   ChatMessage,
   ChatResponse,
@@ -38,11 +43,13 @@ const conversationId = computed(() => route.query.conversationId as string);
 
 type ChatState = (TaskSubmitResponse | ConversationLoadResponse) & {
   attempt?: TaskSubmitResponse['attempt'];
+  task_attempt?: ConversationLoadResponse['task_attempt'];
 };
 
 const chatState = useState<ChatState | null>('chatData', () => null);
 const history = ref<ChatMessage[]>([]);
 const dynamicContext = ref('Conversation ready.');
+const taskAttempt = computed(() => chatState.value?.attempt || chatState.value?.task_attempt || null);
 
 onMounted(async () => {
   if (chatState.value && 'history' in chatState.value && chatState.value.history?.length) {
@@ -61,6 +68,8 @@ onMounted(async () => {
   }
 });
 
+// 先把 learner 訊息與「...」暫存回覆放進 history，讓 UI 立即有回應感。
+// 後端回傳後，最後一則 placeholder 會被正式 message 取代。
 const handleSendMessage = async (userInput: string, targetPersonaId?: string) => {
   if (!conversationId.value || !chatState.value) return;
 
@@ -108,6 +117,7 @@ const handleSendMessage = async (userInput: string, targetPersonaId?: string) =>
   }
 };
 
+// 回素材庫時清掉暫存 chatData，避免下一次進 chat 時混到舊 session。
 const handleReset = async () => {
   chatState.value = null;
   await navigateTo('/');

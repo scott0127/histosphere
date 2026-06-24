@@ -16,7 +16,23 @@ class EventCheckRequest(BaseModel):
     event_name: str = Field(..., min_length=1)
 
 
+class EventUpdateRequest(BaseModel):
+    canonical_name: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+    century: int | None = None
+    start_year: int | None = None
+    end_year: int | None = None
+    context: str | None = None
+    source_summary: dict[str, Any] | None = None
+
+
 class TaskSubmitRequest(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+    user_id: str | None = None
+
+
+class TaskDraftRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     response_payload: dict[str, Any] = Field(default_factory=dict)
     user_id: str | None = None
