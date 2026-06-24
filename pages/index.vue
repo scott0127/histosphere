@@ -75,7 +75,7 @@ import EventDetailModal from '~/components/event-library/EventDetailModal.vue';
 import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vue';
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
-import type { ConditionKey, EventInitializeResponse, EventWithPersonas, ExperimentCondition } from '~/types';
+import type { ConditionKey, EventInitializeResponse, EventWithPersonas, ExperimentCondition, UserProgressItem, UserProgressResponse, UserProgressStatus } from '~/types';
 
 definePageMeta({
   layout: false,
@@ -83,9 +83,10 @@ definePageMeta({
 });
 
 type LocalConditionProgress = {
-  status: 'not_started' | 'task_started' | 'chat_started';
+  status: 'not_started' | UserProgressStatus;
   sessionId?: string;
   taskId?: string;
+  attemptId?: string;
   conversationId?: string;
   updatedAt: string;
 };
@@ -127,18 +128,15 @@ onMounted(async () => {
   initAdminMode();
   await initializeAuth();
   participantId.value = loadParticipantId();
-  loadLocalProgress();
-  await Promise.all([fetchConditions(), fetchEvents()]);
+  await Promise.all([fetchConditions(), fetchEvents(), loadProgressFromApi()]);
 });
-
-watch(participantId, () => loadLocalProgress());
 
 watch(authStorageScope, () => {
   handleExitAdminMode();
   detailEvent.value = null;
   localProgress.value = {};
   participantId.value = loadParticipantId();
-  loadLocalProgress();
+  loadProgressFromApi();
 });
 
 watch(isAuthenticated, (authenticated) => {
@@ -229,11 +227,24 @@ const handleCreateEvent = async () => {
 const startCondition = async (condition: ExperimentCondition) => {
   if (!detailEvent.value) return;
   const progress = progressFor(condition.condition_key);
-  if (progress?.status === 'chat_started' && progress.conversationId) {
+  if (progress?.conversationId) {
     await navigateTo({
       path: '/chat',
       query: {
         conversationId: progress.conversationId,
+      },
+    });
+    return;
+  }
+  if (progress?.sessionId && progress.taskId) {
+    await navigateTo({
+      path: '/task',
+      query: {
+        taskId: progress.taskId,
+        sessionId: progress.sessionId,
+        participantId: participantId.value,
+        eventId: detailEvent.value.id,
+        conditionKey: condition.condition_key,
       },
     });
     return;
@@ -268,6 +279,7 @@ const initializeEvent = async (
         taskId: response.task.id,
         updatedAt: new Date().toISOString(),
       });
+      await loadProgressFromApi();
       const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
       taskData.value = response;
       await navigateTo({
@@ -305,7 +317,7 @@ const saveParticipant = () => {
   const next = participantId.value.trim() || defaultParticipantId();
   participantId.value = next;
   localStorage.setItem(participantStorageKey(), next);
-  loadLocalProgress();
+  loadProgressFromApi();
 };
 
 const defaultParticipantId = () => {
@@ -336,7 +348,40 @@ const participantUuid = (value: string) => {
 
 const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}:${participantId.value || defaultParticipantId()}`;
 
-// 從 localStorage 讀取目前受測者的 condition 完成狀態。
+// 優先從後端讀取目前受測者的 condition 進度；localStorage 僅作為開發 fallback。
+const loadProgressFromApi = async () => {
+  const userId = participantUuid(participantId.value);
+  try {
+    const response = await $fetch<UserProgressResponse>('/api/sessions/progress', {
+      query: { user_id: userId },
+    });
+    localProgress.value = progressItemsToLocalMap(response.progress || []);
+    saveLocalProgress();
+  } catch (e) {
+    console.warn('Failed to load session progress, using local fallback:', e);
+    loadLocalProgress();
+  }
+};
+
+const progressItemsToLocalMap = (items: UserProgressItem[]) => {
+  const next: Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>> = {};
+  for (const item of items) {
+    next[item.event_id] = {
+      ...(next[item.event_id] || {}),
+      [item.condition_key]: {
+        status: item.status,
+        sessionId: item.session_id,
+        taskId: item.task_id || undefined,
+        attemptId: item.attempt_id || undefined,
+        conversationId: item.conversation_id || undefined,
+        updatedAt: item.updated_at,
+      },
+    };
+  }
+  return next;
+};
+
+// 從 localStorage 讀取目前受測者的 condition 完成狀態，僅供 API 暫時失敗時 fallback。
 const loadLocalProgress = () => {
   if (!import.meta.client) return;
   try {

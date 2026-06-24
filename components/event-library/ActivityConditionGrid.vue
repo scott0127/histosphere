@@ -88,12 +88,13 @@
 // ActivityConditionGrid 封裝 2x2 活動按鈕與自訂 hover 動畫。
 // 資料與導頁由 page 傳入/接收；這裡只負責排序、標籤、狀態與視覺互動。
 import { computed } from 'vue';
-import type { ConditionKey, ExperimentCondition } from '~/types';
+import type { ConditionKey, ExperimentCondition, UserProgressStatus } from '~/types';
 
 type LocalConditionProgress = {
-  status: 'not_started' | 'task_started' | 'chat_started';
+  status: 'not_started' | UserProgressStatus;
   sessionId?: string;
   taskId?: string;
+  attemptId?: string;
   conversationId?: string;
   updatedAt: string;
 };
@@ -146,7 +147,10 @@ const progressFor = (conditionKey: ConditionKey) => props.progressByCondition[co
 const progressLabel = (conditionKey: ConditionKey) => {
   const progress = progressFor(conditionKey);
   if (!progress) return '未開始';
-  if (progress.status === 'chat_started') return '已完成';
+  if (progress.status === 'archived') return '已封存';
+  if (progress.status === 'completed' || progress.status === 'chat_started') return '已完成';
+  if (progress.status === 'task_submitted') return '已送出';
+  if (progress.status === 'task_draft') return '草稿';
   return '進行中';
 };
 
@@ -155,7 +159,10 @@ const progressBadgeClass = (conditionKey: ConditionKey) => {
   const progress = progressFor(conditionKey);
   const base = 'shrink-0 rounded-full px-3 py-1 text-xs font-black';
   if (!progress) return `${base} bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]`;
-  if (progress.status === 'chat_started') return `${base} bg-[#dcebd6] text-[#3f6d4a]`;
+  if (progress.status === 'completed' || progress.status === 'chat_started') return `${base} bg-[#dcebd6] text-[#3f6d4a]`;
+  if (progress.status === 'task_submitted') return `${base} bg-[#e4dfd6] text-[var(--admin-coffee)]`;
+  if (progress.status === 'task_draft') return `${base} bg-[var(--admin-coffee-soft)] text-[var(--admin-copy)]`;
+  if (progress.status === 'archived') return `${base} bg-[var(--admin-surface-sunken)] text-[var(--admin-muted)]`;
   return `${base} bg-[var(--admin-surface-sunken)] text-[var(--admin-copy)]`;
 };
 

@@ -1,6 +1,6 @@
 # Development Gaps
 
-Updated: 2026-06-23
+Updated: 2026-06-24
 
 This document tracks what has been completed, what is still missing, and what frontend/backend gaps remain. It consolidates the former `admin-backend-todo.md`, `backend-implementation-audit.md`, and risk sections from `frontend-audit.md`.
 
@@ -14,6 +14,8 @@ This document tracks what has been completed, what is still missing, and what fr
 - Session progress endpoint `GET /api/sessions/progress` implemented.
 - Session state reload endpoint `GET /api/sessions/{session_id}/state` implemented.
 - Task draft save endpoint `PATCH /api/tasks/{task_id}/draft` implemented.
+- Frontend event library now reads condition progress from the session progress API, with localStorage only as a fallback.
+- Frontend task gate now reloads from `sessionId` and autosaves draft answers through the task draft API.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
 - Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
 - One-time scripts (`test-gsap.mjs`, `process-image.mjs`) and broken font file deleted.
@@ -26,7 +28,7 @@ This document tracks what has been completed, what is still missing, and what fr
 | Task answers | `task_attempts.response_payload` stores full answer bundle | `task_answers` table exists but unused; missing per-question scoring, answer key audit trail |
 | Event materials | Events can be PATCH-updated from admin UI; sample materials via seed.sql | Missing version history, material readiness check, archive strategy |
 | Prompt management | Condition-level prompt managed in backend code; `personas.prompt_profile` editable | Missing prompt preview/dry-run endpoint, prompt hash/audit |
-| Participant/session | `experiment_sessions` has user_id; session progress/state endpoints exist | Missing formal participant account mapping, cross-device state recovery |
+| Participant/session | `experiment_sessions` has user_id; session progress/state endpoints exist; event library and task gate use them | Missing formal participant account mapping, participant roster/admin import, cross-device identity policy |
 | RAG/source | `wiki_sources` and `knowledge_chunks` tables exist; RAG retrieve is empty implementation | Missing ingestion, chunking, embedding/vector retrieval, source citation |
 | Admin auth | All `/api/admin/*` check `x-admin-key`; frontend uses Supabase Auth + admin key | Missing role-based admin policy, multi-user management, fine-grained audit diff |
 | Tests | API tests use in-memory repository + fake LLM provider | Missing Supabase repository integration tests, migration/seed SQL smoke test |
@@ -36,7 +38,7 @@ This document tracks what has been completed, what is still missing, and what fr
 - Build formal task question CRUD API instead of whole-JSON PATCH.
 - Define backend validation rules for question schema: types, IDs, blank IDs, options, correct answers, required fields, explanations.
 - Support question ordering, duplication, deactivation, and deletion records.
-- Support task draft/autosave API (partially done — `PATCH /tasks/{id}/draft` exists, but no frontend undo/redo persistence).
+- Support durable undo/redo history for task authoring edits.
 - Support answer key version history so research data collected under previous answer keys remains traceable.
 - Support story-first token audit: record `display_text` token ↔ question mapping.
 - Build structured story segments to replace raw `display_text` string manipulation.
@@ -68,7 +70,7 @@ This document tracks what has been completed, what is still missing, and what fr
 
 - Build conversation/session reload API so `/chat` can restore from `conversationId` alone (event, condition, personas, task attempt, history).
 - Formalize participant ID ↔ Supabase user ID ↔ experiment session ID mapping.
-- Build formal progress API to replace localStorage condition progress.
+- Keep localStorage progress only as a temporary fallback; production flow should depend on backend session APIs.
 - Add UI/interaction audit log for formal experiment sessions.
 
 ## Auth & Audit Gaps
@@ -80,18 +82,19 @@ This document tracks what has been completed, what is still missing, and what fr
 
 ## Frontend Remaining Risks
 
-1. `/task` relies on `useState('taskData')`; reloading loses context. Session state endpoint exists but frontend integration is pending.
+1. `/chat` should be reviewed for refresh-only recovery from `conversationId` and aligned with the route hierarchy decision.
 2. `Typewriter` animation may affect reading-time measures. Consider disabling for formal experiment sessions.
 3. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
 4. Auth pages exist but are not connected to participant/session assignment.
 5. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
 6. API orchestration still lives in pages. Future refactor should add `useExperimentSession`, `useTaskGate`, `useConversation`, `useAdminSnapshot` composables.
+7. Route hierarchy should be normalized after session recovery is stable, for example `/events/[event_id]`, `/sessions/[session_id]/task`, and `/conversations/[conversation_id]`.
 
 ## Suggested Next Milestones
 
-1. Integrate session state endpoint into frontend `/task` for refresh safety.
-2. Move `$fetch` calls into composables.
-3. Add explicit participant/session ID handling.
+1. Move `$fetch` calls into composables.
+2. Add explicit participant/session ID handling.
+3. Normalize route hierarchy around event, session, and conversation resources.
 4. Harden LiteLLM structured outputs for task generation and judgement.
 5. Add save status/toasts to admin edits.
 6. Decide blank-level scoring and EBL coding with advisor.

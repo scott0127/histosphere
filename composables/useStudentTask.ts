@@ -8,6 +8,7 @@ import type {
   TaskQuestion,
   TaskStudentAnswer,
   TaskSubmitResponse,
+  UserProgressStatus,
 } from '~/types';
 
 export type TaskStorySegment =
@@ -17,9 +18,10 @@ export type TaskStorySegment =
 const createBlankPattern = () => /\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}/g;
 
 type LocalConditionProgress = {
-  status: 'not_started' | 'task_started' | 'chat_started';
+  status: 'not_started' | UserProgressStatus;
   sessionId?: string;
   taskId?: string;
+  attemptId?: string;
   conversationId?: string;
   updatedAt: string;
 };

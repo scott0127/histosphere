@@ -10,6 +10,14 @@ export type TaskQuestionType = 'short_answer' | 'cloze' | 'multiple_choice' | 't
 
 export type TaskAnswerValue = string | boolean | string[] | null;
 
+export type UserProgressStatus =
+  | 'task_started'
+  | 'task_draft'
+  | 'task_submitted'
+  | 'chat_started'
+  | 'completed'
+  | 'archived';
+
 export interface TaskQuestionOption {
   id: string;
   label: string;
@@ -218,7 +226,7 @@ export interface UserProgressItem {
   task_id?: string | null;
   attempt_id?: string | null;
   conversation_id?: string | null;
-  status: 'task_started' | 'task_draft' | 'task_submitted' | 'chat_started' | 'completed' | 'archived';
+  status: UserProgressStatus;
   updated_at: string;
 }
 

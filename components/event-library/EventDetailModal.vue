@@ -90,14 +90,15 @@
 <script setup lang="ts">
 // EventDetailModal 是事件素材與活動入口的組合元件。
 // 它不直接呼叫 API；刪除、受測者儲存、活動啟動都交回 page 控制。
-import type { ConditionKey, EventWithPersonas, ExperimentCondition } from '~/types';
+import type { ConditionKey, EventWithPersonas, ExperimentCondition, UserProgressStatus } from '~/types';
 import ActivityConditionGrid from '~/components/event-library/ActivityConditionGrid.vue';
 import { eventMotif, formatYears } from '~/utils/eventPresentation';
 
 type LocalConditionProgress = {
-  status: 'not_started' | 'task_started' | 'chat_started';
+  status: 'not_started' | UserProgressStatus;
   sessionId?: string;
   taskId?: string;
+  attemptId?: string;
   conversationId?: string;
   updatedAt: string;
 };
