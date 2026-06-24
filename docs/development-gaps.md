@@ -16,6 +16,8 @@ This document tracks what has been completed, what is still missing, and what fr
 - Task draft save endpoint `PATCH /api/tasks/{task_id}/draft` implemented.
 - Frontend event library now reads condition progress from the session progress API, with localStorage only as a fallback.
 - Frontend task gate now reloads from `sessionId` and autosaves draft answers through the task draft API.
+- Conversation UI moved to `/conversations/[conversationId]`; `/chat?conversationId=...` remains only as a legacy redirect.
+- Conversation API orchestration moved from page code into `useConversationSession`.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
 - Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
 - One-time scripts (`test-gsap.mjs`, `process-image.mjs`) and broken font file deleted.
@@ -68,7 +70,7 @@ This document tracks what has been completed, what is still missing, and what fr
 
 ## Learning Flow & Conversation Gaps
 
-- Build conversation/session reload API so `/chat` can restore from `conversationId` alone (event, condition, personas, task attempt, history).
+- Keep `/chat?conversationId=...` as legacy redirect only; new links should use `/conversations/[conversationId]`.
 - Formalize participant ID ↔ Supabase user ID ↔ experiment session ID mapping.
 - Keep localStorage progress only as a temporary fallback; production flow should depend on backend session APIs.
 - Add UI/interaction audit log for formal experiment sessions.
@@ -82,19 +84,18 @@ This document tracks what has been completed, what is still missing, and what fr
 
 ## Frontend Remaining Risks
 
-1. `/chat` should be reviewed for refresh-only recovery from `conversationId` and aligned with the route hierarchy decision.
-2. `Typewriter` animation may affect reading-time measures. Consider disabling for formal experiment sessions.
-3. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
-4. Auth pages exist but are not connected to participant/session assignment.
-5. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
-6. API orchestration still lives in pages. Future refactor should add `useExperimentSession`, `useTaskGate`, `useConversation`, `useAdminSnapshot` composables.
-7. Route hierarchy should be normalized after session recovery is stable, for example `/events/[event_id]`, `/sessions/[session_id]/task`, and `/conversations/[conversation_id]`.
+1. `Typewriter` animation may affect reading-time measures. Consider disabling for formal experiment sessions.
+2. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
+3. Auth pages exist but are not connected to participant/session assignment.
+4. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
+5. Some API orchestration still lives in pages. Future refactor should add `useExperimentSession`, `useTaskGate`, and `useAdminSnapshot` composables.
+6. Remaining route hierarchy work: normalize task routes around session resources, for example `/sessions/[session_id]/task`.
 
 ## Suggested Next Milestones
 
-1. Move `$fetch` calls into composables.
+1. Move remaining `$fetch` calls into composables.
 2. Add explicit participant/session ID handling.
-3. Normalize route hierarchy around event, session, and conversation resources.
+3. Normalize task routes around session resources.
 4. Harden LiteLLM structured outputs for task generation and judgement.
 5. Add save status/toasts to admin edits.
 6. Decide blank-level scoring and EBL coding with advisor.

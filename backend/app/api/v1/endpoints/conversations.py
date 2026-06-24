@@ -5,6 +5,8 @@ V1 一般由 task submit 後自動建立 conversation；POST /conversations
 主要保留相容性與未來 admin/manual flow。
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_conversation_service
@@ -31,8 +33,8 @@ async def create_conversation(
 
 @router.get("/{conversation_id}", response_model=ConversationLoadResponse)
 def load_conversation(
-    conversation_id: str,
+    conversation_id: UUID,
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationLoadResponse:
     """載入聊天頁回放所需的完整 conversation 狀態。"""
-    return service.load_conversation(conversation_id)
+    return service.load_conversation(str(conversation_id))

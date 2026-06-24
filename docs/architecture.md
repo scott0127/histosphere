@@ -1,6 +1,6 @@
 # Backend Architecture
 
-Updated: 2026-06-23
+Updated: 2026-06-24
 
 This document is the maintenance baseline for the Histosphere FastAPI backend. It must be updated whenever the API contract, database schema, prompt modules, or experiment flow changes.
 
@@ -107,6 +107,7 @@ Event material reuse rule: one canonical historical event owns exactly one reusa
 Accepted Supabase service role environment variable names:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_KEY`
 - `SUPABASE_KEY_SERVICE_ROLE`
 - `SUPABASE_KEY_service_role`
 
@@ -300,7 +301,7 @@ Response body:
 
 Error cases: `404` task/session/event/condition not found, `400` task does not belong to session event.
 
-Frontend caller: `pages/task.vue`
+Frontend caller: `pages/task.vue`, then `/conversations/[conversationId]`
 
 ---
 
@@ -312,7 +313,7 @@ Purpose: compatibility/manual conversation creation. The primary V1 flow should 
 
 ### `GET /api/conversations/{conversation_id}`
 
-Purpose: reload the chat page.
+Purpose: reload the conversation page.
 
 Response body:
 
@@ -328,7 +329,7 @@ Response body:
 }
 ```
 
-Frontend caller: `pages/chat.vue`
+Frontend caller: `pages/conversations/[conversationId].vue` through `useConversationSession`
 
 ---
 
@@ -362,7 +363,7 @@ Response body:
 }
 ```
 
-Frontend caller: `pages/chat.vue`
+Frontend caller: `useConversationSession`
 
 ---
 
@@ -459,7 +460,7 @@ Current coverage:
 Frontend:
 
 - `pnpm build`
-- Manual/Playwright flow: `/` → `/task` → `/chat`
+- Manual/Playwright flow: `/` → `/task` → `/conversations/[conversationId]`
 
 ## Maintenance Rules
 

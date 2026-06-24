@@ -1,6 +1,6 @@
 <template>
   <!--
-    ChatScreen 是純 UI 元件：不直接呼叫 API，只透過 emit 把送出訊息交給 pages/chat.vue。
+    ChatScreen 是純 UI 元件：不直接呼叫 API，只透過 emit 把送出訊息交給 conversation route。
     它同時支援 generic chatbot 與 historical persona role-play，
     由 condition.roleplay_enabled 決定是否顯示 persona selector 與人物側欄。
   -->
@@ -149,7 +149,7 @@
 
 <script setup lang="ts">
 // ChatScreen 只管理本地輸入框、persona selector 與畫面捲動。
-// 對話 state、API error handling、history 替換都在 pages/chat.vue 處理。
+// 對話 state、API error handling、history 替換都在 useConversationSession 處理。
 import { computed, nextTick, ref, watch } from 'vue';
 import type { ChatMessage, ExperimentCondition, HistoricalEvent, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';

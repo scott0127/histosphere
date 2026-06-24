@@ -52,7 +52,7 @@
 
 <script setup lang="ts">
 // task.vue 負責把 event initialize 的暫存資料送出成 task_attempt。
-// 送出成功後才導向 chat，並把 conversationId 寫回本機進度，讓首頁可以顯示已完成/進行中。
+// 送出成功後才導向階層式 conversation route，首頁進度則由後端 session API 回放。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { EventInitializeResponse, SessionStateResponse, TaskDraftResponse, TaskStudentAnswer, TaskSubmitResponse } from '~/types';
 import {
@@ -125,10 +125,7 @@ const submitTask = async () => {
     const chatData = useState<TaskSubmitResponse | null>('chatData', () => null);
     chatData.value = response;
     await navigateTo({
-      path: '/chat',
-      query: {
-        conversationId: response.conversation_id,
-      },
+      path: `/conversations/${response.conversation_id}`,
     });
   } catch (e: any) {
     error.value = e.data?.detail || e.data?.message || '送出失敗，請稍後再試。';
@@ -145,8 +142,7 @@ const loadSessionState = async (routeSessionId: string) => {
     const state = await $fetch<SessionStateResponse>(`/api/sessions/${routeSessionId}/state`);
     if (state.conversation_id) {
       await navigateTo({
-        path: '/chat',
-        query: { conversationId: state.conversation_id },
+        path: `/conversations/${state.conversation_id}`,
       });
       return;
     }

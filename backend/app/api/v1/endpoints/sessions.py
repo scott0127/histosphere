@@ -1,5 +1,7 @@
 """Experiment session progress API endpoints."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_session_service
@@ -20,8 +22,8 @@ def user_progress(
 
 @router.get("/{session_id}/state", response_model=SessionStateResponse)
 def session_state(
-    session_id: str,
+    session_id: UUID,
     service: SessionService = Depends(get_session_service),
 ) -> SessionStateResponse:
     """載入單一實驗 session 的可恢復狀態。"""
-    return service.load_state(session_id)
+    return service.load_state(str(session_id))

@@ -229,10 +229,7 @@ const startCondition = async (condition: ExperimentCondition) => {
   const progress = progressFor(condition.condition_key);
   if (progress?.conversationId) {
     await navigateTo({
-      path: '/chat',
-      query: {
-        conversationId: progress.conversationId,
-      },
+      path: `/conversations/${progress.conversationId}`,
     });
     return;
   }
