@@ -390,6 +390,13 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { taskControlQuestions } from '~/composables/useTaskControl';
 import type { AdminSnapshotResponse, EventTask, EventWithPersonas, ExperimentCondition, Persona } from '~/types';
+import {
+  fetchAdminSnapshot,
+  updateAdminCondition,
+  updateAdminEvent,
+  updateAdminPersona,
+  updateAdminTask,
+} from '~/utils/histosphereApi';
 
 definePageMeta({
   layout: false,
@@ -494,8 +501,6 @@ watch(authUserId, (nextUserId, previousUserId) => {
   }
 });
 
-const headers = () => ({ 'x-admin-key': adminKey.value });
-
 const toggleSection = (section: AdminSectionKey) => {
   openSections.value[section] = !openSections.value[section];
 };
@@ -552,7 +557,7 @@ const loadSnapshot = async () => {
   }
   try {
     localStorage.setItem('histosphere_admin_key', adminKey.value);
-    const data = await $fetch<AdminSnapshotResponse>('/api/admin/snapshot', { headers: headers() });
+    const data: AdminSnapshotResponse = await fetchAdminSnapshot(adminKey.value);
     const nextTaskJson: Record<string, string> = {};
     const nextPersonaJson: Record<string, string> = {};
 
@@ -581,18 +586,14 @@ const loadSnapshot = async () => {
 };
 
 const saveCondition = async (condition: ExperimentCondition) => {
-  await $fetch(`/api/admin/conditions/${condition.id}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: {
-      label: condition.label,
-      ebl_enabled: condition.ebl_enabled,
-      roleplay_enabled: condition.roleplay_enabled,
-      agent_mode: condition.roleplay_enabled ? 'persona' : 'generic',
-      response_policy: condition.response_policy,
-      description: condition.description,
-      active: condition.active,
-    },
+  await updateAdminCondition(adminKey.value, condition.id, {
+    label: condition.label,
+    ebl_enabled: condition.ebl_enabled,
+    roleplay_enabled: condition.roleplay_enabled,
+    agent_mode: condition.roleplay_enabled ? 'persona' : 'generic',
+    response_policy: condition.response_policy,
+    description: condition.description,
+    active: condition.active,
   });
   await loadSnapshot();
 };
@@ -605,33 +606,25 @@ const saveTask = async (task: EventTask) => {
     error.value = `Task ${task.id} 的 evaluation_payload 不是合法 JSON。`;
     return;
   }
-  await $fetch(`/api/admin/tasks/${task.id}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: {
-      title: task.title,
-      story_text: task.story_text,
-      display_text: task.display_text,
-      evaluation_payload: evaluationPayload,
-      revision_state: 'teacher_modified',
-    },
+  await updateAdminTask(adminKey.value, task.id, {
+    title: task.title,
+    story_text: task.story_text,
+    display_text: task.display_text,
+    evaluation_payload: evaluationPayload,
+    revision_state: 'teacher_modified',
   });
   await loadSnapshot();
 };
 
 const saveEvent = async (event: EventWithPersonas) => {
-  await $fetch(`/api/admin/events/${event.id}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: {
-      canonical_name: event.canonical_name,
-      description: event.description,
-      century: event.century,
-      start_year: event.start_year,
-      end_year: event.end_year,
-      context: event.context,
-      source_summary: event.source_summary || {},
-    },
+  await updateAdminEvent(adminKey.value, event.id, {
+    canonical_name: event.canonical_name,
+    description: event.description,
+    century: event.century,
+    start_year: event.start_year,
+    end_year: event.end_year,
+    context: event.context,
+    source_summary: event.source_summary || {},
   });
   await loadSnapshot();
 };
@@ -644,17 +637,13 @@ const savePersona = async (persona: Persona) => {
     error.value = `Persona ${persona.name} 的 prompt_profile 不是合法 JSON。`;
     return;
   }
-  await $fetch(`/api/admin/personas/${persona.id}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: {
-      name: persona.name,
-      role: persona.role,
-      biography: persona.biography,
-      prompt_profile: promptProfile,
-      active: persona.active,
-      revision_state: 'teacher_modified',
-    },
+  await updateAdminPersona(adminKey.value, persona.id, {
+    name: persona.name,
+    role: persona.role,
+    biography: persona.biography,
+    prompt_profile: promptProfile,
+    active: persona.active,
+    revision_state: 'teacher_modified',
   });
   await loadSnapshot();
 };

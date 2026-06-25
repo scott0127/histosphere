@@ -1,6 +1,6 @@
 # Development Gaps
 
-Updated: 2026-06-24
+Updated: 2026-06-25
 
 This document tracks what has been completed, what is still missing, and what frontend/backend gaps remain. It consolidates the former `admin-backend-todo.md`, `backend-implementation-audit.md`, and risk sections from `frontend-audit.md`.
 
@@ -21,6 +21,9 @@ This document tracks what has been completed, what is still missing, and what fr
 - Task API orchestration moved from page code into `useTaskGate`.
 - Conversation UI moved to `/conversations/[conversationId]`; `/chat?conversationId=...` remains only as a legacy redirect.
 - Conversation API orchestration moved from page code into `useConversationSession`.
+- Frontend API contract calls centralized in `utils/histosphereApi.ts` for public event data, session/task recovery, conversation/chat, and admin writes.
+- Frontend unit tests added under `tests/frontend/unit`, with reusable fixtures under `tests/frontend/fixtures`.
+- Backend session/task contract tests added under `backend/tests/api`, covering invalid UUID validation, draft recovery, progress, and submit-to-conversation transitions.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
 - Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
 - One-time scripts (`test-gsap.mjs`, `process-image.mjs`) and broken font file deleted.
@@ -36,7 +39,7 @@ This document tracks what has been completed, what is still missing, and what fr
 | Participant/session | `experiment_sessions` has user_id; session progress/state endpoints exist; event library and task gate use them | Missing formal participant account mapping, participant roster/admin import, cross-device identity policy |
 | RAG/source | `wiki_sources` and `knowledge_chunks` tables exist; RAG retrieve is empty implementation | Missing ingestion, chunking, embedding/vector retrieval, source citation |
 | Admin auth | All `/api/admin/*` check `x-admin-key`; frontend uses Supabase Auth + admin key | Missing role-based admin policy, multi-user management, fine-grained audit diff |
-| Tests | API tests use in-memory repository + fake LLM provider | Missing Supabase repository integration tests, migration/seed SQL smoke test |
+| Tests | Backend API tests use in-memory repository + fake LLM provider; frontend unit tests cover API contract calls and task answer logic | Missing Supabase repository integration tests, migration/seed SQL smoke test, DOM-level frontend component tests |
 
 ## Task Authoring Gaps
 
@@ -92,11 +95,11 @@ This document tracks what has been completed, what is still missing, and what fr
 2. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
 3. Auth pages exist but are not connected to participant/session assignment.
 4. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
-5. Some API orchestration still lives in pages. Future refactor should add `useAdminSnapshot` and focused event-library composables for list/delete/refresh behavior.
+5. Page code still owns some UI orchestration for event library and admin save flows. API calls now route through `utils/histosphereApi.ts`; future refactor should add `useAdminSnapshot` and focused event-library composables for list/delete/refresh behavior.
 
 ## Suggested Next Milestones
 
-1. Move remaining `$fetch` calls into composables.
+1. Move remaining page-level UI orchestration into focused composables such as `useAdminSnapshot` and `useEventLibrary`.
 2. Add explicit participant/session ID handling.
 3. Harden LiteLLM structured outputs for task generation and judgement.
 4. Add save status/toasts to admin edits.

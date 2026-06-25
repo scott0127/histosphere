@@ -5,7 +5,6 @@ import type { ComputedRef, Ref } from 'vue';
 import type {
   EventInitializeResponse,
   SessionStateResponse,
-  TaskDraftResponse,
   TaskStudentAnswer,
   TaskSubmitResponse,
 } from '~/types';
@@ -16,6 +15,11 @@ import {
   normalizeTaskQuestions,
   participantUuid,
 } from '~/composables/useStudentTask';
+import {
+  fetchSessionState,
+  saveTaskDraft,
+  submitTaskAnswers,
+} from '~/utils/histosphereApi';
 
 const answersFromAttempt = (payload?: Record<string, unknown> | null): TaskStudentAnswer[] => {
   const rawAnswers = Array.isArray(payload?.answers) ? payload.answers : [];
@@ -78,13 +82,10 @@ export const useTaskGate = (
     error.value = null;
     draftError.value = null;
     try {
-      const response = await $fetch<TaskSubmitResponse>(`/api/tasks/${taskData.value.task.id}/submit`, {
-        method: 'POST',
-        body: {
-          session_id: taskData.value.session_id,
-          user_id: participantUuid(participantId.value),
-          response_payload: buildTaskResponsePayload(answers.value),
-        },
+      const response: TaskSubmitResponse = await submitTaskAnswers(taskData.value.task.id, {
+        sessionId: taskData.value.session_id,
+        userId: participantUuid(participantId.value),
+        responsePayload: buildTaskResponsePayload(answers.value),
       });
       judgement.value = response.judgement;
       markStudentConditionProgress(participantId.value, response);
@@ -106,7 +107,7 @@ export const useTaskGate = (
     isLoading.value = true;
     error.value = null;
     try {
-      const state = await $fetch<SessionStateResponse>(`/api/sessions/${routeSessionId}/state`);
+      const state: SessionStateResponse = await fetchSessionState(routeSessionId);
       if (state.conversation_id) {
         await navigateTo({
           path: `/conversations/${state.conversation_id}`,
@@ -156,13 +157,10 @@ export const useTaskGate = (
     if (serialized === lastDraftPayload.value) return;
 
     try {
-      await $fetch<TaskDraftResponse>(`/api/tasks/${taskData.value.task.id}/draft`, {
-        method: 'PATCH',
-        body: {
-          session_id: taskData.value.session_id,
-          user_id: participantUuid(participantId.value),
-          response_payload: responsePayload,
-        },
+      await saveTaskDraft(taskData.value.task.id, {
+        sessionId: taskData.value.session_id,
+        userId: participantUuid(participantId.value),
+        responsePayload,
       });
       lastDraftPayload.value = serialized;
       draftError.value = null;

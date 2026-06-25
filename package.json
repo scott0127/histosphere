@@ -16,7 +16,9 @@
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test:frontend:unit": "node scripts/tests/run-frontend-unit-tests.mjs",
+    "test:backend": "cd backend && python -m pytest -q"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

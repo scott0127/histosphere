@@ -1,6 +1,6 @@
 # Backend Architecture
 
-Updated: 2026-06-24
+Updated: 2026-06-25
 
 This document is the maintenance baseline for the Histosphere FastAPI backend. It must be updated whenever the API contract, database schema, prompt modules, or experiment flow changes.
 
@@ -452,6 +452,10 @@ Current coverage:
 
 - event initialize creates workspace but not conversation.
 - task submit creates attempt, judgement, conversation, greeting, and logs.
+- task draft save persists recoverable in-progress attempts.
+- session state reload returns event/task/personas/condition/attempt/conversation id for `/sessions/[sessionId]/task`.
+- session progress returns per-user event/condition status for homepage recovery.
+- invalid UUID route parameters return validation errors instead of backend 500s.
 - 2x2 chat policy direct/scaffold and generic/persona.
 - message shape with `speaker_type`, `speaker_name`, and `sequence_index`.
 - admin key protection.
@@ -459,8 +463,14 @@ Current coverage:
 
 Frontend:
 
+- `pnpm test:frontend:unit`
 - `pnpm build`
 - Manual/Playwright flow: `/` → `/sessions/[sessionId]/task` → `/conversations/[conversationId]`
+
+Current frontend unit coverage:
+
+- `utils/histosphereApi.ts` endpoint contract calls for public event data, admin snapshot/writes, event initialization, session progress/state, task draft/submit, conversation load, chat send, and event delete.
+- `useStudentTask` pure task logic: question normalization, inline story segment rendering, answer completeness, response payload serialization, boolean answer text, and deterministic participant UUID.
 
 ## Maintenance Rules
 

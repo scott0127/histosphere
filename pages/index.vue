@@ -75,6 +75,12 @@ import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vu
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
+import {
+  deleteEventMaterial,
+  fetchAdminSnapshot,
+  fetchConditions as requestConditions,
+  fetchEvents as requestEvents,
+} from '~/utils/histosphereApi';
 
 definePageMeta({
   layout: false,
@@ -155,11 +161,7 @@ const verifyAndEnterAdminMode = async (adminKey: string) => {
   adminModePending.value = true;
   adminModeError.value = null;
   try {
-    await $fetch('/api/admin/snapshot', {
-      headers: {
-        'x-admin-key': trimmedKey,
-      },
-    });
+    await fetchAdminSnapshot(trimmedKey);
     localStorage.setItem('histosphere_admin_key', trimmedKey);
     enterAdminMode();
     await navigateTo('/admin');
@@ -183,7 +185,7 @@ const handleExitAdminMode = () => {
 // 讀取 2x2 實驗條件，讓前端不把 condition 寫死。
 const fetchConditions = async () => {
   try {
-    conditions.value = await $fetch<ExperimentCondition[]>('/api/conditions');
+    conditions.value = await requestConditions();
   } catch (e) {
     console.error('Failed to fetch conditions:', e);
   }
@@ -193,7 +195,7 @@ const fetchConditions = async () => {
 const fetchEvents = async () => {
   loadingEvents.value = true;
   try {
-    events.value = await $fetch<EventWithPersonas[]>('/api/events');
+    events.value = await requestEvents();
     if (detailEvent.value) {
       detailEvent.value = events.value.find((event) => event.id === detailEvent.value?.id) || null;
     }
@@ -249,7 +251,7 @@ const handleDeleteEvent = (eventId: string) => {
 const confirmDelete = async () => {
   if (!pendingDeleteEventId.value) return;
   try {
-    await $fetch(`/api/event/${pendingDeleteEventId.value}`, { method: 'DELETE' });
+    await deleteEventMaterial(pendingDeleteEventId.value);
     if (detailEvent.value?.id === pendingDeleteEventId.value) detailEvent.value = null;
     await fetchEvents();
   } catch (e) {

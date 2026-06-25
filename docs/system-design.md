@@ -1,6 +1,6 @@
 # Histosphere System Design
 
-Updated: 2026-06-23
+Updated: 2026-06-25
 
 Histosphere is a thesis prototype for studying how Error-Based Learning (EBL) and AI historical persona role-play can support historical thinking and AI literacy.
 
@@ -72,9 +72,9 @@ Backend:
 
 Frontend:
 
-- `/` condition selection + event input + event list.
-- `/task` required task submission gate.
-- `/chat` generic/persona-aware chat UI.
+- `/` event library and condition start flow.
+- `/sessions/[sessionId]/task` required task submission gate.
+- `/conversations/[conversationId]` generic/persona-aware chat UI.
 - `/admin` admin-key dashboard with structured task editor.
 - `/tutorial` legacy tutorial/demo (candidate for rewrite into experiment onboarding).
 - `/profile`, `/auth/*` Supabase auth pages (keep only if participant accounts are required).
@@ -286,13 +286,14 @@ backend/.venv/Scripts/python.exe -m pytest -q
 Frontend:
 
 ```powershell
+pnpm test:frontend:unit
 pnpm build
 ```
 
 Preview flow:
 
 ```text
-/ -> /task -> /chat
+/ -> /sessions/[sessionId]/task -> /conversations/[conversationId]
 ```
 
 Database:

@@ -12,6 +12,10 @@ import type {
   UserProgressStatus,
 } from '~/types';
 import { participantUuid } from '~/composables/useStudentTask';
+import {
+  fetchUserProgress,
+  initializeEventMaterial,
+} from '~/utils/histosphereApi';
 
 export type LocalConditionProgress = {
   status: 'not_started' | UserProgressStatus;
@@ -79,9 +83,7 @@ export const useExperimentSession = (
   const loadProgressFromApi = async () => {
     const userId = participantUuid(participantId.value);
     try {
-      const response = await $fetch<UserProgressResponse>('/api/sessions/progress', {
-        query: { user_id: userId },
-      });
+      const response: UserProgressResponse = await fetchUserProgress(userId);
       progressByEvent.value = progressItemsToLocalMap(response.progress || []);
       saveLocalProgress();
     } catch (e) {
@@ -148,14 +150,11 @@ export const useExperimentSession = (
     isInitializing.value = true;
     initializeError.value = null;
     try {
-      const response = await $fetch<EventInitializeResponse>('/api/event/initialize', {
-        method: 'POST',
-        body: {
-          event_name: name,
-          condition_key: conditionKey,
-          rebuild,
-          user_id: participantUuid(participantId.value),
-        },
+      const response: EventInitializeResponse = await initializeEventMaterial({
+        eventName: name,
+        conditionKey,
+        rebuild,
+        userId: participantUuid(participantId.value),
       });
 
       if (navigateToTask) {

@@ -7,6 +7,10 @@ import type {
   TaskSubmitResponse,
 } from '~/types';
 import type { ComputedRef, Ref } from 'vue';
+import {
+  fetchConversation,
+  sendChatMessage as requestChatMessage,
+} from '~/utils/histosphereApi';
 
 type ConversationState = (TaskSubmitResponse | ConversationLoadResponse) & {
   attempt?: TaskSubmitResponse['attempt'];
@@ -44,7 +48,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     isLoading.value = true;
     loadError.value = null;
     try {
-      const data = await $fetch<ConversationLoadResponse>(`/api/conversations/${currentConversationId}`);
+      const data: ConversationLoadResponse = await fetchConversation(currentConversationId);
       chatState.value = data as ConversationState;
       history.value = data.messages;
     } catch (e: any) {
@@ -80,14 +84,11 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     });
 
     try {
-      const response = await $fetch<ChatResponse>('/api/chat', {
-        method: 'POST',
-        body: {
-          conversation_id: currentConversationId,
-          user_message: userInput,
-          history: history.value.slice(0, -1),
-          target_persona_id: targetPersonaId || null,
-        },
+      const response: ChatResponse = await requestChatMessage({
+        conversationId: currentConversationId,
+        userMessage: userInput,
+        history: history.value.slice(0, -1),
+        targetPersonaId,
       });
 
       history.value[history.value.length - 1] = response.message;
