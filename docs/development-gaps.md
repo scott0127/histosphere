@@ -23,6 +23,8 @@ This document tracks what has been completed, what is still missing, and what fr
 - Conversation API orchestration moved from page code into `useConversationSession`.
 - Frontend API contract calls centralized in `utils/histosphereApi.ts` for public event data, session/task recovery, conversation/chat, and admin writes.
 - Frontend unit tests added under `tests/frontend/unit`, with reusable fixtures under `tests/frontend/fixtures`.
+- Homepage event/condition list orchestration moved into `useEventLibrary`.
+- Admin snapshot, editable JSON maps, and save flows moved into `useAdminWorkspace`; pure admin ordering/format helpers live in `utils/adminWorkspaceState.ts`.
 - Backend session/task contract tests added under `backend/tests/api`, covering invalid UUID validation, draft recovery, progress, and submit-to-conversation transitions.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
 - Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
@@ -95,11 +97,11 @@ This document tracks what has been completed, what is still missing, and what fr
 2. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
 3. Auth pages exist but are not connected to participant/session assignment.
 4. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
-5. Page code still owns some UI orchestration for event library and admin save flows. API calls now route through `utils/histosphereApi.ts`; future refactor should add `useAdminSnapshot` and focused event-library composables for list/delete/refresh behavior.
+5. DOM-level frontend component tests are still missing. Current frontend unit tests cover API/data contracts and pure task/admin helpers, not rendered Vue component behavior.
 
 ## Suggested Next Milestones
 
-1. Move remaining page-level UI orchestration into focused composables such as `useAdminSnapshot` and `useEventLibrary`.
+1. Add DOM-level component tests once the project adopts a Vue/Nuxt test runner.
 2. Add explicit participant/session ID handling.
 3. Harden LiteLLM structured outputs for task generation and judgement.
 4. Add save status/toasts to admin edits.

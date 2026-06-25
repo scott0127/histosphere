@@ -21,7 +21,7 @@
       :display-name="displayName"
       :admin-mode-pending="adminModePending"
       :admin-mode-error="adminModeError"
-      @refresh="refreshEvents"
+      @refresh="refreshEventLibrary"
       @enter-admin-mode="verifyAndEnterAdminMode"
       @exit-admin-mode="handleExitAdminMode"
       @update:admin-view-mode="setAdminViewMode"
@@ -75,12 +75,7 @@ import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vu
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
-import {
-  deleteEventMaterial,
-  fetchAdminSnapshot,
-  fetchConditions as requestConditions,
-  fetchEvents as requestEvents,
-} from '~/utils/histosphereApi';
+import { fetchAdminSnapshot } from '~/utils/histosphereApi';
 
 definePageMeta({
   layout: false,
@@ -90,11 +85,7 @@ definePageMeta({
 const eventName = ref('');
 const showDeleteConfirmDialog = ref(false);
 const pendingDeleteEventId = ref<string | null>(null);
-const events = ref<EventWithPersonas[]>([]);
-const conditions = ref<ExperimentCondition[]>([]);
 const detailEvent = ref<EventWithPersonas | null>(null);
-const loadingEvents = ref(false);
-const isRefreshing = ref(false);
 const adminModePending = ref(false);
 const adminModeError = ref<string | null>(null);
 const { displayName, initialize: initializeAuth, isAuthenticated, user } = useAuth();
@@ -107,6 +98,17 @@ const {
   isAdminMode,
   setAdminViewMode,
 } = useAdminMode();
+const {
+  conditions,
+  deleteEvent,
+  events,
+  fetchEvents,
+  findEvent,
+  isRefreshing,
+  loadEventLibrary,
+  loadingEvents,
+  refreshEvents,
+} = useEventLibrary();
 const authStorageScope = computed(() => user.value?.id || 'guest');
 const defaultParticipantId = computed(() => {
   const emailPrefix = user.value?.email?.split('@')[0]?.trim();
@@ -136,7 +138,7 @@ onMounted(async () => {
   initAdminMode();
   await initializeAuth();
   initializeParticipant();
-  await Promise.all([fetchConditions(), fetchEvents(), loadProgressFromApi()]);
+  await Promise.all([loadEventLibrary(), loadProgressFromApi()]);
 });
 
 watch(authStorageScope, async () => {
@@ -182,35 +184,12 @@ const handleExitAdminMode = () => {
   }
 };
 
-// 讀取 2x2 實驗條件，讓前端不把 condition 寫死。
-const fetchConditions = async () => {
-  try {
-    conditions.value = await requestConditions();
-  } catch (e) {
-    console.error('Failed to fetch conditions:', e);
+// 手動重新整理事件素材列表；若詳情彈窗已開啟，對齊最新事件資料。
+const refreshEventLibrary = async () => {
+  await refreshEvents();
+  if (detailEvent.value) {
+    detailEvent.value = findEvent(detailEvent.value.id);
   }
-};
-
-// 讀取事件列表；若詳情彈窗已開啟，重新對齊最新事件資料。
-const fetchEvents = async () => {
-  loadingEvents.value = true;
-  try {
-    events.value = await requestEvents();
-    if (detailEvent.value) {
-      detailEvent.value = events.value.find((event) => event.id === detailEvent.value?.id) || null;
-    }
-  } catch (e) {
-    console.error('Failed to fetch events:', e);
-  } finally {
-    loadingEvents.value = false;
-  }
-};
-
-// 手動重新整理事件素材列表。
-const refreshEvents = async () => {
-  isRefreshing.value = true;
-  await fetchEvents();
-  isRefreshing.value = false;
 };
 
 // 建立或重用歷史事件素材；首頁建立時不直接跳 task。
@@ -220,7 +199,7 @@ const handleCreateEvent = async () => {
   const response = await initializeEvent(trimmed, 'ebl_roleplay', false, false);
   if (response) {
     await fetchEvents();
-    detailEvent.value = events.value.find((event) => event.id === response.event_id) || null;
+    detailEvent.value = findEvent(response.event_id);
     eventName.value = '';
   }
 };
@@ -251,9 +230,8 @@ const handleDeleteEvent = (eventId: string) => {
 const confirmDelete = async () => {
   if (!pendingDeleteEventId.value) return;
   try {
-    await deleteEventMaterial(pendingDeleteEventId.value);
+    await deleteEvent(pendingDeleteEventId.value);
     if (detailEvent.value?.id === pendingDeleteEventId.value) detailEvent.value = null;
-    await fetchEvents();
   } catch (e) {
     console.error('Failed to delete event:', e);
     alert('刪除失敗，請稍後再試');

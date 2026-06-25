@@ -388,28 +388,11 @@
 // 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
 import { computed, onMounted, ref, watch } from 'vue';
-import { taskControlQuestions } from '~/composables/useTaskControl';
-import type { AdminSnapshotResponse, EventTask, EventWithPersonas, ExperimentCondition, Persona } from '~/types';
-import {
-  fetchAdminSnapshot,
-  updateAdminCondition,
-  updateAdminEvent,
-  updateAdminPersona,
-  updateAdminTask,
-} from '~/utils/histosphereApi';
 
 definePageMeta({
   layout: false,
   name: 'admin',
 });
-
-const adminKey = ref('');
-const snapshot = ref<AdminSnapshotResponse | null>(null);
-const error = ref<string | null>(null);
-const taskJson = ref<Record<string, string>>({});
-const personaJson = ref<Record<string, string>>({});
-const selectedConditionId = ref<string | null>(null);
-const selectedEventId = ref<string | null>(null);
 
 type AdminSectionKey = 'tasks' | 'events' | 'personas';
 
@@ -427,52 +410,35 @@ const {
   user,
 } = useAuth();
 const authUserId = computed(() => user.value?.id || null);
-
-const conditionModeOrder: ExperimentCondition['condition_key'][] = [
-  'no_ebl_no_roleplay',
-  'ebl_no_roleplay',
-  'no_ebl_roleplay',
-  'ebl_roleplay',
-];
-
-const conditionModeLabels: Record<ExperimentCondition['condition_key'], string> = {
-  no_ebl_no_roleplay: '01 without EBL + without role-play',
-  ebl_no_roleplay: '02 EBL + without role-play',
-  no_ebl_roleplay: '03 without EBL + role-play',
-  ebl_roleplay: '04 EBL + role-play',
-};
-
-const selectedEvent = computed<EventWithPersonas | null>(() => {
-  if (!snapshot.value || !selectedEventId.value) {
-    return null;
-  }
-  return snapshot.value.events.find((event) => event.id === selectedEventId.value) || null;
-});
-
-const promptConditions = computed(() => {
-  const conditions = snapshot.value?.conditions || [];
-  return [...conditions].sort((a, b) => {
-    const aIndex = conditionModeOrder.indexOf(a.condition_key);
-    const bIndex = conditionModeOrder.indexOf(b.condition_key);
-    const normalizedA = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
-    const normalizedB = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
-    return normalizedA - normalizedB;
-  });
-});
-
-const selectedCondition = computed<ExperimentCondition | null>(() => {
-  const conditions = promptConditions.value;
-  if (!conditions.length) {
-    return null;
-  }
-  return conditions.find((condition) => condition.id === selectedConditionId.value) || conditions[0];
-});
+const {
+  adminKey,
+  conditionModeLabel,
+  conditionOrdinal,
+  error,
+  eventYearRange,
+  loadSnapshot,
+  personaJson,
+  promptConditions,
+  resetWorkspace,
+  restoreStoredAdminKey,
+  saveCondition,
+  saveEvent,
+  savePersona,
+  saveTask,
+  selectedCondition,
+  selectedConditionId,
+  selectedEvent,
+  selectedEventId,
+  snapshot,
+  taskJson,
+  taskQuestionCount,
+} = useAdminWorkspace(isAuthenticated);
 
 // 後台採 Supabase Auth + admin key；未登入時不顯示 key 表單，也不載入任何後台資料。
 onMounted(async () => {
   await initializeAuth();
   if (isAuthenticated.value) {
-    adminKey.value = localStorage.getItem('histosphere_admin_key') || '';
+    restoreStoredAdminKey();
     if (adminKey.value) {
       await loadSnapshot();
     }
@@ -481,24 +447,14 @@ onMounted(async () => {
 
 watch(isAuthenticated, (authenticated) => {
   if (authenticated) return;
-  adminKey.value = '';
-  snapshot.value = null;
-  selectedEventId.value = null;
-  if (import.meta.client) {
-    localStorage.removeItem('histosphere_admin_key');
-  }
+  resetWorkspace();
 });
 
 watch(authUserId, (nextUserId, previousUserId) => {
   if (!nextUserId || !previousUserId || nextUserId === previousUserId) {
     return;
   }
-  adminKey.value = '';
-  snapshot.value = null;
-  selectedEventId.value = null;
-  if (import.meta.client) {
-    localStorage.removeItem('histosphere_admin_key');
-  }
+  resetWorkspace();
 });
 
 const toggleSection = (section: AdminSectionKey) => {
@@ -514,137 +470,4 @@ const selectEvent = (eventId: string) => {
   };
 };
 
-const conditionOrdinal = (condition: ExperimentCondition) => {
-  const index = conditionModeOrder.indexOf(condition.condition_key);
-  if (index === -1) {
-    return '--';
-  }
-  return String(index + 1).padStart(2, '0');
-};
-
-const conditionModeLabel = (condition: ExperimentCondition) => {
-  return conditionModeLabels[condition.condition_key] || condition.label;
-};
-
-const eventYearRange = (event: EventWithPersonas) => {
-  if (event.start_year && event.end_year && event.start_year !== event.end_year) {
-    return `${event.start_year} - ${event.end_year}`;
-  }
-  if (event.start_year || event.end_year) {
-    return String(event.start_year || event.end_year);
-  }
-  if (event.century) {
-    return `${event.century} 世紀`;
-  }
-  return '未設定';
-};
-
-const taskQuestionCount = (task?: EventTask | null) => {
-  if (!task) {
-    return 0;
-  }
-  const evaluationJson = taskJson.value[task.id] || JSON.stringify(task.evaluation_payload || {}, null, 2);
-  return taskControlQuestions(task, evaluationJson).length;
-};
-
-// 載入後台 snapshot 後，把 JSON 欄位轉成可編輯字串；儲存時再 parse 回物件。
-const loadSnapshot = async () => {
-  error.value = null;
-  if (!isAuthenticated.value) {
-    snapshot.value = null;
-    error.value = '請先登入管理員帳號。';
-    return;
-  }
-  try {
-    localStorage.setItem('histosphere_admin_key', adminKey.value);
-    const data: AdminSnapshotResponse = await fetchAdminSnapshot(adminKey.value);
-    const nextTaskJson: Record<string, string> = {};
-    const nextPersonaJson: Record<string, string> = {};
-
-    for (const event of data.events) {
-      if (event.latest_task) {
-        nextTaskJson[event.latest_task.id] = JSON.stringify(event.latest_task.evaluation_payload || {}, null, 2);
-      }
-      for (const persona of event.personas) {
-        nextPersonaJson[persona.id] = JSON.stringify(persona.prompt_profile || {}, null, 2);
-      }
-    }
-
-    taskJson.value = nextTaskJson;
-    personaJson.value = nextPersonaJson;
-    snapshot.value = data;
-    if (selectedEventId.value && !data.events.some((event) => event.id === selectedEventId.value)) {
-      selectedEventId.value = null;
-    }
-
-    if (!selectedConditionId.value || !data.conditions.some((condition) => condition.id === selectedConditionId.value)) {
-      selectedConditionId.value = promptConditions.value[0]?.id || null;
-    }
-  } catch (e: any) {
-    error.value = e.data?.detail || '後台資料載入失敗，請確認 admin key。';
-  }
-};
-
-const saveCondition = async (condition: ExperimentCondition) => {
-  await updateAdminCondition(adminKey.value, condition.id, {
-    label: condition.label,
-    ebl_enabled: condition.ebl_enabled,
-    roleplay_enabled: condition.roleplay_enabled,
-    agent_mode: condition.roleplay_enabled ? 'persona' : 'generic',
-    response_policy: condition.response_policy,
-    description: condition.description,
-    active: condition.active,
-  });
-  await loadSnapshot();
-};
-
-const saveTask = async (task: EventTask) => {
-  let evaluationPayload = {};
-  try {
-    evaluationPayload = JSON.parse(taskJson.value[task.id] || '{}');
-  } catch {
-    error.value = `Task ${task.id} 的 evaluation_payload 不是合法 JSON。`;
-    return;
-  }
-  await updateAdminTask(adminKey.value, task.id, {
-    title: task.title,
-    story_text: task.story_text,
-    display_text: task.display_text,
-    evaluation_payload: evaluationPayload,
-    revision_state: 'teacher_modified',
-  });
-  await loadSnapshot();
-};
-
-const saveEvent = async (event: EventWithPersonas) => {
-  await updateAdminEvent(adminKey.value, event.id, {
-    canonical_name: event.canonical_name,
-    description: event.description,
-    century: event.century,
-    start_year: event.start_year,
-    end_year: event.end_year,
-    context: event.context,
-    source_summary: event.source_summary || {},
-  });
-  await loadSnapshot();
-};
-
-const savePersona = async (persona: Persona) => {
-  let promptProfile = {};
-  try {
-    promptProfile = JSON.parse(personaJson.value[persona.id] || '{}');
-  } catch {
-    error.value = `Persona ${persona.name} 的 prompt_profile 不是合法 JSON。`;
-    return;
-  }
-  await updateAdminPersona(adminKey.value, persona.id, {
-    name: persona.name,
-    role: persona.role,
-    biography: persona.biography,
-    prompt_profile: promptProfile,
-    active: persona.active,
-    revision_state: 'teacher_modified',
-  });
-  await loadSnapshot();
-};
 </script>

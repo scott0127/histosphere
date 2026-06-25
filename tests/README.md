@@ -12,6 +12,7 @@ Current frontend unit tests focus on stable contracts that do not require bootin
 
 - API endpoint/method/body/query/header contracts in `utils/histosphereApi.ts`.
 - Pure student-task logic in `composables/useStudentTask.ts`.
+- Pure admin workspace state helpers in `utils/adminWorkspaceState.ts`.
 
 DOM-level component tests should be added later with a Vue/Nuxt test runner if the project adopts one.
 

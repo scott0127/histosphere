@@ -471,6 +471,15 @@ Current frontend unit coverage:
 
 - `utils/histosphereApi.ts` endpoint contract calls for public event data, admin snapshot/writes, event initialization, session progress/state, task draft/submit, conversation load, chat send, and event delete.
 - `useStudentTask` pure task logic: question normalization, inline story segment rendering, answer completeness, response payload serialization, boolean answer text, and deterministic participant UUID.
+- `utils/adminWorkspaceState.ts` admin state helpers: editable JSON map generation, 01-04 condition ordering, condition labels, and event year range formatting.
+
+Frontend orchestration boundaries:
+
+- `useExperimentSession` owns participant/session initialization, progress recovery, and route handoff to task/conversation.
+- `useEventLibrary` owns homepage condition/event list loading, refresh, lookup, and deletion.
+- `useTaskGate` owns task state reload, draft autosave, submit, and route handoff to conversation.
+- `useConversationSession` owns conversation reload and chat send.
+- `useAdminWorkspace` owns admin snapshot loading, editable task/persona JSON maps, selected event/condition state, and admin save flows.
 
 ## Maintenance Rules
 
