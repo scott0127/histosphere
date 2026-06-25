@@ -73,7 +73,7 @@
               </button>
             </div>
           </div>
-          <p v-if="error" class="admin-error mt-4 px-3 py-2 text-sm font-semibold">
+          <p v-if="error" class="admin-error mt-4 whitespace-pre-line px-3 py-2 text-sm font-semibold">
             {{ error }}
           </p>
         </div>

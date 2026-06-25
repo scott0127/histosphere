@@ -25,6 +25,7 @@ This document tracks what has been completed, what is still missing, and what fr
 - Frontend unit tests added under `tests/frontend/unit`, with reusable fixtures under `tests/frontend/fixtures`.
 - Homepage event/condition list orchestration moved into `useEventLibrary`.
 - Admin snapshot, editable JSON maps, and save flows moved into `useAdminWorkspace`; pure admin ordering/format helpers live in `utils/adminWorkspaceState.ts`.
+- Admin task update now validates structured `display_text` tokens and `evaluation_payload.questions` before save, and logs `research_logs.task_updated`.
 - Backend session/task contract tests added under `backend/tests/api`, covering invalid UUID validation, draft recovery, progress, and submit-to-conversation transitions.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
 - Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
@@ -34,7 +35,7 @@ This document tracks what has been completed, what is still missing, and what fr
 
 | Area | Current State | Missing |
 |---|---|---|
-| Task authoring | Admin UI patches `display_text` + `evaluation_payload` as a whole; task draft save exists | Structured question CRUD, server-side token validation, publish snapshot, answer version history |
+| Task authoring | Admin UI patches `display_text` + `evaluation_payload` as a whole; server-side token/question validation protects saves; task draft save exists | Structured question CRUD, publish snapshot, answer version history |
 | Task answers | `task_attempts.response_payload` stores full answer bundle | `task_answers` table exists but unused; missing per-question scoring, answer key audit trail |
 | Event materials | Events can be PATCH-updated from admin UI; sample materials via seed.sql | Missing version history, material readiness check, archive strategy |
 | Prompt management | Condition-level prompt managed in backend code; `personas.prompt_profile` editable | Missing prompt preview/dry-run endpoint, prompt hash/audit |
@@ -46,14 +47,13 @@ This document tracks what has been completed, what is still missing, and what fr
 ## Task Authoring Gaps
 
 - Build formal task question CRUD API instead of whole-JSON PATCH.
-- Define backend validation rules for question schema: types, IDs, blank IDs, options, correct answers, required fields, explanations.
 - Support question ordering, duplication, deactivation, and deletion records.
 - Support durable undo/redo history for task authoring edits.
 - Support answer key version history so research data collected under previous answer keys remains traceable.
 - Support story-first token audit: record `display_text` token ↔ question mapping.
 - Build structured story segments to replace raw `display_text` string manipulation.
 - Build token-level operation APIs (insert, remove, move question tokens).
-- Backend should validate raw token corruption before save: duplicate blank IDs, orphan tokens, question without token, inline type missing token, MC answer not in options.
+- Expand backend task validation to cover future CRUD operations and material publish rules.
 - Support version diff for inline question insert/delete/type-change, including replaced `source_text`.
 - Backend judgement should read structured questions explicitly, not rely on LLM interpreting raw payload.
 - Build task publish/draft state so researchers can edit drafts before applying to learner flow.

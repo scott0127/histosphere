@@ -87,7 +87,7 @@ export const useAdminWorkspace = (
         selectedConditionId.value = sortPromptConditions(data.conditions)[0]?.id || null;
       }
     } catch (e: any) {
-      error.value = e.data?.detail || '後台資料載入失敗，請確認 admin key。';
+      error.value = formatAdminApiError(e, '後台資料載入失敗，請確認 admin key。');
     }
   };
 
@@ -98,16 +98,20 @@ export const useAdminWorkspace = (
   };
 
   const saveCondition = async (condition: ExperimentCondition) => {
-    await updateAdminCondition(adminKey.value, condition.id, {
-      label: condition.label,
-      ebl_enabled: condition.ebl_enabled,
-      roleplay_enabled: condition.roleplay_enabled,
-      agent_mode: condition.roleplay_enabled ? 'persona' : 'generic',
-      response_policy: condition.response_policy,
-      description: condition.description,
-      active: condition.active,
-    });
-    await loadSnapshot();
+    try {
+      await updateAdminCondition(adminKey.value, condition.id, {
+        label: condition.label,
+        ebl_enabled: condition.ebl_enabled,
+        roleplay_enabled: condition.roleplay_enabled,
+        agent_mode: condition.roleplay_enabled ? 'persona' : 'generic',
+        response_policy: condition.response_policy,
+        description: condition.description,
+        active: condition.active,
+      });
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, 'Condition 儲存失敗。');
+    }
   };
 
   const saveTask = async (task: EventTask) => {
@@ -118,27 +122,35 @@ export const useAdminWorkspace = (
       error.value = `Task ${task.id} 的 evaluation_payload 不是合法 JSON。`;
       return;
     }
-    await updateAdminTask(adminKey.value, task.id, {
-      title: task.title,
-      story_text: task.story_text,
-      display_text: task.display_text,
-      evaluation_payload: evaluationPayload,
-      revision_state: 'teacher_modified',
-    });
-    await loadSnapshot();
+    try {
+      await updateAdminTask(adminKey.value, task.id, {
+        title: task.title,
+        story_text: task.story_text,
+        display_text: task.display_text,
+        evaluation_payload: evaluationPayload,
+        revision_state: 'teacher_modified',
+      });
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, 'Task 儲存失敗。');
+    }
   };
 
   const saveEvent = async (event: EventWithPersonas) => {
-    await updateAdminEvent(adminKey.value, event.id, {
-      canonical_name: event.canonical_name,
-      description: event.description,
-      century: event.century,
-      start_year: event.start_year,
-      end_year: event.end_year,
-      context: event.context,
-      source_summary: event.source_summary || {},
-    });
-    await loadSnapshot();
+    try {
+      await updateAdminEvent(adminKey.value, event.id, {
+        canonical_name: event.canonical_name,
+        description: event.description,
+        century: event.century,
+        start_year: event.start_year,
+        end_year: event.end_year,
+        context: event.context,
+        source_summary: event.source_summary || {},
+      });
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '事件資料儲存失敗。');
+    }
   };
 
   const savePersona = async (persona: Persona) => {
@@ -149,15 +161,19 @@ export const useAdminWorkspace = (
       error.value = `Persona ${persona.name} 的 prompt_profile 不是合法 JSON。`;
       return;
     }
-    await updateAdminPersona(adminKey.value, persona.id, {
-      name: persona.name,
-      role: persona.role,
-      biography: persona.biography,
-      prompt_profile: promptProfile,
-      active: persona.active,
-      revision_state: 'teacher_modified',
-    });
-    await loadSnapshot();
+    try {
+      await updateAdminPersona(adminKey.value, persona.id, {
+        name: persona.name,
+        role: persona.role,
+        biography: persona.biography,
+        prompt_profile: promptProfile,
+        active: persona.active,
+        revision_state: 'teacher_modified',
+      });
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '人物資料儲存失敗。');
+    }
   };
 
   return {
@@ -183,4 +199,16 @@ export const useAdminWorkspace = (
     taskJson,
     taskQuestionCount,
   };
+};
+
+const formatAdminApiError = (e: any, fallback: string) => {
+  const detail = e?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail?.issues && Array.isArray(detail.issues)) {
+    const messages = detail.issues
+      .map((issue: any) => issue?.message || issue?.field)
+      .filter(Boolean);
+    return [detail.message, ...messages].filter(Boolean).join('\n');
+  }
+  return e?.data?.message || fallback;
 };

@@ -398,7 +398,7 @@ All admin endpoints require `x-admin-key`.
 
 - `GET /api/admin/snapshot`
 - `PATCH /api/admin/events/{event_id}`
-- `PATCH /api/admin/tasks/{task_id}`
+- `PATCH /api/admin/tasks/{task_id}` — validates structured `display_text` blank tokens against `evaluation_payload.questions` before saving. Validation errors return `422` with `detail.message` and `detail.issues[]`.
 - `PATCH /api/admin/personas/{persona_id}`
 - `PATCH /api/admin/conditions/{condition_id}`
 - `GET /api/admin/research-logs?limit=200`
@@ -431,7 +431,9 @@ Key comments:
 Current action types:
 
 - `event_initialized`
+- `event_updated`
 - `task_answer_changed`
+- `task_updated`
 - `task_submitted`
 - `conversation_started`
 - `message_sent`
@@ -453,6 +455,7 @@ Current coverage:
 - event initialize creates workspace but not conversation.
 - task submit creates attempt, judgement, conversation, greeting, and logs.
 - task draft save persists recoverable in-progress attempts.
+- admin task update rejects corrupt story tokens/questions and logs `task_updated` on success.
 - session state reload returns event/task/personas/condition/attempt/conversation id for `/sessions/[sessionId]/task`.
 - session progress returns per-user event/condition status for homepage recovery.
 - invalid UUID route parameters return validation errors instead of backend 500s.

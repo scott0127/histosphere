@@ -16,6 +16,7 @@ from app.schemas.requests import (
     PersonaUpdateRequest,
 )
 from app.schemas.responses import AdminSnapshotResponse, EventListItem
+from app.services.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
     prefix="/api/admin",
@@ -72,14 +73,56 @@ def update_task(
     request: EventTaskUpdateRequest,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> EventTask:
-    """更新 task 文字與 evaluation_payload。"""
+    """更新 task 文字與 evaluation_payload，保存前檢查故事 token 與題目結構。"""
     task = repository.get_event_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     updates = request.model_dump(exclude_unset=True)
+    required_field_issues = [
+        {
+            "field": field,
+            "message": f"{field} cannot be null.",
+            "code": "required_field_null",
+        }
+        for field in ("story_text", "display_text", "evaluation_payload", "revision_state")
+        if field in updates and updates[field] is None
+    ]
+    if required_field_issues:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "Task authoring payload failed validation.",
+                "issues": required_field_issues,
+            },
+        )
+
+    next_display_text = updates.get("display_text", task.display_text)
+    next_evaluation_payload = updates.get("evaluation_payload", task.evaluation_payload)
+    validation_issues = validate_task_authoring_payload(
+        display_text=next_display_text,
+        evaluation_payload=next_evaluation_payload,
+    )
+    if validation_issues:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "Task authoring payload failed validation.",
+                "issues": validation_issues,
+            },
+        )
+
     for key, value in updates.items():
         setattr(task, key, value)
-    return repository.save_event_task(task)
+    saved = repository.save_event_task(task)
+    repository.log_research(
+        ResearchLog(
+            event_id=saved.event_id,
+            task_id=saved.id,
+            action_type="task_updated",
+            payload={"updated_fields": sorted(updates.keys())},
+        )
+    )
+    return saved
 
 
 @router.patch("/personas/{persona_id}", response_model=Persona)

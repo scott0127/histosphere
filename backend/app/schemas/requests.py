@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -86,7 +86,7 @@ class EventTaskUpdateRequest(BaseModel):
     story_text: str | None = None
     display_text: str | None = None
     evaluation_payload: dict[str, Any] | None = None
-    revision_state: str | None = "teacher_modified"
+    revision_state: Literal["llm_generated", "teacher_modified", "manual"] | None = "teacher_modified"
 
 
 class ExperimentConditionUpdateRequest(BaseModel):
