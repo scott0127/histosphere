@@ -372,6 +372,32 @@
                   <button class="admin-button-primary w-full px-3 py-3 text-xs font-bold" @click="saveCondition(selectedCondition)">
                     儲存 condition 設定
                   </button>
+
+                  <div class="admin-subpanel p-4">
+                    <div class="flex items-center justify-between gap-3">
+                      <span>
+                        <span class="admin-label block">後端 prompt 預覽</span>
+                        <span class="admin-caption mt-1 block text-xs">只讀，來自後端 PromptService</span>
+                      </span>
+                      <button
+                        class="admin-button-secondary px-3 py-2 text-xs font-bold"
+                        type="button"
+                        :disabled="promptPreviewLoading"
+                        @click="loadPromptPreview(selectedEvent, selectedCondition)"
+                      >
+                        {{ promptPreviewLoading ? '載入中' : '預覽' }}
+                      </button>
+                    </div>
+                    <textarea
+                      v-model="promptPreviewMessage"
+                      rows="2"
+                      class="admin-textarea mt-3 w-full px-3 py-2 text-xs leading-5"
+                    />
+                    <pre
+                      v-if="promptPreview"
+                      class="admin-code-editor mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-md border border-[var(--admin-border)] bg-[var(--admin-panel)] p-3 text-xs leading-5"
+                    >{{ promptPreview.prompt }}</pre>
+                  </div>
                 </div>
               </section>
             </div>
@@ -417,7 +443,11 @@ const {
   error,
   eventYearRange,
   loadSnapshot,
+  loadPromptPreview,
   personaJson,
+  promptPreview,
+  promptPreviewLoading,
+  promptPreviewMessage,
   promptConditions,
   resetWorkspace,
   restoreStoredAdminKey,

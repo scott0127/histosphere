@@ -6,7 +6,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import get_repository, require_admin_key
+from app.api.deps import get_prompt_service, get_rag_pipeline, get_repository, require_admin_key
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentCondition, Persona, ResearchLog
 from app.schemas.requests import (
@@ -15,7 +15,8 @@ from app.schemas.requests import (
     ExperimentConditionUpdateRequest,
     PersonaUpdateRequest,
 )
-from app.schemas.responses import AdminSnapshotResponse, EventListItem
+from app.schemas.responses import AdminPromptPreviewResponse, AdminSnapshotResponse, EventListItem, PromptPreviewModule
+from app.services import PromptService, RagPipelineService
 from app.services.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
@@ -39,6 +40,56 @@ def admin_snapshot(repository: RepositoryProtocol = Depends(get_repository)) -> 
         conditions=repository.list_conditions(active_only=False),
         sessions=repository.list_sessions(),
         research_logs=repository.list_research_logs(),
+    )
+
+
+@router.get("/prompt-preview", response_model=AdminPromptPreviewResponse)
+def prompt_preview(
+    event_id: str,
+    condition_key: str,
+    persona_id: str | None = None,
+    sample_user_message: str = "請說明這個事件的重要性。",
+    repository: RepositoryProtocol = Depends(get_repository),
+    prompt_service: PromptService = Depends(get_prompt_service),
+    rag_pipeline: RagPipelineService = Depends(get_rag_pipeline),
+) -> AdminPromptPreviewResponse:
+    """預覽後端實際組裝的聊天 prompt；不呼叫 LLM，也不修改資料。"""
+    event = repository.get_event(event_id)
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    condition = repository.get_condition_by_key(condition_key)
+    if not condition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
+
+    persona = None
+    if condition.roleplay_enabled:
+        personas = repository.list_personas(event.id)
+        if persona_id:
+            persona = repository.get_persona(persona_id)
+            if not persona or persona.event_id != event.id or not persona.active:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected persona not found")
+        elif personas:
+            persona = personas[0]
+        if not persona:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active personas found")
+
+    rag_sources = rag_pipeline.retrieve(event.id, sample_user_message)
+    modules = prompt_service.assemble_chat_modules(
+        event=event,
+        persona=persona,
+        condition=condition,
+        task_attempt=None,
+        user_message=sample_user_message,
+        rag_sources=rag_sources,
+    )
+    return AdminPromptPreviewResponse(
+        event=event,
+        condition=condition,
+        persona=persona,
+        sample_user_message=sample_user_message,
+        modules=[PromptPreviewModule(name=module.name, content=module.content) for module in modules],
+        prompt=prompt_service.render_modules(modules),
     )
 
 

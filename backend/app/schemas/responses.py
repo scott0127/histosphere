@@ -86,6 +86,20 @@ class AdminSnapshotResponse(BaseModel):
     research_logs: list[ResearchLog] = Field(default_factory=list)
 
 
+class PromptPreviewModule(BaseModel):
+    name: str
+    content: str
+
+
+class AdminPromptPreviewResponse(BaseModel):
+    event: Event
+    condition: ExperimentCondition
+    persona: Persona | None = None
+    sample_user_message: str
+    modules: list[PromptPreviewModule] = Field(default_factory=list)
+    prompt: str
+
+
 class SessionStateResponse(BaseModel):
     session: ExperimentSession
     event: Event

@@ -1,9 +1,16 @@
 // useAdminWorkspace 管理 admin 頁的 snapshot 載入、JSON 編輯狀態與保存流程。
 // Page 保留登入畫面與折疊 UI；這裡負責 admin API 的狀態一致性。
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { ComputedRef, Ref } from 'vue';
 import { taskControlQuestions } from '~/composables/useTaskControl';
-import type { AdminSnapshotResponse, EventTask, EventWithPersonas, ExperimentCondition, Persona } from '~/types';
+import type {
+  AdminPromptPreviewResponse,
+  AdminSnapshotResponse,
+  EventTask,
+  EventWithPersonas,
+  ExperimentCondition,
+  Persona,
+} from '~/types';
 import {
   buildAdminEditableJson,
   conditionModeLabel,
@@ -13,6 +20,7 @@ import {
 } from '~/utils/adminWorkspaceState';
 import {
   fetchAdminSnapshot,
+  fetchAdminPromptPreview,
   updateAdminCondition,
   updateAdminEvent,
   updateAdminPersona,
@@ -29,6 +37,9 @@ export const useAdminWorkspace = (
   const personaJson = ref<Record<string, string>>({});
   const selectedConditionId = ref<string | null>(null);
   const selectedEventId = ref<string | null>(null);
+  const promptPreview = ref<AdminPromptPreviewResponse | null>(null);
+  const promptPreviewLoading = ref(false);
+  const promptPreviewMessage = ref('請說明這個事件的重要性。');
 
   const selectedEvent = computed<EventWithPersonas | null>(() => {
     if (!snapshot.value || !selectedEventId.value) return null;
@@ -43,12 +54,17 @@ export const useAdminWorkspace = (
     return conditions.find((condition) => condition.id === selectedConditionId.value) || conditions[0];
   });
 
+  watch([selectedEventId, selectedConditionId, promptPreviewMessage], () => {
+    promptPreview.value = null;
+  });
+
   const resetWorkspace = (clearStoredKey = true) => {
     adminKey.value = '';
     snapshot.value = null;
     error.value = null;
     taskJson.value = {};
     personaJson.value = {};
+    promptPreview.value = null;
     selectedConditionId.value = null;
     selectedEventId.value = null;
     if (clearStoredKey && import.meta.client) {
@@ -176,6 +192,27 @@ export const useAdminWorkspace = (
     }
   };
 
+  const loadPromptPreview = async (event: EventWithPersonas, condition: ExperimentCondition) => {
+    promptPreviewLoading.value = true;
+    error.value = null;
+    try {
+      const personaId = condition.roleplay_enabled
+        ? event.personas.find((persona) => persona.active)?.id || null
+        : null;
+      promptPreview.value = await fetchAdminPromptPreview(adminKey.value, {
+        eventId: event.id,
+        conditionKey: condition.condition_key,
+        personaId,
+        sampleUserMessage: promptPreviewMessage.value,
+      });
+    } catch (e: any) {
+      promptPreview.value = null;
+      error.value = formatAdminApiError(e, 'Prompt 預覽載入失敗。');
+    } finally {
+      promptPreviewLoading.value = false;
+    }
+  };
+
   return {
     adminKey,
     conditionModeLabel,
@@ -183,7 +220,11 @@ export const useAdminWorkspace = (
     error,
     eventYearRange,
     loadSnapshot,
+    loadPromptPreview,
     personaJson,
+    promptPreview,
+    promptPreviewLoading,
+    promptPreviewMessage,
     promptConditions,
     resetWorkspace,
     restoreStoredAdminKey,

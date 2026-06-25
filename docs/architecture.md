@@ -163,6 +163,8 @@ Current modules in `PromptService`:
 - `speaker_context`: generic assistant vs historical persona.
 - `deliberate_error_slot`: reserved and disabled by default.
 
+Admin preview: `GET /api/admin/prompt-preview` renders the same modules through `PromptService` without calling the LLM.
+
 ## 2x2 Condition Matrix
 
 | condition_key | EBL | Role-play | agent_mode | response_policy | Behavior |
@@ -397,6 +399,7 @@ Response: `UserProgressResponse` / `SessionStateResponse`
 All admin endpoints require `x-admin-key`.
 
 - `GET /api/admin/snapshot`
+- `GET /api/admin/prompt-preview?event_id=...&condition_key=...&persona_id=...` — renders backend prompt modules for researcher review without calling the LLM.
 - `PATCH /api/admin/events/{event_id}`
 - `PATCH /api/admin/tasks/{task_id}` — validates structured `display_text` blank tokens against `evaluation_payload.questions` before saving. Validation errors return `422` with `detail.message` and `detail.issues[]`.
 - `PATCH /api/admin/personas/{persona_id}`
@@ -456,6 +459,7 @@ Current coverage:
 - task submit creates attempt, judgement, conversation, greeting, and logs.
 - task draft save persists recoverable in-progress attempts.
 - admin task update rejects corrupt story tokens/questions and logs `task_updated` on success.
+- admin prompt preview returns runtime prompt modules without calling external LLM providers.
 - session state reload returns event/task/personas/condition/attempt/conversation id for `/sessions/[sessionId]/task`.
 - session progress returns per-user event/condition status for homepage recovery.
 - invalid UUID route parameters return validation errors instead of backend 500s.

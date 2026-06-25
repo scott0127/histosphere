@@ -1,5 +1,6 @@
 import type {
   AdminSnapshotResponse,
+  AdminPromptPreviewResponse,
   ChatMessage,
   ChatResponse,
   ConditionKey,
@@ -47,6 +48,13 @@ export type ChatMessageInput = {
   targetPersonaId?: string | null;
 };
 
+export type PromptPreviewInput = {
+  eventId: string;
+  conditionKey: ConditionKey;
+  personaId?: string | null;
+  sampleUserMessage?: string;
+};
+
 export type EventUpdateInput = Pick<
   HistoricalEvent,
   'canonical_name' | 'description' | 'century' | 'start_year' | 'end_year' | 'context' | 'source_summary'
@@ -82,6 +90,22 @@ export const fetchEvents = (fetcher: FrontendFetcher = $fetch) => {
 export const fetchAdminSnapshot = (adminKey: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<AdminSnapshotResponse>('/api/admin/snapshot', {
     headers: adminHeaders(adminKey),
+  });
+};
+
+export const fetchAdminPromptPreview = (
+  adminKey: string,
+  input: PromptPreviewInput,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<AdminPromptPreviewResponse>('/api/admin/prompt-preview', {
+    headers: adminHeaders(adminKey),
+    query: {
+      event_id: input.eventId,
+      condition_key: input.conditionKey,
+      ...(input.personaId ? { persona_id: input.personaId } : {}),
+      ...(input.sampleUserMessage ? { sample_user_message: input.sampleUserMessage } : {}),
+    },
   });
 };
 

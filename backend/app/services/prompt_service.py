@@ -5,6 +5,8 @@
 review，也方便未來把模組開關做成 admin UI 設定。
 """
 
+from dataclasses import dataclass
+
 from app.models.domain import Event, ExperimentCondition, Persona, RagSource, TaskAttempt
 
 
@@ -24,6 +26,12 @@ BACKEND_TEACHER_PROMPTS = {
 }
 
 
+@dataclass(frozen=True)
+class PromptModule:
+    name: str
+    content: str
+
+
 class PromptService:
     """組裝聊天回覆所需的 prompt modules。"""
 
@@ -37,39 +45,65 @@ class PromptService:
         rag_sources: list[RagSource],
     ) -> str:
         """依照目前 condition/persona/task 狀態合併 prompt modules。"""
+        return self.render_modules(
+            self.assemble_chat_modules(
+                event=event,
+                persona=persona,
+                condition=condition,
+                task_attempt=task_attempt,
+                user_message=user_message,
+                rag_sources=rag_sources,
+            )
+        )
+
+    def assemble_chat_modules(
+        self,
+        event: Event,
+        persona: Persona | None,
+        condition: ExperimentCondition,
+        task_attempt: TaskAttempt | None,
+        user_message: str,
+        rag_sources: list[RagSource],
+    ) -> list[PromptModule]:
+        """回傳具名 prompt modules，供 chat runtime 與 admin preview 共用。"""
         modules = [
-            self._admin_teacher_prompt(condition),
-            self._condition_policy(condition),
-            self._event_context(event),
-            self._learner_misconception_context(task_attempt),
-            self._source_context(rag_sources),
-            self._speaker_context(persona, condition),
-            f"[user_message]\n{user_message}",
+            self._module("backend_teacher_prompt", self._admin_teacher_prompt(condition)),
+            self._module("condition_policy", self._condition_policy(condition)),
+            self._module("event_context", self._event_context(event)),
+            self._module("learner_task", self._learner_misconception_context(task_attempt)),
+            self._module("source_context", self._source_context(rag_sources)),
+            self._module("speaker_context", self._speaker_context(persona, condition)),
+            self._module("user_message", user_message),
         ]
         if persona and persona.prompt_profile.get("deliberate_error_enabled") is True:
-            modules.append(self._deliberate_error_slot())
-        return "\n\n".join(module for module in modules if module)
+            modules.append(self._module("deliberate_error_slot", self._deliberate_error_slot()))
+        return [module for module in modules if module.content]
+
+    @staticmethod
+    def render_modules(modules: list[PromptModule]) -> str:
+        """將具名 modules 轉成實際送給 LLM 的 prompt 字串。"""
+        return "\n\n".join(f"[{module.name}]\n{module.content}" for module in modules if module.content)
+
+    @staticmethod
+    def _module(name: str, content: str) -> PromptModule:
+        return PromptModule(name=name, content=content.strip())
 
     @staticmethod
     def _admin_teacher_prompt(condition: ExperimentCondition) -> str:
         """加入後端維護的 condition teacher-facing 指令。"""
         teacher_prompt = BACKEND_TEACHER_PROMPTS.get(condition.condition_key, "").strip()
-        if not teacher_prompt:
-            return ""
-        return f"[backend_teacher_prompt]\n{teacher_prompt}"
+        return teacher_prompt
 
     @staticmethod
     def _condition_policy(condition: ExperimentCondition) -> str:
         """產生 EBL/direct-answer 的主要回覆政策。"""
         if condition.response_policy == "scaffold":
             return (
-                "[condition_policy]\n"
                 "Use Error-Based Learning. Treat learner misconceptions as productive errors. "
                 "Guide historical thinking, evidence-based argumentation, source interpretation, and critical reflection. "
                 "Do not directly reveal the final answer before the learner attempts self-correction."
             )
         return (
-            "[condition_policy]\n"
             "Use a direct-answer style. Give a concise answer first, then explain the historical context."
         )
 
@@ -77,7 +111,6 @@ class PromptService:
     def _event_context(event: Event) -> str:
         """放入歷史事件基本脈絡；不詳欄位明確標示避免 LLM 自行腦補。"""
         return (
-            "[event_context]\n"
             f"Canonical event name: {event.canonical_name}\n"
             f"Description: {event.description or '不詳'}\n"
             f"Century: {event.century if event.century is not None else '不詳'}\n"
@@ -90,9 +123,8 @@ class PromptService:
     def _learner_misconception_context(task_attempt: TaskAttempt | None) -> str:
         """放入 learner task 作答與 LLM judgement，供 EBL 條件使用。"""
         if not task_attempt:
-            return "[learner_task]\nNo task attempt is attached."
+            return "No task attempt is attached."
         return (
-            "[learner_task]\n"
             f"Response payload: {task_attempt.response_payload}\n"
             f"LLM judgement: {task_attempt.judgement_payload}"
         )
@@ -101,21 +133,19 @@ class PromptService:
     def _source_context(rag_sources: list[RagSource]) -> str:
         """放入 RAG 來源；V1 未啟用 retrieval 時會明確提醒使用已知邊界。"""
         if not rag_sources:
-            return "[source_context]\nNo RAG retrieval is enabled in V1. Use event context and known historical boundaries."
+            return "No RAG retrieval is enabled in V1. Use event context and known historical boundaries."
         sources = "\n".join(f"- {source.section_title}: {source.content}" for source in rag_sources)
-        return f"[source_context]\n{sources}"
+        return sources
 
     @staticmethod
     def _speaker_context(persona: Persona | None, condition: ExperimentCondition) -> str:
         """根據 role-play 條件決定 generic tutor 或 historical persona 身分。"""
         if not condition.roleplay_enabled or not persona:
             return (
-                "[speaker_context]\n"
                 "You are a generic AI tutor/chatbot, not a historical persona. "
                 "Do not pretend to be a historical figure."
             )
         return (
-            "[speaker_context]\n"
             f"You are {persona.name}, role: {persona.role or '不詳'}.\n"
             f"Biography: {persona.biography or '不詳'}\n"
             f"Expertise: {', '.join(persona.expertise_areas) or '不詳'}\n"
@@ -127,6 +157,5 @@ class PromptService:
     def _deliberate_error_slot() -> str:
         """保留 controlled AI inaccuracies 的 prompt 擴充點，V1 預設停用。"""
         return (
-            "[deliberate_error_slot]\n"
             "Reserved for controlled AI-generated inaccuracies. Disabled in V1 unless explicitly enabled by admin."
         )

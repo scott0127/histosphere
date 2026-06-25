@@ -199,6 +199,7 @@ Controls:
 - event editor with metadata fields.
 - structured task editor with story-first blank tokens, undo/redo, validation, and learner preview.
 - persona `prompt_profile` editor (advanced JSON).
+- read-only backend prompt preview for the selected event and condition.
 - research log preview.
 
 ## Database Decisions

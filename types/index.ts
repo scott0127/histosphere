@@ -251,3 +251,17 @@ export interface AdminSnapshotResponse {
   sessions: ExperimentSession[];
   research_logs: Array<Record<string, unknown>>;
 }
+
+export interface PromptPreviewModule {
+  name: string;
+  content: string;
+}
+
+export interface AdminPromptPreviewResponse {
+  event: HistoricalEvent;
+  condition: ExperimentCondition;
+  persona?: Persona | null;
+  sample_user_message: string;
+  modules: PromptPreviewModule[];
+  prompt: string;
+}

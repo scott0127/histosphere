@@ -44,6 +44,14 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
       sessions: [],
       research_logs: [],
     },
+    'GET /api/admin/prompt-preview': {
+      event: sampleEvent,
+      condition: sampleCondition,
+      persona: samplePersona,
+      sample_user_message: '請說明重要性。',
+      modules: [{ name: 'event_context', content: '法國大革命' }],
+      prompt: '[event_context]\n法國大革命',
+    },
     'PATCH /api/admin/events/event-1': sampleEvent,
     'PATCH /api/admin/tasks/task-1': sampleTask,
     'PATCH /api/admin/personas/persona-1': samplePersona,
@@ -51,6 +59,12 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
   });
 
   await api.fetchAdminSnapshot('test-admin', fetcher);
+  await api.fetchAdminPromptPreview('test-admin', {
+    eventId: 'event-1',
+    conditionKey: 'ebl_roleplay',
+    personaId: 'persona-1',
+    sampleUserMessage: '請說明重要性。',
+  }, fetcher);
   await api.updateAdminEvent('test-admin', 'event-1', {
     canonical_name: '法國大革命',
     description: '新版介紹',
@@ -85,12 +99,18 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
     active: true,
   }, fetcher);
 
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
   for (const call of calls) {
     assert.deepEqual(call.options.headers, { 'x-admin-key': 'test-admin' });
   }
-  assert.equal(calls[1].options.method, 'PATCH');
-  assert.equal(calls[2].options.body.revision_state, 'teacher_modified');
+  assert.deepEqual(calls[1].options.query, {
+    event_id: 'event-1',
+    condition_key: 'ebl_roleplay',
+    persona_id: 'persona-1',
+    sample_user_message: '請說明重要性。',
+  });
+  assert.equal(calls[2].options.method, 'PATCH');
+  assert.equal(calls[3].options.body.revision_state, 'teacher_modified');
 });
 
 test('frontend api client initializes events and loads user progress with stable payload names', async () => {

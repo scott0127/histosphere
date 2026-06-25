@@ -26,6 +26,7 @@ This document tracks what has been completed, what is still missing, and what fr
 - Homepage event/condition list orchestration moved into `useEventLibrary`.
 - Admin snapshot, editable JSON maps, and save flows moved into `useAdminWorkspace`; pure admin ordering/format helpers live in `utils/adminWorkspaceState.ts`.
 - Admin task update now validates structured `display_text` tokens and `evaluation_payload.questions` before save, and logs `research_logs.task_updated`.
+- Admin prompt preview endpoint shows the backend-assembled prompt modules without calling the LLM or storing condition prompts in Supabase.
 - Backend session/task contract tests added under `backend/tests/api`, covering invalid UUID validation, draft recovery, progress, and submit-to-conversation transitions.
 - Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
 - Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
@@ -38,7 +39,7 @@ This document tracks what has been completed, what is still missing, and what fr
 | Task authoring | Admin UI patches `display_text` + `evaluation_payload` as a whole; server-side token/question validation protects saves; task draft save exists | Structured question CRUD, publish snapshot, answer version history |
 | Task answers | `task_attempts.response_payload` stores full answer bundle | `task_answers` table exists but unused; missing per-question scoring, answer key audit trail |
 | Event materials | Events can be PATCH-updated from admin UI; sample materials via seed.sql | Missing version history, material readiness check, archive strategy |
-| Prompt management | Condition-level prompt managed in backend code; `personas.prompt_profile` editable | Missing prompt preview/dry-run endpoint, prompt hash/audit |
+| Prompt management | Condition-level prompt managed in backend code; `personas.prompt_profile` editable; admin prompt preview is read-only | Missing prompt dry-run endpoint, prompt hash/audit |
 | Participant/session | `experiment_sessions` has user_id; session progress/state endpoints exist; event library and task gate use them | Missing formal participant account mapping, participant roster/admin import, cross-device identity policy |
 | RAG/source | `wiki_sources` and `knowledge_chunks` tables exist; RAG retrieve is empty implementation | Missing ingestion, chunking, embedding/vector retrieval, source citation |
 | Admin auth | All `/api/admin/*` check `x-admin-key`; frontend uses Supabase Auth + admin key | Missing role-based admin policy, multi-user management, fine-grained audit diff |
@@ -70,7 +71,6 @@ This document tracks what has been completed, what is still missing, and what fr
 
 ## Prompt & Persona Gaps
 
-- Build prompt preview endpoint for researchers to see assembled prompt modules.
 - Build prompt dry-run endpoint for test responses with fixed input.
 - 2x2 condition EBL/role-play/response-policy should be treated as research design constants; admin UI should not freely toggle them without stricter permission.
 - Persona `prompt_profile` is still raw JSON; consider splitting into speaking style, knowledge boundary, teacher notes, source policy fields.
