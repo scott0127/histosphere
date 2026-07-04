@@ -159,19 +159,17 @@ const pendingStartLabel = computed(() => {
 });
 
 const startConfirmTitle = computed(() => {
-  if (pendingStartProgress.value?.conversationId) return '繼續上次對話';
-  if (pendingStartProgress.value?.sessionId) return '回到上次前置任務';
-  return `開始 ${pendingStartLabel.value}`;
+  return pendingStartLabel.value;
 });
 
 const startConfirmMessage = computed(() => {
   if (pendingStartProgress.value?.conversationId) {
-    return `系統找到 ${pendingStartLabel.value} 的既有對話紀錄。是否回到上次對話？`;
+    return '點選「是」繼續上一階段 [CHAT]';
   }
   if (pendingStartProgress.value?.sessionId) {
-    return `系統找到 ${pendingStartLabel.value} 的前置任務進度。是否回到上次中斷的位置？`;
+    return '點選「是」回到上一階段 [TASK]';
   }
-  return `即將進入 ${pendingStartLabel.value} 的前置任務。是否開始？`;
+  return '點選「是」進入下一階段 [TASK]';
 });
 
 // 保留未來 avatar 顯示規則；目前首頁 UI 暫時不使用 persona 頭像。

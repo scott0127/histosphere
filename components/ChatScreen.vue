@@ -147,8 +147,8 @@
 
     <ConfirmActionModal
       :show="showExitConfirmDialog"
-      title="離開對話"
-      message="即將回到事件素材庫。目前對話紀錄會保留，可由相同受測者與活動代號繼續。是否離開？"
+      title="CHAT"
+      message="點選「是」返回事件素材庫"
       eyebrow="階段確認"
       icon="mdi:library-outline"
       confirm-label="是"

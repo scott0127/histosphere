@@ -55,8 +55,8 @@
 
     <ConfirmActionModal
       :show="showSubmitConfirmDialog"
-      title="送出前置任務"
-      message="送出後將進入對話階段。是否確認送出？"
+      title="TASK"
+      message="點選「是」進入下一階段 [CHAT]"
       eyebrow="階段確認"
       icon="mdi:send-check-outline"
       confirm-label="是"
