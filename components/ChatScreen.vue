@@ -18,7 +18,7 @@
 
         <button
           class="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-3 py-2 text-sm font-semibold text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)]"
-          @click="$emit('reset')"
+          @click="showExitConfirmDialog = true"
         >
           <Icon name="mdi:library-outline" class="h-5 w-5" />
           事件素材庫
@@ -144,6 +144,18 @@
         </div>
       </aside>
     </main>
+
+    <ConfirmActionModal
+      :show="showExitConfirmDialog"
+      title="離開對話"
+      message="即將回到事件素材庫。目前對話紀錄會保留，可由相同受測者與活動代號繼續。是否離開？"
+      eyebrow="階段確認"
+      icon="mdi:library-outline"
+      confirm-label="是"
+      cancel-label="否"
+      @confirm="confirmExitConversation"
+      @cancel="showExitConfirmDialog = false"
+    />
   </div>
 </template>
 
@@ -154,6 +166,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import type { ChatMessage, ExperimentCondition, HistoricalEvent, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';
 import AnnotatedText from './AnnotatedText.vue';
+import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import { studentActivityTitle } from '~/composables/useStudentTask';
 
 const props = defineProps<{
@@ -175,6 +188,7 @@ const userInput = ref('');
 const selectedPersonaId = ref<string | null>(null);
 const chatEndRef = ref<HTMLDivElement | null>(null);
 const chatContainerRef = ref<HTMLDivElement | null>(null);
+const showExitConfirmDialog = ref(false);
 
 // 最後一則內容為 "..." 時代表後端正在生成回覆，避免連續送出造成 history index 混亂。
 const isReplying = computed(() => {
@@ -209,6 +223,11 @@ const handleSendMessage = () => {
   if (!trimmed || isReplying.value) return;
   emit('send-message', trimmed, selectedPersonaId.value || undefined);
   userInput.value = '';
+};
+
+const confirmExitConversation = () => {
+  showExitConfirmDialog.value = false;
+  emit('reset');
 };
 
 // history 改變後自動捲到底，保留聊天室連續閱讀體驗。

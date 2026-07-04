@@ -60,6 +60,18 @@
       @confirm="confirmDelete"
       @cancel="showDeleteConfirmDialog = false"
     />
+
+    <ConfirmActionModal
+      :show="showStartConfirmDialog"
+      :title="startConfirmTitle"
+      :message="startConfirmMessage"
+      eyebrow="活動確認"
+      icon="mdi:play-circle-outline"
+      confirm-label="是"
+      cancel-label="否"
+      @confirm="confirmStartCondition"
+      @cancel="cancelStartCondition"
+    />
   </div>
 </template>
 
@@ -73,7 +85,9 @@ import EventCreatePanel from '~/components/event-library/EventCreatePanel.vue';
 import EventDetailModal from '~/components/event-library/EventDetailModal.vue';
 import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vue';
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
+import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
+import { studentActivityTitle } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import { fetchAdminSnapshot } from '~/utils/histosphereApi';
 
@@ -84,7 +98,9 @@ definePageMeta({
 
 const eventName = ref('');
 const showDeleteConfirmDialog = ref(false);
+const showStartConfirmDialog = ref(false);
 const pendingDeleteEventId = ref<string | null>(null);
+const pendingStartCondition = ref<ExperimentCondition | null>(null);
 const detailEvent = ref<EventWithPersonas | null>(null);
 const adminModePending = ref(false);
 const adminModeError = ref<string | null>(null);
@@ -131,6 +147,31 @@ const {
 const detailConditionProgress = computed(() => {
   if (!detailEvent.value) return {};
   return progressByEvent.value[detailEvent.value.id] || {};
+});
+
+const pendingStartProgress = computed(() => {
+  if (!pendingStartCondition.value) return null;
+  return detailConditionProgress.value[pendingStartCondition.value.condition_key] || null;
+});
+
+const pendingStartLabel = computed(() => {
+  return pendingStartCondition.value ? studentActivityTitle(pendingStartCondition.value) : '活動';
+});
+
+const startConfirmTitle = computed(() => {
+  if (pendingStartProgress.value?.conversationId) return '繼續上次對話';
+  if (pendingStartProgress.value?.sessionId) return '回到上次前置任務';
+  return `開始 ${pendingStartLabel.value}`;
+});
+
+const startConfirmMessage = computed(() => {
+  if (pendingStartProgress.value?.conversationId) {
+    return `系統找到 ${pendingStartLabel.value} 的既有對話紀錄。是否回到上次對話？`;
+  }
+  if (pendingStartProgress.value?.sessionId) {
+    return `系統找到 ${pendingStartLabel.value} 的前置任務進度。是否回到上次中斷的位置？`;
+  }
+  return `即將進入 ${pendingStartLabel.value} 的前置任務。是否開始？`;
 });
 
 // 保留未來 avatar 顯示規則；目前首頁 UI 暫時不使用 persona 頭像。
@@ -207,6 +248,21 @@ const handleCreateEvent = async () => {
 // 啟動指定 condition；若本機已有對話紀錄，直接回到該 conversation。
 const startCondition = async (condition: ExperimentCondition) => {
   if (!detailEvent.value) return;
+  await saveParticipant();
+  pendingStartCondition.value = condition;
+  showStartConfirmDialog.value = true;
+};
+
+const cancelStartCondition = () => {
+  showStartConfirmDialog.value = false;
+  pendingStartCondition.value = null;
+};
+
+const confirmStartCondition = async () => {
+  if (!detailEvent.value || !pendingStartCondition.value) return;
+  const condition = pendingStartCondition.value;
+  showStartConfirmDialog.value = false;
+  pendingStartCondition.value = null;
   await startExperimentCondition(detailEvent.value, condition);
 };
 

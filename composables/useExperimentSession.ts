@@ -29,6 +29,10 @@ export type LocalConditionProgress = {
 const progressItemsToLocalMap = (items: UserProgressItem[]) => {
   const next: Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>> = {};
   for (const item of items) {
+    const existing = next[item.event_id]?.[item.condition_key];
+    if (existing && Date.parse(existing.updatedAt) >= Date.parse(item.updated_at)) {
+      continue;
+    }
     next[item.event_id] = {
       ...(next[item.event_id] || {}),
       [item.condition_key]: {
