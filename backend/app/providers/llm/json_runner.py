@@ -2,6 +2,13 @@
 
 本模組集中處理 LiteLLM 呼叫、JSON 擷取、重試與 Pydantic 驗證。
 Provider 方法只需要描述任務與 schema，避免每個生成函式各自實作解析邏輯。
+
+執行流程:
+    1. 依序嘗試主模型與 fallback 模型（``_candidates()``）。
+    2. 對每個 candidate 呼叫 LiteLLM ``acompletion``。
+    3. 從回覆中擷取 JSON 並以 Pydantic schema 驗證。
+    4. 若 JSON 解析或驗證失敗，發送 repair prompt 重試一次。
+    5. 所有 candidates 皆失敗時拋出 ``RuntimeError``。
 """
 
 import json
@@ -19,7 +26,19 @@ PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
 @dataclass(frozen=True)
 class LLMCallCandidate:
-    """One concrete completion endpoint attempt."""
+    """單一 LLM completion endpoint 嘗試的描述。
+
+    封裝一個具體 model endpoint 的連線資訊，供
+    ``LLMJsonRunner`` 依序嘗試。
+
+    Attributes:
+        provider: Provider 名稱（如 ``"litellm"``、``"nvidia"``）。
+        model: LiteLLM 使用的 model 字串（可含 prefix）。
+        display_model: 用於日誌與 metadata 的模型顯示名稱。
+        api_base: 自訂 API base URL（可選）。
+        api_key: 自訂 API key（可選）。
+        extra_body: 傳給 LiteLLM 的額外 body 參數（可選）。
+    """
 
     provider: str
     model: str
@@ -30,9 +49,23 @@ class LLMCallCandidate:
 
 
 class LLMJsonRunner:
-    """執行 structured JSON LLM call。"""
+    """執行 structured JSON LLM call 並驗證回傳結構。
+
+    集中處理 LLM 呼叫、JSON 擷取、自動重試與 Pydantic 驗證，
+    讓 provider 方法只需描述 schema 與 prompt。
+
+    Attributes:
+        settings: 全域設定實例。
+        last_provider: 最近一次成功呼叫的 provider 名稱。
+        last_model: 最近一次成功呼叫的 model 名稱。
+    """
 
     def __init__(self, settings: Settings) -> None:
+        """初始化 runner。
+
+        Args:
+            settings: 全域 Settings 實例，提供 LLM 相關設定。
+        """
         self.settings = settings
         self.last_provider = "litellm"
         self.last_model = settings.llm_model
@@ -45,7 +78,25 @@ class LLMJsonRunner:
         user_prompt: str,
         task_name: str,
     ) -> PayloadT:
-        """呼叫 LLM 並驗證 JSON；失敗時依序嘗試備援模型。"""
+        """呼叫 LLM 並驗證 JSON；失敗時依序嘗試備援模型。
+
+        對每個 candidate：
+            1. 第一次呼叫 → 嘗試解析 JSON。
+            2. 若 JSON 解析或 Pydantic 驗證失敗 → 發送 repair prompt 重試。
+            3. 仍失敗 → 嘗試下一個 candidate。
+
+        Args:
+            schema: 預期回傳 JSON 的 Pydantic model 類別。
+            system_prompt: LLM system prompt。
+            user_prompt: LLM user prompt。
+            task_name: 任務名稱，用於錯誤訊息與日誌。
+
+        Returns:
+            PayloadT: 通過 Pydantic 驗證的結構化物件。
+
+        Raises:
+            RuntimeError: 所有 candidates 皆失敗時。
+        """
         errors: list[str] = []
         for candidate in self._candidates():
             try:
@@ -81,7 +132,21 @@ class LLMJsonRunner:
         raise RuntimeError(f"All LLM candidates failed for {task_name}: {' | '.join(errors)}")
 
     async def _complete(self, candidate: LLMCallCandidate, *, system_prompt: str, user_prompt: str) -> str:
-        """執行 LiteLLM completion；每個 candidate 可指定自己的 api_base/api_key。"""
+        """執行 LiteLLM completion。
+
+        每個 candidate 可指定自己的 api_base、api_key 與 extra_body。
+
+        Args:
+            candidate: 目標 LLM endpoint 描述。
+            system_prompt: System message 內容。
+            user_prompt: User message 內容。
+
+        Returns:
+            str: LLM 回覆的文字內容。
+
+        Raises:
+            RuntimeError: LLM 回傳空內容時。
+        """
         kwargs = {
             "model": candidate.model,
             "messages": [
@@ -106,6 +171,18 @@ class LLMJsonRunner:
         return str(content)
 
     def _candidates(self) -> list[LLMCallCandidate]:
+        """建立候選 LLM endpoint 清單（含 fallback 與 NVIDIA）。
+
+        組裝順序:
+            1. 主模型。
+            2. 設定中的 fallback 模型。
+            3. 若有 NVIDIA API key 且清單中尚無 NVIDIA candidate，
+               自動追加 NVIDIA endpoint。
+        去重邏輯以 (provider, display_model, api_base) 為 key。
+
+        Returns:
+            list[LLMCallCandidate]: 去重後的候選清單。
+        """
         candidates = [self._candidate_from_model(self.settings.llm_model)]
         for model in self.settings.llm_fallback_models:
             candidates.append(self._candidate_from_model(model))
@@ -124,6 +201,16 @@ class LLMJsonRunner:
         return deduped
 
     def _candidate_from_model(self, model: str) -> LLMCallCandidate:
+        """依 model 名稱建立對應的 candidate。
+
+        若 model 以 ``nvidia/`` 開頭，自動導向 NVIDIA endpoint。
+
+        Args:
+            model: LiteLLM 格式的模型名稱。
+
+        Returns:
+            LLMCallCandidate: 對應的 candidate。
+        """
         normalized = model.removeprefix("openai/")
         if normalized.startswith("nvidia/"):
             return self._nvidia_candidate(normalized)
@@ -136,6 +223,17 @@ class LLMJsonRunner:
         )
 
     def _nvidia_candidate(self, model: str) -> LLMCallCandidate:
+        """建立 NVIDIA NIM API candidate。
+
+        若啟用 thinking 模式，會在 extra_body 中加入
+        ``chat_template_kwargs`` 與 ``reasoning_budget``。
+
+        Args:
+            model: NVIDIA 模型名稱。
+
+        Returns:
+            LLMCallCandidate: NVIDIA endpoint candidate。
+        """
         extra_body = None
         if self.settings.nvidia_enable_thinking:
             extra_body = {
@@ -152,10 +250,23 @@ class LLMJsonRunner:
         )
 
     def _mark_success(self, candidate: LLMCallCandidate) -> None:
+        """記錄最近一次成功的 provider 與 model。
+
+        Args:
+            candidate: 成功完成呼叫的 candidate。
+        """
         self.last_provider = candidate.provider
         self.last_model = candidate.display_model
 
     def _safe_error_message(self, exc: Exception) -> str:
+        """遮蔽 API key 後回傳安全的錯誤訊息。
+
+        Args:
+            exc: 原始例外。
+
+        Returns:
+            str: 已遮蔽敏感資訊的錯誤訊息。
+        """
         text = str(exc)
         for secret in (self.settings.llm_api_key, self.settings.nvidia_api_key):
             if secret:
@@ -164,7 +275,23 @@ class LLMJsonRunner:
 
     @staticmethod
     def _parse(schema: type[PayloadT], text: str) -> PayloadT:
-        """擷取 JSON object 並套用 Pydantic schema。"""
+        """擷取 JSON object 並套用 Pydantic schema。
+
+        自動處理 markdown fences 包裹與非 JSON 前後綴。
+        從回覆文字中找到第一個 ``{`` 到最後一個 ``}`` 的區間，
+        解析為 JSON 並以 schema 驗證。
+
+        Args:
+            schema: 目標 Pydantic model 類別。
+            text: LLM 回覆的原始文字。
+
+        Returns:
+            PayloadT: 驗證後的結構化物件。
+
+        Raises:
+            json.JSONDecodeError: JSON 解析失敗。
+            ValidationError: Pydantic 驗證失敗。
+        """
         clean = text.strip()
         if clean.startswith("```"):
             clean = clean.strip("`").strip()

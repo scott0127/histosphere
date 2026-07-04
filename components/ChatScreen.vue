@@ -154,6 +154,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import type { ChatMessage, ExperimentCondition, HistoricalEvent, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';
 import AnnotatedText from './AnnotatedText.vue';
+import { studentActivityTitle } from '~/composables/useStudentTask';
 
 const props = defineProps<{
   event: HistoricalEvent | null;
@@ -181,13 +182,10 @@ const isReplying = computed(() => {
   return lastMessage?.content === '...';
 });
 
-// condition label 只顯示受測者可理解的活動名稱，不顯示內部 ebl_enabled/roleplay_enabled 欄位。
+// 學生端只顯示實驗代號，不揭露實際 treatment。
 const activityTitle = computed(() => {
   if (!props.condition) return '載入中';
-  if (props.condition.ebl_enabled && props.condition.roleplay_enabled) return '沉浸式角色扮演 + 錯誤中學習';
-  if (props.condition.ebl_enabled) return '錯誤中學習';
-  if (props.condition.roleplay_enabled) return '沉浸式角色扮演';
-  return 'Baseline';
+  return studentActivityTitle(props.condition);
 });
 
 // role-play 模式會依選定 persona 改變 placeholder，幫助使用者知道目前對話目標。

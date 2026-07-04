@@ -1,6 +1,11 @@
 <template>
   <!-- 事件詳情彈窗：呈現同一事件素材，並提供四種活動入口。 -->
-  <Transition name="modal-fade">
+  <Transition
+    enter-active-class="transition-opacity duration-[180ms] ease-in-out"
+    leave-active-class="transition-opacity duration-[180ms] ease-in-out"
+    enter-from-class="opacity-0"
+    leave-to-class="opacity-0"
+  >
     <div class="fixed inset-0 z-40 flex items-center justify-center bg-[rgba(47,41,36,0.58)] p-4 backdrop-blur-sm" @click.self="$emit('close')">
       <article class="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[12px] border-2 border-[var(--admin-line)] bg-[var(--admin-page)] shadow-[0_30px_90px_rgba(47,41,36,0.34)]">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.95)] px-5 py-3 backdrop-blur">
@@ -124,15 +129,3 @@ const updateParticipantId = (event: Event) => {
   emit('update:participantId', (event.target as HTMLInputElement).value);
 };
 </script>
-
-<style scoped>
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
-}
-</style>

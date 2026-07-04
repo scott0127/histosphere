@@ -1,3 +1,19 @@
+"""Domain model definitions.
+
+本模組定義 Histosphere 後端的所有 Pydantic domain model，
+對應 Supabase/PostgreSQL 資料表結構。所有 model 皆繼承
+``BaseModel``，欄位預設值與型別約束透過 Pydantic 驗證。
+
+Type aliases:
+    - ``ConditionKey``: 2x2 實驗條件鍵值的合法字串。
+    - ``SpeakerType``: 聊天訊息發言者角色。
+    - ``ResponsePolicy``: AI 回覆策略（direct / scaffold）。
+
+Utility functions:
+    - ``utc_now()``: 取得 UTC 時間戳。
+    - ``new_id()``: 產生 UUID v4 字串。
+"""
+
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
@@ -11,19 +27,52 @@ ConditionKey = Literal[
     "no_ebl_roleplay",
     "ebl_roleplay",
 ]
+"""2x2 實驗條件鍵值的合法字串聯集。"""
+
 SpeakerType = Literal["learner", "assistant", "persona"]
+"""聊天訊息發言者角色：learner / assistant（generic）/ persona（role-play）。"""
+
 ResponsePolicy = Literal["direct", "scaffold"]
+"""AI 回覆策略：direct（可直接給答案）/ scaffold（引導式教學）。"""
 
 
 def utc_now() -> datetime:
+    """取得當前 UTC 時間戳。
+
+    Returns:
+        datetime: 帶有 UTC timezone 的 datetime 物件。
+    """
     return datetime.now(timezone.utc)
 
 
 def new_id() -> str:
+    """產生 UUID v4 字串，用於各 model 的預設 id。
+
+    Returns:
+        str: UUID v4 字串。
+    """
     return str(uuid4())
 
 
 class Event(BaseModel):
+    """歷史事件。
+
+    對應 ``events`` 資料表，儲存事件基本資料與 LLM 生成的背景資訊。
+
+    Attributes:
+        id: 事件 UUID。
+        canonical_name: 事件正式名稱（用於查詢與顯示）。
+        description: 事件簡述。
+        century: 所屬世紀（如 19 表示 19 世紀）。
+        start_year: 事件起始年份。
+        end_year: 事件結束年份。
+        context: LLM 生成的事件歷史脈絡。
+        source_summary: 來源摘要與 LLM provider metadata。
+        created_by: 建立者識別（可選）。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     canonical_name: str
     description: str | None = None
@@ -38,6 +87,26 @@ class Event(BaseModel):
 
 
 class WikiSource(BaseModel):
+    """Wikipedia 來源紀錄。
+
+    對應 ``wiki_sources`` 資料表，儲存從 Wikipedia API 擷取的
+    事件來源資料，支援 zh/en 雙語與 summary/full 兩種模式。
+
+    Attributes:
+        id: 來源 UUID。
+        event_id: 關聯事件 ID。
+        language: 語言代碼（``"zh"`` / ``"en"``）。
+        title: Wikipedia 頁面標題。
+        page_url: 頁面 URL。
+        summary: 擷取的摘要文字。
+        sections: 完整模式下的分段內容。
+        provider: 來源提供者名稱（固定 ``"wikipedia"``）。
+        fetch_mode: 擷取模式（``"summary"`` / ``"full"``）。
+        fetch_status: 擷取結果狀態。
+        raw_payload: 原始 API 回應（供除錯）。
+        retrieved_at: 擷取時間。
+    """
+
     id: str = Field(default_factory=new_id)
     event_id: str
     language: Literal["zh", "en"]
@@ -53,6 +122,26 @@ class WikiSource(BaseModel):
 
 
 class KnowledgeChunk(BaseModel):
+    """RAG 用知識片段。
+
+    對應 ``knowledge_chunks`` 資料表，將 WikiSource 內容切分為
+    較小片段，供 RAG pipeline 做 similarity 檢索。
+
+    Attributes:
+        id: 片段 UUID。
+        event_id: 關聯事件 ID。
+        wiki_source_id: 來源的 WikiSource ID（可選）。
+        source: 來源名稱標示。
+        source_url: 來源 URL。
+        section_title: 所屬段落標題。
+        content: 片段文字內容。
+        language: 語言代碼。
+        char_count: 字元數。
+        chunk_index: 片段在來源中的順序索引。
+        metadata: 額外的 metadata。
+        created_at: 建立時間。
+    """
+
     id: str = Field(default_factory=new_id)
     event_id: str
     wiki_source_id: str | None = None
@@ -68,6 +157,25 @@ class KnowledgeChunk(BaseModel):
 
 
 class ExperimentCondition(BaseModel):
+    """2x2 實驗條件設定。
+
+    對應 ``experiment_conditions`` 資料表，定義 EBL 與 AI role-play
+    的開關組合，決定 AI 回覆模式與教學策略。
+
+    Attributes:
+        id: 條件 UUID。
+        condition_key: 條件鍵值（四種 2x2 組合之一）。
+        label: 人類可讀的條件標籤。
+        ebl_enabled: 是否啟用 Error-Based Learning。
+        roleplay_enabled: 是否啟用 AI historical persona role-play。
+        agent_mode: AI 代理模式（``"generic"`` / ``"persona"``）。
+        response_policy: 回覆策略（``"direct"`` / ``"scaffold"``）。
+        description: 條件描述（中文）。
+        active: 是否啟用此條件。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     condition_key: ConditionKey
     label: str
@@ -82,6 +190,22 @@ class ExperimentCondition(BaseModel):
 
 
 class ExperimentSession(BaseModel):
+    """實驗 session。
+
+    對應 ``experiment_sessions`` 資料表，追蹤 learner 在
+    特定事件 + 條件組合下的實驗進度。
+
+    Attributes:
+        id: Session UUID。
+        condition_id: 關聯的 ExperimentCondition ID。
+        condition_key_snapshot: 建立時的 condition_key 快照。
+        user_id: 受測者識別。
+        event_id: 關聯事件 ID。
+        status: Session 進度狀態。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     condition_id: str | None = None
     condition_key_snapshot: ConditionKey
@@ -99,6 +223,23 @@ class ExperimentSession(BaseModel):
 
 
 class EventTask(BaseModel):
+    """事件學習任務。
+
+    對應 ``event_tasks`` 資料表，儲存 LLM 生成或教師手動編輯的
+    historical thinking task 內容與評量結構。
+
+    Attributes:
+        id: Task UUID。
+        event_id: 關聯事件 ID。
+        title: Task 標題。
+        story_text: 完整正確故事文字（含答案）。
+        display_text: 顯示用文字（含空格「____」供填答）。
+        evaluation_payload: 評量結構（rubric、expected_points 等）。
+        revision_state: 修訂狀態（LLM 生成 / 教師修改 / 手動）。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     event_id: str
     title: str | None = None
@@ -111,6 +252,25 @@ class EventTask(BaseModel):
 
 
 class TaskAttempt(BaseModel):
+    """Learner 的 task 作答紀錄。
+
+    對應 ``task_attempts`` 資料表，記錄 learner 的作答內容
+    與 LLM 自動判斷結果。
+
+    Attributes:
+        id: Attempt UUID。
+        task_id: 關聯 Task ID。
+        event_id: 關聯事件 ID。
+        session_id: 關聯 Session ID。
+        user_id: 受測者識別。
+        status: 作答狀態（``"in_progress"`` / ``"submitted"``）。
+        response_payload: Learner 的作答內容（JSON）。
+        judgement_payload: LLM 自動判斷結果（JSON）。
+        submitted_at: 提交時間。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     task_id: str
     event_id: str
@@ -125,6 +285,29 @@ class TaskAttempt(BaseModel):
 
 
 class Persona(BaseModel):
+    """歷史人物角色（AI persona）。
+
+    對應 ``personas`` 資料表，儲存 LLM 生成或手動建立的
+    歷史人物資料，用於 role-play 條件下的 AI 回覆。
+
+    Attributes:
+        id: Persona UUID。
+        event_id: 關聯事件 ID。
+        name: 角色中文名稱。
+        english_name: 角色英文名稱。
+        role: 角色在事件中的身份。
+        biography: 角色簡傳。
+        expertise_areas: 專業領域清單。
+        sources: 角色資料來源引用。
+        prompt_profile: 供 prompt 組裝的角色 profile（含 speaking_style 等）。
+        avatar_url: 角色頭像 URL。
+        active: 是否啟用。
+        sort_order: 排序順序。
+        revision_state: 修訂狀態。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     event_id: str
     name: str
@@ -143,6 +326,24 @@ class Persona(BaseModel):
 
 
 class Conversation(BaseModel):
+    """聊天對話。
+
+    對應 ``conversations`` 資料表，代表 learner 與 AI 之間
+    的一次完整對話 session。
+
+    Attributes:
+        id: Conversation UUID。
+        event_id: 關聯事件 ID。
+        task_attempt_id: 觸發此對話的 TaskAttempt ID。
+        session_id: 關聯 ExperimentSession ID。
+        user_id: 受測者識別。
+        status: 對話狀態（``"active"`` / ``"archived"``）。
+        started_at: 對話開始時間。
+        archived_at: 封存時間。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
     id: str = Field(default_factory=new_id)
     event_id: str
     task_attempt_id: str | None = None
@@ -156,17 +357,48 @@ class Conversation(BaseModel):
 
 
 class Annotation(BaseModel):
+    """聊天回覆中的歷史標注。
+
+    LLM 在回覆中標記的關鍵歷史詞彙或概念，附帶簡要說明。
+
+    Attributes:
+        text: 被標注的文字。
+        explanation: 標注的解釋說明。
+    """
+
     text: str
     explanation: str
 
 
 class RagSource(BaseModel):
+    """RAG 檢索結果來源。
+
+    聊天回覆中使用的知識片段來源資訊，供前端顯示引用來源。
+
+    Attributes:
+        source: 來源名稱。
+        section_title: 來源段落標題。
+        content: 檢索到的片段內容。
+    """
+
     source: str = "unknown"
     section_title: str = "Source"
     content: str
 
 
 class RelatedEvent(BaseModel):
+    """與當前事件相關的其他歷史事件。
+
+    LLM 在回覆中提及的關聯事件，可選擇性標記為可探索。
+
+    Attributes:
+        event_name: 關聯事件名稱。
+        event_year: 關聯事件年份。
+        event_id: 若系統中已存在該事件，提供其 ID。
+        relevance_reason: 關聯原因說明。
+        is_explorable: 前端是否可導向該事件。
+    """
+
     event_name: str
     event_year: int | None = None
     event_id: str | None = None
@@ -175,6 +407,25 @@ class RelatedEvent(BaseModel):
 
 
 class ChatMessage(BaseModel):
+    """聊天訊息。
+
+    對應 ``messages`` 資料表，記錄 learner 與 AI 之間的
+    每一則對話訊息，含標注與 RAG 來源。
+
+    Attributes:
+        id: 訊息 UUID。
+        conversation_id: 所屬 Conversation ID。
+        persona_id: 發言 Persona ID（僅 persona 類型適用）。
+        speaker_type: 發言者角色。
+        speaker_name: 發言者顯示名稱。
+        sequence_index: 訊息在對話中的排序索引。
+        content: 訊息文字內容。
+        annotations: 歷史標注清單。
+        rag_sources: RAG 來源清單。
+        metadata: 額外 metadata（如 provider、model 等）。
+        created_at: 建立時間。
+    """
+
     id: str = Field(default_factory=new_id)
     conversation_id: str | None = None
     persona_id: str | None = None
@@ -189,6 +440,25 @@ class ChatMessage(BaseModel):
 
 
 class ResearchLog(BaseModel):
+    """流程行為紀錄。
+
+    對應 ``research_logs`` 資料表，記錄 admin 操作、
+    task 建立/更新等系統行為，供研究分析使用。
+
+    Attributes:
+        id: 紀錄 UUID。
+        user_id: 操作者識別。
+        session_id: 關聯 Session ID。
+        event_id: 關聯事件 ID。
+        task_id: 關聯 Task ID。
+        attempt_id: 關聯 Attempt ID。
+        conversation_id: 關聯 Conversation ID。
+        message_id: 關聯 Message ID。
+        action_type: 行為類型字串（如 ``"event_updated"``）。
+        payload: 行為詳細資料（JSON）。
+        created_at: 建立時間。
+    """
+
     id: str = Field(default_factory=new_id)
     user_id: str | None = None
     session_id: str | None = None

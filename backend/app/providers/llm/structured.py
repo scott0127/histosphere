@@ -2,6 +2,9 @@
 
 本模組定義 LLM 必須回傳的 JSON 結構。Provider 只能把通過 Pydantic
 驗證的資料交給 service，避免研究流程吃到鬆散或不可追蹤的自然語言輸出。
+
+所有 schema 皆透過 ``LLMJsonRunner.run_json()`` 做驗證，
+失敗時會自動觸發 repair prompt 重試。
 """
 
 from typing import Literal
@@ -10,7 +13,19 @@ from pydantic import BaseModel, Field
 
 
 class EventProfilePayload(BaseModel):
-    """事件基本資料；缺乏可信資訊時欄位可為 None 或寫入不詳。"""
+    """LLM 生成的事件基本資料。
+
+    缺乏可信資訊時 century / start_year / end_year 可為 None。
+
+    Attributes:
+        canonical_name: 事件正式名稱。
+        description: 事件簡述。
+        century: 所屬世紀（可為 None）。
+        start_year: 起始年份（可為 None）。
+        end_year: 結束年份（可為 None）。
+        context: 事件歷史脈絡。
+        source_summary: 來源摘要 metadata。
+    """
 
     canonical_name: str
     description: str
@@ -22,7 +37,16 @@ class EventProfilePayload(BaseModel):
 
 
 class GeneratedTaskPayload(BaseModel):
-    """Prototype task 初稿；正式實驗可由教師在 admin 覆蓋。"""
+    """LLM 生成的 prototype task 初稿。
+
+    正式實驗可由教師在 admin 覆蓋修改。
+
+    Attributes:
+        title: Task 標題。
+        story_text: 完整正確故事文字。
+        display_text: 含空格「____」的顯示用文字。
+        evaluation_payload: 評量結構（rubric、expected_points 等）。
+    """
 
     title: str
     story_text: str
@@ -31,7 +55,17 @@ class GeneratedTaskPayload(BaseModel):
 
 
 class GeneratedPersonaPayload(BaseModel):
-    """單一 primary historical persona。"""
+    """LLM 生成的單一 primary historical persona。
+
+    Attributes:
+        name: 角色中文名稱。
+        english_name: 角色英文名稱（可選）。
+        role: 角色在事件中的身份（可選）。
+        biography: 角色簡傳（可選）。
+        expertise_areas: 專業領域清單。
+        sources: 角色資料來源引用。
+        prompt_profile: 供 prompt 組裝的角色 profile。
+    """
 
     name: str
     english_name: str | None = None
@@ -43,13 +77,29 @@ class GeneratedPersonaPayload(BaseModel):
 
 
 class PersonaListPayload(BaseModel):
-    """V1 只使用第一位 primary persona。"""
+    """LLM 生成的 persona 清單包裝。
+
+    V1 只使用第一位 primary persona。
+
+    Attributes:
+        personas: Persona 清單（至少一位）。
+    """
 
     personas: list[GeneratedPersonaPayload] = Field(default_factory=list, min_length=1)
 
 
 class TaskJudgementPayload(BaseModel):
-    """Task 作答的輕量判斷結果；完整逐題評分後續再正規化。"""
+    """Task 作答的輕量判斷結果。
+
+    完整逐題評分後續再正規化。
+
+    Attributes:
+        result: 判斷結果（``"correct"`` / ``"partial"`` / ``"incorrect"``）。
+        misconception_summary: Learner misconception 摘要。
+        feedback: 給 learner 的回饋文字。
+        score: 數值分數（可選）。
+        provider: 執行判斷的 LLM provider 名稱。
+    """
 
     result: Literal["correct", "partial", "incorrect"]
     misconception_summary: str
@@ -59,7 +109,17 @@ class TaskJudgementPayload(BaseModel):
 
 
 class ChatOutputPayload(BaseModel):
-    """聊天回覆結構。"""
+    """聊天回覆的 structured output。
+
+    LLM 回覆必須符合此結構，包含回覆文字、
+    歷史標注、關聯事件與動態 context。
+
+    Attributes:
+        response: AI 回覆文字。
+        annotations: 歷史標注清單（dict 格式）。
+        related_events: 關聯事件清單（dict 格式）。
+        dynamic_context: 動態 context 補充文字。
+    """
 
     response: str
     annotations: list[dict] = Field(default_factory=list)

@@ -1,3 +1,12 @@
+"""In-memory repository implementation.
+
+本模組提供純 Python dict 為後端的 RepositoryProtocol 實作，
+主要用於單元測試與無 Supabase 的本地開發。所有資料僅存活
+於 process 生命週期內，重啟即清空。
+
+初始化時會自動 seed 四組 2x2 實驗條件。
+"""
+
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import (
     ChatMessage,
@@ -16,7 +25,31 @@ from app.models.domain import (
 
 
 class InMemoryRepository(RepositoryProtocol):
+    """純 Python dict 實作的 RepositoryProtocol。
+
+    所有資料以 ``dict[str, Model]`` 形式存放在記憶體中，
+    僅適用於測試與本地開發環境。初始化時會呼叫
+    ``_seed_conditions()`` 建立四組預設 2x2 實驗條件。
+
+    Attributes:
+        events: 事件存儲，key 為 event_id。
+        event_names: 正規化事件名稱到 event_id 的反向索引。
+        wiki_sources: Wikipedia 來源存儲。
+        knowledge_chunks: RAG 知識片段存儲。
+        conditions: 實驗條件存儲。
+        condition_keys: condition_key 到 condition_id 的反向索引。
+        sessions: 實驗 session 存儲。
+        event_tasks: Task 存儲。
+        task_attempts: Learner 作答紀錄存儲。
+        personas: 歷史人物角色存儲。
+        conversations: 對話存儲。
+        messages: 對話訊息存儲，key 為 conversation_id。
+        research_logs: 流程行為紀錄存儲。
+        view_count: 舊版 view count 計數器。
+    """
+
     def __init__(self) -> None:
+        """初始化所有存儲 dict 並 seed 預設實驗條件。"""
         self.events: dict[str, Event] = {}
         self.event_names: dict[str, str] = {}
         self.wiki_sources: dict[str, WikiSource] = {}
@@ -35,9 +68,25 @@ class InMemoryRepository(RepositoryProtocol):
 
     @staticmethod
     def normalize_event_name(event_name: str) -> str:
+        """將事件名稱正規化為小寫並壓縮空白，供名稱比對使用。
+
+        Args:
+            event_name: 原始事件名稱。
+
+        Returns:
+            str: 正規化後的名稱字串。
+        """
         return " ".join(event_name.strip().lower().split())
 
     def _seed_conditions(self) -> None:
+        """建立四組 2x2 實驗條件預設值。
+
+        條件組合:
+            - ``no_ebl_no_roleplay``: 無 EBL + 無 role-play（generic / direct）。
+            - ``ebl_no_roleplay``: 有 EBL + 無 role-play（generic / scaffold）。
+            - ``no_ebl_roleplay``: 無 EBL + 有 role-play（persona / direct）。
+            - ``ebl_roleplay``: 有 EBL + 有 role-play（persona / scaffold）。
+        """
         seed = [
             ExperimentCondition(
                 condition_key="no_ebl_no_roleplay",
@@ -80,22 +129,63 @@ class InMemoryRepository(RepositoryProtocol):
             self.save_condition(condition)
 
     def find_event_by_name(self, event_name: str) -> Event | None:
+        """依正規化名稱查詢事件。
+
+        Args:
+            event_name: 原始事件名稱。
+
+        Returns:
+            Event | None: 匹配的事件，或 None。
+        """
         event_id = self.event_names.get(self.normalize_event_name(event_name))
         return self.events.get(event_id) if event_id else None
 
     def save_event(self, event: Event) -> Event:
+        """儲存事件並更新名稱索引。
+
+        Args:
+            event: 要儲存的 Event 實例。
+
+        Returns:
+            Event: 儲存後的 Event（updated_at 已更新）。
+        """
         event.updated_at = utc_now()
         self.events[event.id] = event
         self.event_names[self.normalize_event_name(event.canonical_name)] = event.id
         return event
 
     def list_events(self) -> list[Event]:
+        """列出所有事件，依建立時間倒序。
+
+        Returns:
+            list[Event]: 事件清單。
+        """
         return sorted(self.events.values(), key=lambda item: item.created_at, reverse=True)
 
     def get_event(self, event_id: str) -> Event | None:
+        """依 ID 取得事件。
+
+        Args:
+            event_id: 事件 UUID 字串。
+
+        Returns:
+            Event | None: 匹配的事件，或 None。
+        """
         return self.events.get(event_id)
 
     def delete_event(self, event_id: str) -> bool:
+        """刪除事件及所有關聯資料（模擬 cascade delete）。
+
+        移除的關聯資料包含: wiki_sources、knowledge_chunks、
+        event_tasks、task_attempts、personas、sessions、
+        conversations 及其 messages。
+
+        Args:
+            event_id: 事件 UUID 字串。
+
+        Returns:
+            bool: 若事件存在且已刪除回傳 True，否則 False。
+        """
         event = self.events.pop(event_id, None)
         if not event:
             return False
@@ -118,78 +208,231 @@ class InMemoryRepository(RepositoryProtocol):
         return True
 
     def save_wiki_source(self, source: WikiSource) -> WikiSource:
+        """儲存 Wikipedia 來源。
+
+        Args:
+            source: WikiSource 實例。
+
+        Returns:
+            WikiSource: 儲存後的來源。
+        """
         self.wiki_sources[source.id] = source
         return source
 
     def list_wiki_sources(self, event_id: str) -> list[WikiSource]:
+        """列出指定事件的 Wikipedia 來源。
+
+        Args:
+            event_id: 事件 UUID 字串。
+
+        Returns:
+            list[WikiSource]: 來源清單。
+        """
         return [source for source in self.wiki_sources.values() if source.event_id == event_id]
 
     def save_knowledge_chunk(self, chunk: KnowledgeChunk) -> KnowledgeChunk:
+        """儲存 RAG 知識片段。
+
+        Args:
+            chunk: KnowledgeChunk 實例。
+
+        Returns:
+            KnowledgeChunk: 儲存後的片段。
+        """
         self.knowledge_chunks[chunk.id] = chunk
         return chunk
 
     def list_knowledge_chunks(self, event_id: str) -> list[KnowledgeChunk]:
+        """列出指定事件的知識片段。
+
+        Args:
+            event_id: 事件 UUID 字串。
+
+        Returns:
+            list[KnowledgeChunk]: 片段清單。
+        """
         return [chunk for chunk in self.knowledge_chunks.values() if chunk.event_id == event_id]
 
     def list_conditions(self, active_only: bool = True) -> list[ExperimentCondition]:
+        """列出實驗條件，依 condition_key 排序。
+
+        Args:
+            active_only: 若為 True，僅回傳 active=True 的條件。
+
+        Returns:
+            list[ExperimentCondition]: 條件清單。
+        """
         conditions = list(self.conditions.values())
         if active_only:
             conditions = [condition for condition in conditions if condition.active]
         return sorted(conditions, key=lambda item: item.condition_key)
 
     def get_condition_by_key(self, condition_key: str) -> ExperimentCondition | None:
+        """依 condition_key 取得條件。
+
+        Args:
+            condition_key: 條件鍵值字串。
+
+        Returns:
+            ExperimentCondition | None: 匹配的條件，或 None。
+        """
         condition_id = self.condition_keys.get(condition_key)
         return self.conditions.get(condition_id) if condition_id else None
 
     def get_condition(self, condition_id: str) -> ExperimentCondition | None:
+        """依 ID 取得條件。
+
+        Args:
+            condition_id: 條件 UUID 字串。
+
+        Returns:
+            ExperimentCondition | None: 匹配的條件，或 None。
+        """
         return self.conditions.get(condition_id)
 
     def save_condition(self, condition: ExperimentCondition) -> ExperimentCondition:
+        """儲存條件並更新 key 索引。
+
+        Args:
+            condition: ExperimentCondition 實例。
+
+        Returns:
+            ExperimentCondition: 儲存後的條件。
+        """
         condition.updated_at = utc_now()
         self.conditions[condition.id] = condition
         self.condition_keys[condition.condition_key] = condition.id
         return condition
 
     def save_session(self, session: ExperimentSession) -> ExperimentSession:
+        """儲存實驗 session。
+
+        Args:
+            session: ExperimentSession 實例。
+
+        Returns:
+            ExperimentSession: 儲存後的 session。
+        """
         session.updated_at = utc_now()
         self.sessions[session.id] = session
         return session
 
     def get_session(self, session_id: str) -> ExperimentSession | None:
+        """依 ID 取得 session。
+
+        Args:
+            session_id: Session UUID 字串。
+
+        Returns:
+            ExperimentSession | None: 匹配的 session，或 None。
+        """
         return self.sessions.get(session_id)
 
     def list_sessions(self) -> list[ExperimentSession]:
+        """列出所有 session，依建立時間倒序。
+
+        Returns:
+            list[ExperimentSession]: Session 清單。
+        """
         return sorted(self.sessions.values(), key=lambda item: item.created_at, reverse=True)
 
     def list_sessions_for_user(self, user_id: str) -> list[ExperimentSession]:
+        """列出指定使用者的 session，依更新時間倒序。
+
+        Args:
+            user_id: 使用者識別字串。
+
+        Returns:
+            list[ExperimentSession]: Session 清單。
+        """
         sessions = [session for session in self.sessions.values() if session.user_id == user_id]
         return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
 
     def save_event_task(self, task: EventTask) -> EventTask:
+        """儲存 task。
+
+        Args:
+            task: EventTask 實例。
+
+        Returns:
+            EventTask: 儲存後的 task。
+        """
         task.updated_at = utc_now()
         self.event_tasks[task.id] = task
         return task
 
     def get_event_task(self, task_id: str) -> EventTask | None:
+        """依 ID 取得 task。
+
+        Args:
+            task_id: Task UUID 字串。
+
+        Returns:
+            EventTask | None: 匹配的 task，或 None。
+        """
         return self.event_tasks.get(task_id)
 
     def get_latest_event_task(self, event_id: str) -> EventTask | None:
+        """取得指定事件的最新 task。
+
+        Args:
+            event_id: 事件 UUID 字串。
+
+        Returns:
+            EventTask | None: 最新的 task，或 None。
+        """
         tasks = self.list_event_tasks(event_id)
         return tasks[0] if tasks else None
 
     def list_event_tasks(self, event_id: str) -> list[EventTask]:
+        """列出指定事件的所有 task，依建立時間倒序。
+
+        Args:
+            event_id: 事件 UUID 字串。
+
+        Returns:
+            list[EventTask]: Task 清單。
+        """
         tasks = [task for task in self.event_tasks.values() if task.event_id == event_id]
         return sorted(tasks, key=lambda item: item.created_at, reverse=True)
 
     def save_task_attempt(self, attempt: TaskAttempt) -> TaskAttempt:
+        """儲存 task attempt。
+
+        Args:
+            attempt: TaskAttempt 實例。
+
+        Returns:
+            TaskAttempt: 儲存後的 attempt。
+        """
         attempt.updated_at = utc_now()
         self.task_attempts[attempt.id] = attempt
         return attempt
 
     def get_task_attempt(self, attempt_id: str) -> TaskAttempt | None:
+        """依 ID 取得 task attempt。
+
+        Args:
+            attempt_id: Attempt UUID 字串。
+
+        Returns:
+            TaskAttempt | None: 匹配的 attempt，或 None。
+        """
         return self.task_attempts.get(attempt_id)
 
     def get_task_attempt_for_session(self, session_id: str, task_id: str | None = None) -> TaskAttempt | None:
+        """取得指定 session 的最新 attempt。
+
+        可選搭配 task_id 進一步篩選。若有多筆 attempt，
+        回傳 updated_at 最新的一筆。
+
+        Args:
+            session_id: Session UUID 字串。
+            task_id: 可選的 Task UUID 字串。
+
+        Returns:
+            TaskAttempt | None: 最新的 attempt，或 None。
+        """
         attempts = [attempt for attempt in self.task_attempts.values() if attempt.session_id == session_id]
         if task_id:
             attempts = [attempt for attempt in attempts if attempt.task_id == task_id]
@@ -197,20 +440,53 @@ class InMemoryRepository(RepositoryProtocol):
         return attempts[0] if attempts else None
 
     def save_persona(self, persona: Persona) -> Persona:
+        """儲存 persona。
+
+        Args:
+            persona: Persona 實例。
+
+        Returns:
+            Persona: 儲存後的 persona。
+        """
         persona.updated_at = utc_now()
         self.personas[persona.id] = persona
         return persona
 
     def get_persona(self, persona_id: str) -> Persona | None:
+        """依 ID 取得 persona。
+
+        Args:
+            persona_id: Persona UUID 字串。
+
+        Returns:
+            Persona | None: 匹配的 persona，或 None。
+        """
         return self.personas.get(persona_id)
 
     def list_personas(self, event_id: str, active_only: bool = True) -> list[Persona]:
+        """列出指定事件的 personas，依 sort_order 與 created_at 排序。
+
+        Args:
+            event_id: 事件 UUID 字串。
+            active_only: 若為 True，僅回傳 active=True 的角色。
+
+        Returns:
+            list[Persona]: Persona 清單。
+        """
         personas = [persona for persona in self.personas.values() if persona.event_id == event_id]
         if active_only:
             personas = [persona for persona in personas if persona.active]
         return sorted(personas, key=lambda item: (item.sort_order, item.created_at))
 
     def delete_persona(self, persona_id: str) -> bool:
+        """軟刪除 persona（設定 active=False）。
+
+        Args:
+            persona_id: Persona UUID 字串。
+
+        Returns:
+            bool: 若 persona 存在且已軟刪除回傳 True，否則 False。
+        """
         persona = self.personas.get(persona_id)
         if not persona:
             return False
@@ -220,23 +496,66 @@ class InMemoryRepository(RepositoryProtocol):
         return True
 
     def save_conversation(self, conversation: Conversation) -> Conversation:
+        """儲存 conversation 並初始化訊息列表。
+
+        Args:
+            conversation: Conversation 實例。
+
+        Returns:
+            Conversation: 儲存後的 conversation。
+        """
         conversation.updated_at = utc_now()
         self.conversations[conversation.id] = conversation
         self.messages.setdefault(conversation.id, [])
         return conversation
 
     def get_conversation(self, conversation_id: str) -> Conversation | None:
+        """依 ID 取得 conversation。
+
+        Args:
+            conversation_id: Conversation UUID 字串。
+
+        Returns:
+            Conversation | None: 匹配的 conversation，或 None。
+        """
         return self.conversations.get(conversation_id)
 
     def get_conversation_by_session(self, session_id: str) -> Conversation | None:
+        """依 session_id 取得最新的 conversation。
+
+        Args:
+            session_id: Session UUID 字串。
+
+        Returns:
+            Conversation | None: 最新的 conversation，或 None。
+        """
         conversations = [conversation for conversation in self.conversations.values() if conversation.session_id == session_id]
         conversations.sort(key=lambda item: item.updated_at, reverse=True)
         return conversations[0] if conversations else None
 
     def next_message_sequence(self, conversation_id: str) -> int:
+        """取得下一個可用的 sequence_index。
+
+        Args:
+            conversation_id: Conversation UUID 字串。
+
+        Returns:
+            int: 當前訊息數量（即下一個 sequence_index）。
+        """
         return len(self.messages.get(conversation_id, []))
 
     def add_message(self, message: ChatMessage) -> ChatMessage:
+        """新增訊息到 conversation 並依 sequence_index 排序。
+
+        Args:
+            message: ChatMessage 實例（需含 conversation_id）。
+
+        Returns:
+            ChatMessage: 已新增的訊息。
+
+        Raises:
+            ValueError: 當 message.conversation_id 為空時。
+        """
         if not message.conversation_id:
             raise ValueError("message.conversation_id is required")
         self.messages.setdefault(message.conversation_id, []).append(message)
@@ -244,16 +563,45 @@ class InMemoryRepository(RepositoryProtocol):
         return message
 
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
+        """列出指定 conversation 的所有訊息，依 sequence_index 排序。
+
+        Args:
+            conversation_id: Conversation UUID 字串。
+
+        Returns:
+            list[ChatMessage]: 訊息清單。
+        """
         return sorted(self.messages.get(conversation_id, []), key=lambda item: item.sequence_index)
 
     def log_research(self, log: ResearchLog) -> ResearchLog:
+        """新增流程行為紀錄。
+
+        Args:
+            log: ResearchLog 實例。
+
+        Returns:
+            ResearchLog: 儲存後的紀錄。
+        """
         self.research_logs[log.id] = log
         return log
 
     def list_research_logs(self, limit: int = 200) -> list[ResearchLog]:
+        """列出最近的流程行為紀錄，依建立時間倒序。
+
+        Args:
+            limit: 回傳筆數上限。
+
+        Returns:
+            list[ResearchLog]: 紀錄清單。
+        """
         logs = sorted(self.research_logs.values(), key=lambda item: item.created_at, reverse=True)
         return logs[:limit]
 
     def increment_view_count(self) -> int:
+        """遞增 view count 並回傳新值。
+
+        Returns:
+            int: 遞增後的計數值。
+        """
         self.view_count += 1
         return self.view_count

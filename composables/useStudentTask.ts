@@ -26,12 +26,17 @@ type LocalConditionProgress = {
   updatedAt: string;
 };
 
-// 將 condition 設定轉成受測者能理解的活動名稱，不在學生端暴露工程欄位。
+const studentConditionCodeByKey: Record<ConditionKey, string> = {
+  no_ebl_no_roleplay: '01',
+  ebl_no_roleplay: '02',
+  no_ebl_roleplay: '03',
+  ebl_roleplay: '04',
+};
+
+// 學生端只顯示實驗代號，避免暴露實際 treatment。
 export const studentActivityTitle = (condition: ExperimentCondition) => {
-  if (condition.ebl_enabled && condition.roleplay_enabled) return '沉浸式角色扮演 + 錯誤中學習';
-  if (condition.ebl_enabled) return '錯誤中學習';
-  if (condition.roleplay_enabled) return '沉浸式角色扮演';
-  return 'Baseline';
+  const code = studentConditionCodeByKey[condition.condition_key];
+  return code ? `${code}模式` : '活動代號未設定';
 };
 
 // 從 event_tasks.evaluation_payload 取出正式題目；若舊資料還沒有 questions，就建立可作答的 fallback 題。

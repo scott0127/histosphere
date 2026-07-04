@@ -69,14 +69,13 @@
           v-for="event in events"
           :key="event.id"
           type="button"
-          class="chronicle-card group relative overflow-hidden rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-1.5 text-left shadow-md transition-all duration-300 hover:-translate-y-1 hover:border-[var(--admin-line)] hover:shadow-lg"
+          class="group relative overflow-hidden rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] bg-[linear-gradient(135deg,rgba(255,255,255,0.46),transparent_38%),radial-gradient(circle_at_82%_18%,rgba(168,141,123,0.14),transparent_28%)] p-1.5 text-left shadow-md transition-all duration-300 hover:-translate-y-1 hover:border-[var(--admin-line)] hover:bg-[var(--admin-surface-muted)] hover:shadow-lg"
           @click="$emit('open', event)"
         >
           <div class="pointer-events-none absolute bottom-0 right-0 top-0 w-[45%] select-none overflow-hidden rounded-r-xl opacity-[0.16]">
             <img
               :src="getEventSketch(event)"
-              class="h-full w-full object-cover object-right mix-blend-multiply contrast-[1.25] brightness-[1.08]"
-              style="mask-image: linear-gradient(to left, black 15%, transparent 95%); -webkit-mask-image: linear-gradient(to left, black 15%, transparent 95%);"
+              class="h-full w-full object-cover object-right mix-blend-multiply contrast-[1.25] brightness-[1.08] [mask-image:linear-gradient(to_left,black_15%,transparent_95%)] [-webkit-mask-image:linear-gradient(to_left,black_15%,transparent_95%)]"
               alt=""
             />
           </div>
@@ -146,16 +145,3 @@ const updateEventName = (event: Event) => {
   emit('update:eventName', (event.target as HTMLInputElement).value);
 };
 </script>
-
-<style scoped>
-.chronicle-card {
-  background-color: var(--admin-surface);
-  background-image:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.46), transparent 38%),
-    radial-gradient(circle at 82% 18%, rgba(168, 141, 123, 0.14), transparent 28%);
-}
-
-.chronicle-card:hover {
-  background-color: var(--admin-surface-muted);
-}
-</style>

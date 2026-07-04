@@ -2,6 +2,15 @@
 
 本模組提供系統管理後台 API，使用 x-admin-key 做簡單保護。
 可管理 task、persona、condition 設定，並查看 research_logs。
+
+Routes:
+    GET   /api/admin/snapshot:                一次載入 admin UI 全部所需資料。
+    GET   /api/admin/prompt-preview:          預覽聊天 prompt 組裝結果。
+    PATCH /api/admin/events/{event_id}:       更新歷史事件基本資料。
+    PATCH /api/admin/tasks/{task_id}:         更新 task 文字與評量結構。
+    PATCH /api/admin/personas/{persona_id}:   更新 persona 資料。
+    PATCH /api/admin/conditions/{condition_id}: 更新實驗條件設定。
+    GET   /api/admin/research-logs:           列出流程行為紀錄。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -28,7 +37,20 @@ router = APIRouter(
 
 @router.get("/snapshot", response_model=AdminSnapshotResponse)
 def admin_snapshot(repository: RepositoryProtocol = Depends(get_repository)) -> AdminSnapshotResponse:
-    """一次載入 admin UI 需要的事件、條件、session 與研究紀錄摘要。"""
+    """一次載入 admin UI 需要的事件、條件、session 與研究紀錄摘要。
+
+    Admin 前端初始化時呼叫，批次取得所有 events（含 personas
+    與 latest_task）、conditions、sessions 以及 research_logs，
+    避免多次 round-trip。
+
+    Args:
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+
+    Returns:
+        AdminSnapshotResponse: 包含 events（附帶 personas、
+            latest_task）、conditions（含已停用）、sessions
+            與 research_logs。
+    """
     events: list[EventListItem] = []
     for event in repository.list_events():
         payload = event.model_dump()
@@ -53,7 +75,30 @@ def prompt_preview(
     prompt_service: PromptService = Depends(get_prompt_service),
     rag_pipeline: RagPipelineService = Depends(get_rag_pipeline),
 ) -> AdminPromptPreviewResponse:
-    """預覽後端實際組裝的聊天 prompt；不呼叫 LLM，也不修改資料。"""
+    """預覽後端實際組裝的聊天 prompt；不呼叫 LLM，也不修改資料。
+
+    Admin 可指定 event、condition 與 persona 組合，搭配範例使用者
+    訊息，查看 PromptService 組裝出的各 module 與最終 prompt 文字。
+    RAG 檢索會實際執行以提供真實 context，但不會呼叫 LLM 產生回覆。
+
+    Args:
+        event_id: 目標事件的 UUID 字串。
+        condition_key: 實驗條件鍵值（如 ``"ebl_roleplay"``）。
+        persona_id: 可選，指定使用的 persona UUID；未指定時
+            自動選取第一個 active persona。
+        sample_user_message: 模擬的使用者訊息，預設為
+            ``"請說明這個事件的重要性。"``。
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+        prompt_service: 由 Dependency Injection 注入的 PromptService 實例。
+        rag_pipeline: 由 Dependency Injection 注入的 RagPipelineService 實例。
+
+    Returns:
+        AdminPromptPreviewResponse: 包含 event、condition、persona、
+            sample_user_message、各 prompt module 與完整 prompt 文字。
+
+    Raises:
+        HTTPException: 404 — event、condition 或 persona 不存在時。
+    """
     event = repository.get_event(event_id)
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -99,7 +144,23 @@ def update_event(
     request: EventUpdateRequest,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> Event:
-    """更新歷史事件基本資料；正式資料來源仍是 repository/Supabase。"""
+    """更新歷史事件基本資料；正式資料來源仍是 repository/Supabase。
+
+    支援部分更新（PATCH 語意）。修改後會自動寫入一筆
+    ``event_updated`` 類型的 ResearchLog 紀錄。
+
+    Args:
+        event_id: 目標事件的 UUID 字串。
+        request: 部分更新請求，可包含 canonical_name、description、
+            century、start_year、end_year、context、source_summary。
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+
+    Returns:
+        Event: 更新後的完整事件資料。
+
+    Raises:
+        HTTPException: 404 — 指定 event_id 不存在時。
+    """
     event = repository.get_event(event_id)
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -124,7 +185,25 @@ def update_task(
     request: EventTaskUpdateRequest,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> EventTask:
-    """更新 task 文字與 evaluation_payload，保存前檢查故事 token 與題目結構。"""
+    """更新 task 文字與 evaluation_payload，保存前檢查故事 token 與題目結構。
+
+    先驗證必填欄位不為 null，再透過 ``validate_task_authoring_payload``
+    檢查 display_text 與 evaluation_payload 的結構完整性。
+    修改後會自動寫入 ``task_updated`` 類型的 ResearchLog 紀錄。
+
+    Args:
+        task_id: 目標 task 的 UUID 字串。
+        request: 部分更新請求，可包含 title、story_text、
+            display_text、evaluation_payload、revision_state。
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+
+    Returns:
+        EventTask: 更新後的完整 task 資料。
+
+    Raises:
+        HTTPException: 404 — 指定 task_id 不存在時。
+        HTTPException: 422 — 必填欄位為 null 或 payload 結構驗證失敗時。
+    """
     task = repository.get_event_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -182,7 +261,23 @@ def update_admin_persona(
     request: PersonaUpdateRequest,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> Persona:
-    """更新 persona 基本資料與 prompt_profile。"""
+    """更新 persona 基本資料與 prompt_profile。
+
+    Admin 專用的 persona 更新入口，直接操作 repository。
+    支援部分更新（PATCH 語意），可修改 name、biography、
+    prompt_profile 等欄位。
+
+    Args:
+        persona_id: 目標 persona 的 UUID 字串。
+        request: 部分更新請求，僅含需修改的欄位。
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+
+    Returns:
+        Persona: 更新後的完整 persona 資料。
+
+    Raises:
+        HTTPException: 404 — 指定 persona_id 不存在時。
+    """
     persona = repository.get_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
@@ -198,7 +293,23 @@ def update_condition(
     request: ExperimentConditionUpdateRequest,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> ExperimentCondition:
-    """更新 2x2 實驗條件設定，例如 EBL/role-play 是否啟用。"""
+    """更新 2x2 實驗條件設定，例如 EBL/role-play 是否啟用。
+
+    可修改 label、ebl_enabled、roleplay_enabled、agent_mode、
+    response_policy、description 與 active 等欄位。
+    支援部分更新（PATCH 語意）。
+
+    Args:
+        condition_id: 目標 condition 的 UUID 字串。
+        request: 部分更新請求，僅含需修改的欄位。
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+
+    Returns:
+        ExperimentCondition: 更新後的完整實驗條件資料。
+
+    Raises:
+        HTTPException: 404 — 指定 condition_id 不存在時。
+    """
     condition = repository.get_condition(condition_id)
     if not condition:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condition not found")
@@ -213,5 +324,17 @@ def list_research_logs(
     limit: int = 200,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> list[ResearchLog]:
-    """列出流程行為紀錄；對話內容分析仍以 messages 為主。"""
+    """列出流程行為紀錄；對話內容分析仍以 messages 為主。
+
+    回傳最近的 ResearchLog 紀錄，記錄 event_updated、
+    task_updated 等管理操作。對話內容不在此紀錄中，
+    需透過 conversation messages 查詢。
+
+    Args:
+        limit: 回傳筆數上限，預設 200。
+        repository: 由 Dependency Injection 注入的資料存取層實例。
+
+    Returns:
+        list[ResearchLog]: 依時間倒序的流程行為紀錄清單。
+    """
     return repository.list_research_logs(limit=limit)

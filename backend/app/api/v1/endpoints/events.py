@@ -3,6 +3,13 @@
 本模組提供歷史事件查詢、初始化、列表與刪除入口。
 V1 的核心入口是 /event/initialize：建立 event workspace、
 產生 task、產生 personas，並建立 experiment session。
+
+Routes:
+    POST   /api/event/check:                     檢查事件名稱是否已存在。
+    POST   /api/event/initialize:                初始化事件學習工作區。
+    GET    /api/events:                          列出所有歷史事件摘要。
+    DELETE /api/event/{event_id}:                刪除指定事件（含 cascade）。
+    POST   /api/event/{event_id}/regenerate-background: 重新生成背景圖。
 """
 
 from fastapi import APIRouter, Depends
@@ -20,7 +27,18 @@ def check_event(
     request: EventCheckRequest,
     service: EventService = Depends(get_event_service),
 ) -> dict[str, bool]:
-    """檢查事件名稱是否已經存在，供前端提示 rebuild 或 reuse。"""
+    """檢查事件名稱是否已經存在，供前端提示 rebuild 或 reuse。
+
+    前端在 learner 輸入事件名稱後呼叫此端點，依回傳結果
+    決定顯示「重新建立」或「繼續使用」選項。
+
+    Args:
+        request: 包含 event_name（至少 1 字元）的檢查請求。
+        service: 由 Dependency Injection 注入的 EventService 實例。
+
+    Returns:
+        dict[str, bool]: ``{"exists": True/False}``。
+    """
     return {"exists": service.check_exists(request.event_name)}
 
 
@@ -29,13 +47,37 @@ async def initialize_event(
     request: EventInitializeRequest,
     service: EventInitializationService = Depends(get_event_initialization_service),
 ) -> EventInitializeResponse:
-    """建立事件學習工作區，但不直接建立 conversation。"""
+    """建立事件學習工作區，但不直接建立 conversation。
+
+    完整流程：透過 LLM 研究事件背景 → 建立/重用 Event 紀錄 →
+    產生 EventTask → 產生 Personas → 建立 ExperimentSession。
+    回傳初始化結果供前端進入 task 作答頁。
+
+    Args:
+        request: 初始化請求，包含 event_name、condition_key、
+            rebuild 旗標與可選 user_id。
+        service: 由 Dependency Injection 注入的 EventInitializationService 實例。
+
+    Returns:
+        EventInitializeResponse: 包含 event_id、session_id、
+            event、task、personas 與 condition。
+    """
     return await service.initialize(request)
 
 
 @router.get("/events", response_model=list[EventListItem])
 def list_events(service: EventService = Depends(get_event_service)) -> list[EventListItem]:
-    """列出目前可重用的歷史事件與最新 task/persona 摘要。"""
+    """列出目前可重用的歷史事件與最新 task/persona 摘要。
+
+    前端事件選擇頁使用，回傳所有 event 並附帶其 personas
+    與最新 task 資訊，方便 learner 快速選擇已存在的事件。
+
+    Args:
+        service: 由 Dependency Injection 注入的 EventService 實例。
+
+    Returns:
+        list[EventListItem]: 含 personas 與 latest_task 的事件清單。
+    """
     return service.list_events()
 
 
@@ -44,7 +86,18 @@ def delete_event(
     event_id: str,
     service: EventService = Depends(get_event_service),
 ) -> dict[str, bool]:
-    """刪除指定事件；資料庫 cascade 會一併清除其 task/persona/conversation。"""
+    """刪除指定事件；資料庫 cascade 會一併清除其 task/persona/conversation。
+
+    此操作不可逆，所有關聯的 task_attempts、conversations、
+    messages 與 research_logs 都會隨 cascade 被移除。
+
+    Args:
+        event_id: 要刪除的事件 UUID 字串。
+        service: 由 Dependency Injection 注入的 EventService 實例。
+
+    Returns:
+        dict[str, bool]: ``{"success": True/False}``。
+    """
     return service.delete_event(event_id)
 
 
@@ -53,5 +106,16 @@ def regenerate_background(
     event_id: str,
     service: EventService = Depends(get_event_service),
 ) -> dict[str, str | None]:
-    """相容舊前端的背景更新 endpoint；新版 UI 目前不依賴圖片背景。"""
+    """相容舊前端的背景更新 endpoint；新版 UI 目前不依賴圖片背景。
+
+    保留此入口以避免舊版前端呼叫 404。新版 UI 改用 CSS 漸層
+    或主題色彩，不再依賴動態生成的背景圖片。
+
+    Args:
+        event_id: 目標事件的 UUID 字串。
+        service: 由 Dependency Injection 注入的 EventService 實例。
+
+    Returns:
+        dict[str, str | None]: 包含 background_url（可能為 None）。
+    """
     return service.regenerate_background(event_id)

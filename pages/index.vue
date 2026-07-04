@@ -5,7 +5,7 @@
     2. 右側列出同一批可被四種實驗活動共用的事件、task、persona。
     3. 點事件卡後才選活動條件，避免把 condition 當成不同素材來源。
   -->
-  <div class="historical-home relative min-h-screen overflow-x-hidden bg-[var(--admin-page)] text-[var(--admin-text)]">
+  <div class="historical-home relative min-h-screen overflow-x-hidden bg-[var(--admin-page)] font-[ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif] text-[var(--admin-text)] [&_.font-serif]:font-[Georgia,'Times_New_Roman','Noto_Serif_TC',serif]">
     <!-- 背景保留舊 prototype 的歷史地圖質感，但降透明度，避免干擾可讀性。 -->
     <div class="pointer-events-none fixed inset-0 z-0">
       <img src="~/assets/images/landing-bg.png" alt="" class="h-full w-full object-cover opacity-[0.35]" />
@@ -241,14 +241,3 @@ const confirmDelete = async () => {
   }
 };
 </script>
-
-<style scoped>
-.historical-home {
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-.historical-home :deep(.font-serif),
-.historical-home .font-serif {
-  font-family: Georgia, "Times New Roman", "Noto Serif TC", serif;
-}
-</style>

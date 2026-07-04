@@ -3,6 +3,12 @@
 本模組負責把 Histosphere 的 LLMProvider 介面轉接到 LiteLLM。Runtime
 統一透過 LiteLLM 呼叫 Gemini、GPT、本地 OpenAI-compatible 模型或 GPT
 OAuth proxy；service 層不應直接依賴任何特定模型 SDK。
+
+主要職責:
+    - 組裝各生成任務（event profile、task、persona、greeting、chat）的 prompt。
+    - 透過 ``LLMJsonRunner`` 呼叫 LLM 並取得 structured JSON 回覆。
+    - 將 structured payload 轉換為 domain model。
+    - 在 source_summary / prompt_profile 中嵌入 provider metadata。
 """
 
 from app.core.config import Settings
@@ -41,17 +47,43 @@ BACKEND_SYSTEM_PROMPTS = {
         "Combine persona role-play with Error-Based Learning scaffolding. Maintain persona voice, historical accuracy, and reflective guidance."
     ),
 }
+"""各 2x2 實驗條件對應的 LLM system prompt 補充指令。"""
 
 
 class LiteLLMProvider:
-    """正式 runtime LLM provider。"""
+    """正式 runtime LLM provider，透過 LiteLLM 統一呼叫各模型。
+
+    所有生成任務皆透過 ``LLMJsonRunner`` 執行，確保回覆
+    為 structured JSON 並通過 Pydantic 驗證。
+
+    Attributes:
+        settings: 全域設定實例。
+        runner: LLM JSON 執行器。
+    """
 
     def __init__(self, settings: Settings) -> None:
+        """初始化 LiteLLM provider。
+
+        Args:
+            settings: 全域 Settings 實例，傳遞給 ``LLMJsonRunner``。
+        """
         self.settings = settings
         self.runner = LLMJsonRunner(settings)
 
     async def generate_event_profile(self, event_name: str, sources: list[WikiSource]) -> dict:
-        """根據事件名稱與 Wikipedia 來源生成 events 表需要的背景資訊。"""
+        """根據事件名稱與 Wikipedia 來源生成 events 表需要的背景資訊。
+
+        產生 canonical_name、description、century、start_year、end_year、
+        context 與 source_summary，並在 source_summary 中嵌入
+        provider metadata。
+
+        Args:
+            event_name: 事件名稱。
+            sources: Wikipedia 來源清單。
+
+        Returns:
+            dict: 事件 profile 的欄位字典。
+        """
         payload = await self.runner.run_json(
             schema=EventProfilePayload,
             task_name="generate_event_profile",
@@ -75,7 +107,18 @@ class LiteLLMProvider:
         return result
 
     async def generate_task(self, event: Event, sources: list[WikiSource]) -> EventTask:
-        """產生 prototype task；正式實驗可由教師手動改成 manual/teacher_modified。"""
+        """產生 prototype task；正式實驗可由教師手動改成 manual/teacher_modified。
+
+        生成含 story_text、display_text（含「____」空格）與
+        evaluation_payload（rubric、expected_points 等）的 task。
+
+        Args:
+            event: 目標事件。
+            sources: Wikipedia 來源清單。
+
+        Returns:
+            EventTask: 生成的 task（revision_state 為 ``"llm_generated"``）。
+        """
         payload = await self.runner.run_json(
             schema=GeneratedTaskPayload,
             task_name="generate_task",
@@ -110,7 +153,20 @@ class LiteLLMProvider:
         task: EventTask,
         response_payload: dict,
     ) -> dict:
-        """根據 task 設定與 learner 作答產生初步 judgement。"""
+        """根據 task 設定與 learner 作答產生初步 judgement。
+
+        評估重點：historical accuracy、evidence use、causal reasoning
+        與 learner misconceptions。
+
+        Args:
+            event: 關聯事件。
+            task: 關聯 task。
+            response_payload: Learner 的作答內容。
+
+        Returns:
+            dict: 包含 result、misconception_summary、feedback、
+                score、provider、model。
+        """
         payload = await self.runner.run_json(
             schema=TaskJudgementPayload,
             task_name="judge_task_attempt",
@@ -130,7 +186,18 @@ class LiteLLMProvider:
         return result
 
     async def generate_personas(self, event: Event, sources: list[WikiSource]) -> list[Persona]:
-        """產生事件的一位 primary historical persona。"""
+        """產生事件的一位 primary historical persona。
+
+        選取該事件最具代表性的歷史人物，生成含 prompt_profile
+        （speaking_style、knowledge_boundary 等）的 Persona。
+
+        Args:
+            event: 目標事件。
+            sources: Wikipedia 來源清單。
+
+        Returns:
+            list[Persona]: 僅含一位 persona 的清單。
+        """
         payload = await self.runner.run_json(
             schema=PersonaListPayload,
             task_name="generate_personas",
@@ -178,7 +245,20 @@ class LiteLLMProvider:
         condition: ExperimentCondition,
         attempt: TaskAttempt,
     ) -> str:
-        """依 condition 與 learner task judgement 產生 conversation 開場白。"""
+        """依 condition 與 learner task judgement 產生 conversation 開場白。
+
+        若 roleplay 啟用，以歷史人物口吻開場；若 EBL 啟用，
+        引導反思而非直接給答案。
+
+        Args:
+            event: 關聯事件。
+            personas: 可用的 persona 清單。
+            condition: 當前實驗條件。
+            attempt: Learner 的 task attempt（含 judgement）。
+
+        Returns:
+            str: 開場白文字。
+        """
         persona = personas[0] if personas else None
         payload = await self.runner.run_json(
             schema=ChatOutputPayload,
@@ -206,7 +286,23 @@ class LiteLLMProvider:
         prompt: str,
         rag_sources: list[RagSource],
     ) -> tuple[str, list[Annotation], list[RelatedEvent], str]:
-        """依組裝好的 prompt 產生聊天回覆。"""
+        """依組裝好的 prompt 產生聊天回覆。
+
+        尊重 role-play 邊界與 EBL/direct-answer 策略，
+        使用繁體中文回覆（除非使用者要求其他語言）。
+
+        Args:
+            event: 關聯事件。
+            persona: 當前使用的 persona 或 None。
+            condition: 當前實驗條件。
+            task_attempt: 關聯的 task attempt（可選）。
+            user_message: 使用者訊息。
+            prompt: PromptService 組裝的完整 prompt。
+            rag_sources: RAG 檢索結果。
+
+        Returns:
+            tuple: (response, annotations, related_events, dynamic_context)。
+        """
         payload = await self.runner.run_json(
             schema=ChatOutputPayload,
             task_name="generate_chat_response",
@@ -241,9 +337,21 @@ class LiteLLMProvider:
         ]
         return payload.response, annotations, related_events, payload.dynamic_context
 
+    # ── Internal helpers ───────────────────────────────────────
+
     @staticmethod
     def _system_prompt(condition: ExperimentCondition | None = None) -> str:
-        """共同系統規則，限制語言、史實邊界與 JSON output。"""
+        """組裝 LLM system prompt。
+
+        基礎 prompt 規定語言（繁體中文）、史實邊界與 JSON 輸出格式。
+        若指定 condition，附加對應的 2x2 條件指令。
+
+        Args:
+            condition: 實驗條件（可選）。
+
+        Returns:
+            str: 完整的 system prompt。
+        """
         base_prompt = (
             "You are the LLM backend for Histosphere, a master's thesis prototype about "
             "Error-Based Learning and AI historical persona role-play. "
@@ -259,7 +367,14 @@ class LiteLLMProvider:
         return f"{base_prompt}\n\n[backend_condition_system_prompt]\n{condition_system_prompt}"
 
     def _provider_metadata(self) -> dict[str, str]:
-        """記錄實際完成呼叫的 provider/model，方便研究 log 與後台除錯。"""
+        """取得最近一次成功呼叫的 provider/model metadata。
+
+        用於嵌入 source_summary、evaluation_payload 與
+        prompt_profile，方便研究 log 與後台除錯。
+
+        Returns:
+            dict[str, str]: 包含 ``"provider"`` 與 ``"model"`` 鍵值。
+        """
         return {
             "provider": self.runner.last_provider,
             "model": self.runner.last_model,
@@ -267,7 +382,17 @@ class LiteLLMProvider:
 
     @staticmethod
     def _format_sources(sources: list[WikiSource]) -> str:
-        """把 Wikipedia source 壓縮成 prompt 可讀格式。"""
+        """把 Wikipedia source 壓縮成 prompt 可讀格式。
+
+        每個來源顯示 language、title、url、summary（截斷 1200 字元）
+        與最多 6 個 section（各截斷 900 字元）。
+
+        Args:
+            sources: WikiSource 清單。
+
+        Returns:
+            str: 格式化後的來源文字，各來源以空行分隔。
+        """
         if not sources:
             return "No Wikipedia sources available."
         chunks: list[str] = []

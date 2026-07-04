@@ -1,3 +1,10 @@
+"""API schemas package.
+
+匯出所有 API 請求與回應的 Pydantic schema。
+Request schemas 定義前端送入的資料結構與驗證規則，
+Response schemas 定義後端回傳的資料結構。
+"""
+
 from .requests import (
     ChatRequest,
     ConversationCreateRequest,
@@ -27,4 +34,3 @@ __all__ = [
     "PersonaCreateRequest",
     "PersonaUpdateRequest",
 ]
-

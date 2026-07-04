@@ -1,6 +1,6 @@
 <template>
   <!-- 學生 task 頁的外框：只處理頁面層級排版，具體題目交給 renderer。 -->
-  <div class="historical-task relative min-h-screen overflow-x-hidden bg-[var(--admin-page)] font-sans text-[var(--admin-text)]">
+  <div class="historical-task relative min-h-screen overflow-x-hidden bg-[var(--admin-page)] font-sans text-[var(--admin-text)] [&_.font-serif]:font-['Crimson_Text',Georgia,'Noto_Serif_TC','Times_New_Roman',serif]">
     <header class="relative z-20 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.95)] shadow-sm">
       <div class="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
         <NuxtLink to="/" class="flex items-center gap-3">
@@ -23,10 +23,3 @@
     </main>
   </div>
 </template>
-
-<style scoped>
-.historical-task :deep(.font-serif),
-.historical-task .font-serif {
-  font-family: "Crimson Text", Georgia, "Noto Serif TC", "Times New Roman", serif;
-}
-</style>
