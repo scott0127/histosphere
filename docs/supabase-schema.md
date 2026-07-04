@@ -1,6 +1,6 @@
 # Supabase Public Schema Export
 
-最後更新：2026-06-23
+最後更新：2026-07-04
 
 來源：local Supabase Postgres container `supabase_db_histosphere2`，資料庫 `postgres`，schema `public`。
 
@@ -8,7 +8,7 @@
 
 ## Summary
 
-目前 `public` schema 有 13 個 base tables：
+目前 `public` schema 有 14 個 base tables：
 
 | Table | Purpose |
 | --- | --- |
@@ -22,6 +22,7 @@
 | `task_attempts` | learner task submission。 |
 | `task_answers` | 未來 normalized per-blank answer 表，目前暫緩。 |
 | `personas` | 歷史人物 persona。 |
+| `participants` | 受測者 registry 與 condition 指派清單。 |
 | `conversations` | task 後開啟的聊天室。 |
 | `messages` | 聊天訊息。 |
 | `research_logs` | 研究流程與互動 audit log。 |
@@ -33,6 +34,7 @@
 - 多數 FK 欄位在 DB 允許 `NULL`，例如 `event_tasks.event_id`、`personas.event_id`、`messages.conversation_id`。目前 application domain model 在 runtime 通常視為必填。後續若要更嚴格一致，可以新增 `NOT NULL` migration，但要先確認既有資料不會被破壞。
 - `task_blanks` / `task_answers` 已存在但目前正式 flow 仍主要使用 `event_tasks.evaluation_payload.questions[]` 與 `task_attempts.response_payload`。
 - `knowledge_chunks.embedding` 是 `vector` 型別，但目前 RAG retrieval 仍是空實作。
+- `participants.condition_list` 以 learner-visible condition code 保存分派條件，例如 `{01,03}`。目前不另建 condition assignment table，除非未來需要 per-event/per-condition audit 狀態。
 - 所有 listed public tables 目前 RLS 都是 disabled；後端正式 runtime 使用 Supabase service role 透過 `SupabaseRepository` 讀寫。
 
 ## Tables And Columns
@@ -165,6 +167,21 @@
 | 14 | `created_at` | `timestamp with time zone` | YES | `now()` |
 | 15 | `updated_at` | `timestamp with time zone` | YES | `now()` |
 
+### `participants`
+
+| # | Column | Type | Nullable | Default |
+| --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NO | `gen_random_uuid()` |
+| 2 | `code` | `text` | NO |  |
+| 3 | `display_name` | `text` | YES |  |
+| 4 | `cohort` | `text` | YES |  |
+| 5 | `condition_list` | `text[]` | NO | `'{}'::text[]` |
+| 6 | `status` | `text` | NO | `'active'::text` |
+| 7 | `notes` | `text` | YES |  |
+| 8 | `metadata` | `jsonb` | NO | `'{}'::jsonb` |
+| 9 | `created_at` | `timestamp with time zone` | YES | `now()` |
+| 10 | `updated_at` | `timestamp with time zone` | YES | `now()` |
+
 ### `research_logs`
 
 | # | Column | Type | Nullable | Default |
@@ -248,7 +265,7 @@
 
 All public tables use `id uuid` as primary key:
 
-`conversations`, `event_tasks`, `events`, `experiment_conditions`, `experiment_sessions`, `knowledge_chunks`, `messages`, `personas`, `research_logs`, `task_answers`, `task_attempts`, `task_blanks`, `wiki_sources`.
+`conversations`, `event_tasks`, `events`, `experiment_conditions`, `experiment_sessions`, `knowledge_chunks`, `messages`, `participants`, `personas`, `research_logs`, `task_answers`, `task_attempts`, `task_blanks`, `wiki_sources`.
 
 ### Unique Constraints / Unique Indexes
 
@@ -257,6 +274,7 @@ All public tables use `id uuid` as primary key:
 | `events` | `canonical_name` via `events_canonical_name_unique` |
 | `experiment_conditions` | `condition_key` |
 | `messages` | `(conversation_id, sequence_index)` |
+| `participants` | `code` |
 | `task_answers` | `(attempt_id, blank_id)` |
 | `task_blanks` | `(task_id, blank_index)` |
 | `wiki_sources` | `(event_id, provider, language, fetch_mode)` |
@@ -314,6 +332,10 @@ All public tables use `id uuid` as primary key:
 | `messages` | `idx_messages_conversation_created(conversation_id, created_at)` |
 | `messages` | `idx_messages_persona(persona_id)` |
 | `messages` | `messages_conversation_id_sequence_index_key(conversation_id, sequence_index)` |
+| `participants` | `idx_participants_code(code)` |
+| `participants` | `idx_participants_cohort(cohort)` |
+| `participants` | `idx_participants_condition_list(condition_list)` |
+| `participants` | `idx_participants_status(status)` |
 | `personas` | `idx_personas_active(active)` |
 | `personas` | `idx_personas_event(event_id)` |
 | `research_logs` | `idx_research_logs_action(action_type)` |

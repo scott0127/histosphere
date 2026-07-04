@@ -113,6 +113,22 @@ BEGIN
   END IF;
 END $$;
 
+-- Local test participants for admin participant dashboard and learner-flow smoke checks.
+INSERT INTO participants (id, code, display_name, cohort, condition_list, status, notes, metadata)
+VALUES
+  ('629c015e-629c-015e-629c-015e629c015e', 'P001', 'Test Participant 01', 'pilot', ARRAY['01','03'], 'active', 'Local test participant seeded by Codex.', '{"seed":"codex","kind":"test"}'::jsonb),
+  ('639c02f1-639c-02f1-639c-02f1639c02f1', 'P002', 'Test Participant 02', 'pilot', ARRAY['02','04'], 'active', 'Local test participant seeded by Codex.', '{"seed":"codex","kind":"test"}'::jsonb),
+  ('649c0484-649c-0484-649c-0484649c0484', 'P003', 'Test Participant 03', 'pilot', ARRAY['01','02'], 'active', 'Local test participant seeded by Codex.', '{"seed":"codex","kind":"test"}'::jsonb),
+  ('659c0617-659c-0617-659c-0617659c0617', 'P004', 'Test Participant 04', 'pilot', ARRAY['03','04'], 'active', 'Local test participant seeded by Codex.', '{"seed":"codex","kind":"test"}'::jsonb),
+  ('669c07aa-669c-07aa-669c-07aa669c07aa', 'P005', 'Test Participant 05', 'pilot', ARRAY['01','02','03','04'], 'active', 'Local test participant seeded by Codex.', '{"seed":"codex","kind":"test"}'::jsonb)
+ON CONFLICT (code) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  cohort = EXCLUDED.cohort,
+  condition_list = EXCLUDED.condition_list,
+  status = EXCLUDED.status,
+  notes = EXCLUDED.notes,
+  metadata = EXCLUDED.metadata;
+
 DO $$
 DECLARE
   v_event_id uuid;
