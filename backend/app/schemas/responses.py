@@ -17,6 +17,7 @@ from app.models.domain import (
     EventTask,
     ExperimentCondition,
     ExperimentSession,
+    Participant,
     Persona,
     RagSource,
     RelatedEvent,
@@ -179,12 +180,14 @@ class AdminSnapshotResponse(BaseModel):
     Attributes:
         events: 事件清單（含 personas 與 latest_task）。
         conditions: 實驗條件清單（含已停用）。
+        participants: 受測者清單。
         sessions: 實驗 session 清單。
         research_logs: 流程行為紀錄清單。
     """
 
     events: list[EventListItem] = Field(default_factory=list)
     conditions: list[ExperimentCondition] = Field(default_factory=list)
+    participants: list[Participant] = Field(default_factory=list)
     sessions: list[ExperimentSession] = Field(default_factory=list)
     research_logs: list[ResearchLog] = Field(default_factory=list)
 
@@ -278,4 +281,16 @@ class UserProgressResponse(BaseModel):
         progress: 進度清單。
     """
 
+    progress: list[UserProgressItem] = Field(default_factory=list)
+
+
+class ParticipantMeResponse(BaseModel):
+    """目前登入者對應的 participant 與進度。
+
+    Attributes:
+        participant: Auth user 對應的研究受測者。
+        progress: 該 participant 的 session/task/chat 進度清單。
+    """
+
+    participant: Participant
     progress: list[UserProgressItem] = Field(default_factory=list)

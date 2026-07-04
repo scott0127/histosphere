@@ -189,6 +189,39 @@ class ExperimentCondition(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class Participant(BaseModel):
+    """研究受測者 registry。
+
+    對應 ``participants`` 資料表。受測者登入使用 Supabase Auth，
+    研究資料則以此 participant record 為主。
+
+    Attributes:
+        id: Participant UUID。
+        code: 研究端可讀的受測者代號。
+        auth_user_id: Supabase Auth user id 對應。
+        display_name: 管理端顯示名稱。
+        cohort: 實驗批次或群組。
+        condition_list: 指派給受測者的 learner-visible condition code。
+        status: 受測者研究狀態。
+        notes: 管理端備註。
+        metadata: 彈性 metadata。
+        created_at: 建立時間。
+        updated_at: 最後更新時間。
+    """
+
+    id: str = Field(default_factory=new_id)
+    code: str
+    auth_user_id: str | None = None
+    display_name: str | None = None
+    cohort: str | None = None
+    condition_list: list[str] = Field(default_factory=list)
+    status: Literal["active", "completed", "excluded", "archived"] = "active"
+    notes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class ExperimentSession(BaseModel):
     """實驗 session。
 

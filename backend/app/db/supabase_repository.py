@@ -26,6 +26,7 @@ from app.models.domain import (
     ExperimentCondition,
     ExperimentSession,
     KnowledgeChunk,
+    Participant,
     Persona,
     ResearchLog,
     TaskAttempt,
@@ -395,6 +396,24 @@ class SupabaseRepository(RepositoryProtocol):
             ExperimentSession,
             {"user_id": f"eq.{user_id}", "order": "updated_at.desc"},
         )
+
+    # ── Participant ───────────────────────────────────────────
+
+    def list_participants(self) -> list[Participant]:
+        """列出所有受測者，依 code 排序。"""
+        return self._select_many("participants", Participant, {"order": "code.asc"})
+
+    def get_participant(self, participant_id: str) -> Participant | None:
+        """依 ID 取得受測者。"""
+        return self._select_one("participants", Participant, {"id": f"eq.{participant_id}"})
+
+    def get_participant_by_auth_user(self, auth_user_id: str) -> Participant | None:
+        """依 Supabase Auth user id 取得 participant。"""
+        return self._select_one("participants", Participant, {"auth_user_id": f"eq.{auth_user_id}"})
+
+    def save_participant(self, participant: Participant) -> Participant:
+        """Upsert participant。"""
+        return self._upsert("participants", participant)
 
     # ── EventTask ──────────────────────────────────────────────
 

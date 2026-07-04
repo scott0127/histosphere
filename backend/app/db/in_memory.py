@@ -16,6 +16,7 @@ from app.models.domain import (
     ExperimentCondition,
     ExperimentSession,
     KnowledgeChunk,
+    Participant,
     Persona,
     ResearchLog,
     TaskAttempt,
@@ -57,6 +58,7 @@ class InMemoryRepository(RepositoryProtocol):
         self.conditions: dict[str, ExperimentCondition] = {}
         self.condition_keys: dict[str, str] = {}
         self.sessions: dict[str, ExperimentSession] = {}
+        self.participants: dict[str, Participant] = {}
         self.event_tasks: dict[str, EventTask] = {}
         self.task_attempts: dict[str, TaskAttempt] = {}
         self.personas: dict[str, Persona] = {}
@@ -347,6 +349,27 @@ class InMemoryRepository(RepositoryProtocol):
         """
         sessions = [session for session in self.sessions.values() if session.user_id == user_id]
         return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
+
+    def list_participants(self) -> list[Participant]:
+        """列出所有受測者，依 code 排序。"""
+        return sorted(self.participants.values(), key=lambda item: item.code)
+
+    def get_participant(self, participant_id: str) -> Participant | None:
+        """依 ID 取得受測者。"""
+        return self.participants.get(participant_id)
+
+    def get_participant_by_auth_user(self, auth_user_id: str) -> Participant | None:
+        """依 Supabase Auth user id 取得受測者。"""
+        for participant in self.participants.values():
+            if participant.auth_user_id == auth_user_id:
+                return participant
+        return None
+
+    def save_participant(self, participant: Participant) -> Participant:
+        """儲存受測者。"""
+        participant.updated_at = utc_now()
+        self.participants[participant.id] = participant
+        return participant
 
     def save_event_task(self, task: EventTask) -> EventTask:
         """儲存 task。

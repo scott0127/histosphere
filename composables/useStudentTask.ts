@@ -26,16 +26,20 @@ type LocalConditionProgress = {
   updatedAt: string;
 };
 
-const studentConditionCodeByKey: Record<ConditionKey, string> = {
+export const studentConditionCodeByKey: Record<ConditionKey, string> = {
   no_ebl_no_roleplay: '01',
   ebl_no_roleplay: '02',
   no_ebl_roleplay: '03',
   ebl_roleplay: '04',
 };
 
+export const studentConditionCode = (condition: ExperimentCondition) => {
+  return studentConditionCodeByKey[condition.condition_key] || null;
+};
+
 // 學生端只顯示實驗代號，避免暴露實際 treatment。
 export const studentActivityTitle = (condition: ExperimentCondition) => {
-  const code = studentConditionCodeByKey[condition.condition_key];
+  const code = studentConditionCode(condition);
   return code ? `${code}模式` : '活動代號未設定';
 };
 

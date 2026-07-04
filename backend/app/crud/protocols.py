@@ -16,6 +16,7 @@ from app.models.domain import (
     ExperimentCondition,
     ExperimentSession,
     KnowledgeChunk,
+    Participant,
     Persona,
     ResearchLog,
     TaskAttempt,
@@ -233,6 +234,49 @@ class RepositoryProtocol(Protocol):
 
         Returns:
             list[ExperimentSession]: 該使用者的 session 清單，依更新時間倒序。
+        """
+        ...
+
+    # ── Participant ───────────────────────────────────────────
+
+    def list_participants(self) -> list[Participant]:
+        """列出所有受測者，依 code 排序。
+
+        Returns:
+            list[Participant]: 受測者清單。
+        """
+        ...
+
+    def get_participant(self, participant_id: str) -> Participant | None:
+        """依 ID 取得單一受測者。
+
+        Args:
+            participant_id: Participant UUID 字串。
+
+        Returns:
+            Participant | None: 匹配的受測者，或 None。
+        """
+        ...
+
+    def get_participant_by_auth_user(self, auth_user_id: str) -> Participant | None:
+        """依 Supabase Auth user id 取得對應 participant。
+
+        Args:
+            auth_user_id: Supabase Auth user UUID 字串。
+
+        Returns:
+            Participant | None: 匹配的受測者，或 None。
+        """
+        ...
+
+    def save_participant(self, participant: Participant) -> Participant:
+        """新增或更新受測者。
+
+        Args:
+            participant: Participant 實例。
+
+        Returns:
+            Participant: 儲存後的受測者。
         """
         ...
 

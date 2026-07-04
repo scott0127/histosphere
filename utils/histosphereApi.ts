@@ -10,6 +10,7 @@ import type {
   EventWithPersonas,
   ExperimentCondition,
   HistoricalEvent,
+  ParticipantMeResponse,
   Persona,
   SessionStateResponse,
   TaskDraftResponse,
@@ -130,6 +131,12 @@ export const deleteEventMaterial = (eventId: string, fetcher: FrontendFetcher = 
 export const fetchUserProgress = (userId: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<UserProgressResponse>('/api/sessions/progress', {
     query: { user_id: userId },
+  });
+};
+
+export const fetchParticipantMe = (authUserId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<ParticipantMeResponse>('/api/participants/me', {
+    query: { auth_user_id: authUserId },
   });
 };
 

@@ -80,6 +80,20 @@ export interface ExperimentCondition {
   updated_at: string;
 }
 
+export interface Participant {
+  id: string;
+  code: string;
+  auth_user_id?: string | null;
+  display_name?: string | null;
+  cohort?: string | null;
+  condition_list: string[];
+  status: 'active' | 'completed' | 'excluded' | 'archived';
+  notes?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface EventTask {
   id: string;
   event_id: string;
@@ -234,6 +248,11 @@ export interface UserProgressResponse {
   progress: UserProgressItem[];
 }
 
+export interface ParticipantMeResponse {
+  participant: Participant;
+  progress: UserProgressItem[];
+}
+
 export interface ChatResponse {
   response: string;
   selected_persona?: Persona | null;
@@ -248,6 +267,7 @@ export interface ChatResponse {
 export interface AdminSnapshotResponse {
   events: EventWithPersonas[];
   conditions: ExperimentCondition[];
+  participants: Participant[];
   sessions: ExperimentSession[];
   research_logs: Array<Record<string, unknown>>;
 }

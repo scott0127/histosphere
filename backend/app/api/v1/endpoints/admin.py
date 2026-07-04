@@ -60,6 +60,7 @@ def admin_snapshot(repository: RepositoryProtocol = Depends(get_repository)) -> 
     return AdminSnapshotResponse(
         events=events,
         conditions=repository.list_conditions(active_only=False),
+        participants=repository.list_participants(),
         sessions=repository.list_sessions(),
         research_logs=repository.list_research_logs(),
     )
