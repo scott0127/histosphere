@@ -44,14 +44,16 @@
 
     <EventDetailModal
       v-if="detailEvent"
-      v-model:participant-id="participantId"
       :event="detailEvent"
-      :conditions="conditions"
+      :conditions="visibleConditions"
       :progress-by-condition="detailConditionProgress"
       :activity-mode="activityMode"
+      :participant="participant"
+      :participant-error="participantError"
+      :participant-loading="isParticipantLoading"
+      :assigned-condition-codes="assignedConditionCodes"
       @close="closeEventDetail"
       @delete="handleDeleteEvent"
-      @participant-change="saveParticipant"
       @start-condition="startCondition"
     />
 
@@ -87,7 +89,7 @@ import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vu
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
-import { studentActivityTitle } from '~/composables/useStudentTask';
+import { studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import { fetchAdminSnapshot } from '~/utils/histosphereApi';
 
@@ -135,11 +137,13 @@ const {
   initializeEvent,
   initializeParticipant,
   isInitializing,
-  loadProgressFromApi,
-  participantId,
+  isParticipantLoading,
+  loadParticipantForAuthUser,
+  participant,
+  participantError,
+  assignedConditionCodes,
   progressByEvent,
   resetForAuthScope,
-  saveParticipant,
   startCondition: startExperimentCondition,
 } = useExperimentSession(authStorageScope, defaultParticipantId);
 
@@ -147,6 +151,15 @@ const {
 const detailConditionProgress = computed(() => {
   if (!detailEvent.value) return {};
   return progressByEvent.value[detailEvent.value.id] || {};
+});
+
+const visibleConditions = computed(() => {
+  if (activityMode.value === 'admin') return conditions.value;
+  const assigned = new Set(assignedConditionCodes.value);
+  return conditions.value.filter((condition) => {
+    const code = studentConditionCode(condition);
+    return Boolean(code && assigned.has(code));
+  });
 });
 
 const pendingStartProgress = computed(() => {
@@ -177,13 +190,19 @@ onMounted(async () => {
   initAdminMode();
   await initializeAuth();
   initializeParticipant();
-  await Promise.all([loadEventLibrary(), loadProgressFromApi()]);
+  await loadEventLibrary();
+  if (user.value?.id) {
+    await loadParticipantForAuthUser(user.value.id);
+  }
 });
 
 watch(authStorageScope, async () => {
   handleExitAdminMode();
   detailEvent.value = null;
   await resetForAuthScope();
+  if (user.value?.id) {
+    await loadParticipantForAuthUser(user.value.id);
+  }
 });
 
 watch(isAuthenticated, (authenticated) => {
@@ -246,7 +265,11 @@ const handleCreateEvent = async () => {
 // 啟動指定 condition；若本機已有對話紀錄，直接回到該 conversation。
 const startCondition = async (condition: ExperimentCondition) => {
   if (!detailEvent.value) return;
-  await saveParticipant();
+  if (!participant.value) {
+    alert(participantError.value || '請先登入已設定的受測者帳號。');
+    await navigateTo('/auth/login');
+    return;
+  }
   pendingStartCondition.value = condition;
   showStartConfirmDialog.value = true;
 };

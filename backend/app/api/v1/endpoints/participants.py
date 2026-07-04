@@ -42,5 +42,5 @@ def participant_me(
     if not participant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant mapping not found")
 
-    progress = session_service.user_progress(participant.id).progress
+    progress = session_service.user_progress(trimmed_auth_user_id).progress
     return ParticipantMeResponse(participant=participant, progress=progress)

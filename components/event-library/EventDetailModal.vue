@@ -52,15 +52,21 @@
           </section>
 
           <aside class="space-y-4">
-            <label class="block rounded-[10px] border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3 shadow-[var(--admin-shadow-soft)]">
+            <section class="block rounded-[10px] border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3 shadow-[var(--admin-shadow-soft)]">
               <span class="text-xs font-black uppercase tracking-[0.18em] text-[var(--admin-coffee)]">受測者</span>
-              <input
-                :value="participantId"
-                class="mt-2 w-full rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-3 text-sm font-semibold text-[var(--admin-text)] outline-none transition focus:ring-4 focus:ring-[var(--admin-focus)]"
-                @input="updateParticipantId"
-                @change="$emit('participant-change')"
-              />
-            </label>
+              <div class="mt-2 rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 py-3">
+                <p v-if="participantLoading" class="text-sm font-bold text-[var(--admin-copy)]">載入受測者資料...</p>
+                <template v-else-if="participant">
+                  <p class="text-base font-black text-[var(--admin-text)]">{{ participant.code }}</p>
+                  <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">
+                    分派模式：{{ assignedConditionCodes.join('、') || '未設定' }}
+                  </p>
+                </template>
+                <p v-else class="text-sm font-bold leading-6 text-[var(--admin-copy)]">
+                  {{ participantError || '請先登入已設定的受測者帳號。' }}
+                </p>
+              </div>
+            </section>
 
             <div v-if="activityMode === 'admin'" class="rounded-[10px] border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3 shadow-[var(--admin-shadow-soft)]">
               <div class="flex items-center justify-between gap-3">
@@ -95,7 +101,7 @@
 <script setup lang="ts">
 // EventDetailModal 是事件素材與活動入口的組合元件。
 // 它不直接呼叫 API；刪除、受測者儲存、活動啟動都交回 page 控制。
-import type { ConditionKey, EventWithPersonas, ExperimentCondition, UserProgressStatus } from '~/types';
+import type { ConditionKey, EventWithPersonas, ExperimentCondition, Participant, UserProgressStatus } from '~/types';
 import ActivityConditionGrid from '~/components/event-library/ActivityConditionGrid.vue';
 import { eventMotif, formatYears } from '~/utils/eventPresentation';
 
@@ -110,22 +116,18 @@ type LocalConditionProgress = {
 
 defineProps<{
   event: EventWithPersonas;
-  participantId: string;
+  participant?: Participant | null;
+  participantError?: string | null;
+  participantLoading?: boolean;
+  assignedConditionCodes: string[];
   conditions: ExperimentCondition[];
   progressByCondition: Partial<Record<ConditionKey, LocalConditionProgress>>;
   activityMode: 'admin' | 'learner';
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (event: 'close'): void;
   (event: 'delete', eventId: string): void;
-  (event: 'participant-change'): void;
   (event: 'start-condition', condition: ExperimentCondition): void;
-  (event: 'update:participantId', value: string): void;
 }>();
-
-// 同步受測者代號給 page，讓 localStorage 與後端 UUID 邏輯維持單一來源。
-const updateParticipantId = (event: Event) => {
-  emit('update:participantId', (event.target as HTMLInputElement).value);
-};
 </script>

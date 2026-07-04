@@ -289,7 +289,7 @@ class ParticipantMeResponse(BaseModel):
 
     Attributes:
         participant: Auth user 對應的研究受測者。
-        progress: 該 participant 的 session/task/chat 進度清單。
+        progress: 該 Auth user 的 session/task/chat 進度清單。
     """
 
     participant: Participant

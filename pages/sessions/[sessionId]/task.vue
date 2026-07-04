@@ -26,6 +26,11 @@ const participantId = computed(() => {
     ? route.query.participantId.trim()
     : 'scott-test';
 });
+const authUserId = computed(() => {
+  return typeof route.query.authUserId === 'string' && route.query.authUserId.trim()
+    ? route.query.authUserId.trim()
+    : null;
+});
 
 const {
   answers,
@@ -36,5 +41,5 @@ const {
   submitError,
   submitTask,
   taskData,
-} = useTaskGate(sessionId, participantId);
+} = useTaskGate(sessionId, participantId, authUserId);
 </script>

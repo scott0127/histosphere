@@ -1,18 +1,20 @@
 // useExperimentSession 管理首頁啟動實驗 session 所需的 participant、progress、initialize flow。
 // 事件列表本身仍由首頁控制，因為它是素材庫 UI 狀態，不是 session flow。
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { ComputedRef } from 'vue';
 import type {
   ConditionKey,
   EventInitializeResponse,
   EventWithPersonas,
   ExperimentCondition,
+  Participant,
   UserProgressItem,
   UserProgressResponse,
   UserProgressStatus,
 } from '~/types';
 import { participantUuid } from '~/composables/useStudentTask';
 import {
+  fetchParticipantMe,
   fetchUserProgress,
   initializeEventMaterial,
 } from '~/utils/histosphereApi';
@@ -53,9 +55,24 @@ export const useExperimentSession = (
   defaultParticipantId: ComputedRef<string>,
 ) => {
   const participantId = ref('scott-test');
+  const participant = ref<Participant | null>(null);
   const progressByEvent = ref<Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>>>({});
   const isInitializing = ref(false);
+  const isParticipantLoading = ref(false);
   const initializeError = ref<string | null>(null);
+  const participantError = ref<string | null>(null);
+
+  const authUserId = computed(() => {
+    return authStorageScope.value !== 'guest'
+      ? authStorageScope.value
+      : participantUuid(participantId.value);
+  });
+
+  const assignedConditionCodes = computed(() => {
+    return participant.value?.condition_list?.length
+      ? participant.value.condition_list
+      : ['01', '02', '03', '04'];
+  });
 
   const participantStorageKey = () => `histosphere-participant-id:${authStorageScope.value}`;
   const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}:${participantId.value || defaultParticipantId.value}`;
@@ -69,30 +86,52 @@ export const useExperimentSession = (
     participantId.value = loadParticipantId();
   };
 
-  const saveParticipant = async () => {
-    const next = participantId.value.trim() || defaultParticipantId.value;
-    participantId.value = next;
-    if (import.meta.client) {
-      localStorage.setItem(participantStorageKey(), next);
-    }
-    await loadProgressFromApi();
-  };
-
   const resetForAuthScope = async () => {
     progressByEvent.value = {};
+    participant.value = null;
+    participantError.value = null;
     participantId.value = loadParticipantId();
-    await loadProgressFromApi();
   };
 
   const loadProgressFromApi = async () => {
-    const userId = participantUuid(participantId.value);
     try {
-      const response: UserProgressResponse = await fetchUserProgress(userId);
+      const response: UserProgressResponse = await fetchUserProgress(authUserId.value);
       progressByEvent.value = progressItemsToLocalMap(response.progress || []);
       saveLocalProgress();
     } catch (e) {
       console.warn('Failed to load session progress, using local fallback:', e);
       loadLocalProgress();
+    }
+  };
+
+  const loadParticipantForAuthUser = async (authUserId: string) => {
+    const trimmedAuthUserId = authUserId.trim();
+    if (!trimmedAuthUserId) {
+      participant.value = null;
+      participantError.value = '請先登入受測者帳號。';
+      progressByEvent.value = {};
+      return null;
+    }
+
+    isParticipantLoading.value = true;
+    participantError.value = null;
+    try {
+      const response = await fetchParticipantMe(trimmedAuthUserId);
+      participant.value = response.participant;
+      participantId.value = response.participant.code;
+      progressByEvent.value = progressItemsToLocalMap(response.progress || []);
+      saveLocalProgress();
+      if (import.meta.client) {
+        localStorage.setItem(participantStorageKey(), response.participant.code);
+      }
+      return response.participant;
+    } catch (e: any) {
+      participant.value = null;
+      progressByEvent.value = {};
+      participantError.value = e.data?.detail || e.data?.message || '找不到此登入帳號對應的受測者。';
+      return null;
+    } finally {
+      isParticipantLoading.value = false;
     }
   };
 
@@ -138,6 +177,7 @@ export const useExperimentSession = (
         path: `/sessions/${progress.sessionId}/task`,
         query: {
           participantId: participantId.value,
+          authUserId: authUserId.value,
         },
       });
       return;
@@ -158,7 +198,7 @@ export const useExperimentSession = (
         eventName: name,
         conditionKey,
         rebuild,
-        userId: participantUuid(participantId.value),
+        userId: authUserId.value,
       });
 
       if (navigateToTask) {
@@ -175,6 +215,7 @@ export const useExperimentSession = (
           path: `/sessions/${response.session_id}/task`,
           query: {
             participantId: participantId.value,
+            authUserId: authUserId.value,
           },
         });
       }
@@ -192,11 +233,16 @@ export const useExperimentSession = (
     initializeEvent,
     initializeParticipant,
     isInitializing,
+    isParticipantLoading,
     loadProgressFromApi,
+    loadParticipantForAuthUser,
+    participant,
+    participantError,
     participantId,
+    authUserId,
+    assignedConditionCodes,
     progressByEvent,
     resetForAuthScope,
-    saveParticipant,
     startCondition,
   };
 };

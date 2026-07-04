@@ -41,6 +41,7 @@ const answersFromAttempt = (payload?: Record<string, unknown> | null): TaskStude
 export const useTaskGate = (
   sessionId: Ref<string> | ComputedRef<string>,
   participantId: Ref<string> | ComputedRef<string>,
+  authUserId?: Ref<string | null> | ComputedRef<string | null>,
 ) => {
   const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
   const answers = ref<TaskStudentAnswer[]>([]);
@@ -55,6 +56,7 @@ export const useTaskGate = (
   const taskQuestions = computed(() => taskData.value ? normalizeTaskQuestions(taskData.value.task) : []);
   const canSubmit = computed(() => isTaskAnswerComplete(taskQuestions.value, answers.value));
   const submitError = computed(() => error.value || draftError.value);
+  const userIdForRequest = computed(() => authUserId?.value || participantUuid(participantId.value));
 
   onMounted(async () => {
     if (sessionId.value) {
@@ -84,7 +86,7 @@ export const useTaskGate = (
     try {
       const response: TaskSubmitResponse = await submitTaskAnswers(taskData.value.task.id, {
         sessionId: taskData.value.session_id,
-        userId: participantUuid(participantId.value),
+        userId: userIdForRequest.value,
         responsePayload: buildTaskResponsePayload(answers.value),
       });
       judgement.value = response.judgement;
@@ -159,7 +161,7 @@ export const useTaskGate = (
     try {
       await saveTaskDraft(taskData.value.task.id, {
         sessionId: taskData.value.session_id,
-        userId: participantUuid(participantId.value),
+        userId: userIdForRequest.value,
         responsePayload,
       });
       lastDraftPayload.value = serialized;

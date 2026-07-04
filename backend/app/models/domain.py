@@ -192,8 +192,9 @@ class ExperimentCondition(BaseModel):
 class Participant(BaseModel):
     """研究受測者 registry。
 
-    對應 ``participants`` 資料表。受測者登入使用 Supabase Auth，
-    研究資料則以此 participant record 為主。
+    對應 ``participants`` 資料表。正式實驗紀錄仍以 Supabase Auth
+    user id 為主，participant record 只管理顯示代號、condition
+    指派與研究端 metadata。
 
     Attributes:
         id: Participant UUID。

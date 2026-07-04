@@ -22,7 +22,7 @@
 | `task_attempts` | learner task submission。 |
 | `task_answers` | 未來 normalized per-blank answer 表，目前暫緩。 |
 | `personas` | 歷史人物 persona。 |
-| `participants` | 受測者 registry 與 condition 指派清單。 |
+| `participants` | 受測者顯示代號、Auth 對應與 condition 指派清單。 |
 | `conversations` | task 後開啟的聊天室。 |
 | `messages` | 聊天訊息。 |
 | `research_logs` | 研究流程與互動 audit log。 |
@@ -34,6 +34,7 @@
 - 多數 FK 欄位在 DB 允許 `NULL`，例如 `event_tasks.event_id`、`personas.event_id`、`messages.conversation_id`。目前 application domain model 在 runtime 通常視為必填。後續若要更嚴格一致，可以新增 `NOT NULL` migration，但要先確認既有資料不會被破壞。
 - `task_blanks` / `task_answers` 已存在但目前正式 flow 仍主要使用 `event_tasks.evaluation_payload.questions[]` 與 `task_attempts.response_payload`。
 - `knowledge_chunks.embedding` 是 `vector` 型別，但目前 RAG retrieval 仍是空實作。
+- `participants.auth_user_id` 對應 Supabase Auth 使用者。正式實驗 runtime 的 `experiment_sessions.user_id`、`task_attempts.user_id`、`conversations.user_id`、`research_logs.user_id` 仍保存 Auth user id，不保存 `participants.id`。
 - `participants.condition_list` 以 learner-visible condition code 保存分派條件，例如 `{01,03}`。目前不另建 condition assignment table，除非未來需要 per-event/per-condition audit 狀態。
 - 所有 listed public tables 目前 RLS 都是 disabled；後端正式 runtime 使用 Supabase service role 透過 `SupabaseRepository` 讀寫。
 
@@ -181,6 +182,7 @@
 | 8 | `metadata` | `jsonb` | NO | `'{}'::jsonb` |
 | 9 | `created_at` | `timestamp with time zone` | YES | `now()` |
 | 10 | `updated_at` | `timestamp with time zone` | YES | `now()` |
+| 11 | `auth_user_id` | `uuid` | YES |  |
 
 ### `research_logs`
 
@@ -275,6 +277,7 @@ All public tables use `id uuid` as primary key:
 | `experiment_conditions` | `condition_key` |
 | `messages` | `(conversation_id, sequence_index)` |
 | `participants` | `code` |
+| `participants` | `auth_user_id` |
 | `task_answers` | `(attempt_id, blank_id)` |
 | `task_blanks` | `(task_id, blank_index)` |
 | `wiki_sources` | `(event_id, provider, language, fetch_mode)` |
@@ -333,6 +336,7 @@ All public tables use `id uuid` as primary key:
 | `messages` | `idx_messages_persona(persona_id)` |
 | `messages` | `messages_conversation_id_sequence_index_key(conversation_id, sequence_index)` |
 | `participants` | `idx_participants_code(code)` |
+| `participants` | `idx_participants_auth_user_id(auth_user_id)` |
 | `participants` | `idx_participants_cohort(cohort)` |
 | `participants` | `idx_participants_condition_list(condition_list)` |
 | `participants` | `idx_participants_status(status)` |
