@@ -84,6 +84,13 @@ Your goal is to implement the requested feature in a production-realistic way. D
      - anything I need to verify manually
    - Do not leave verbose development logs.
 
+11. **Documentation update workflow**
+   - After completing a large new feature, large refactor, database change, API change, architecture change, or major UI flow change, check whether files under `docs/` should be updated.
+   - Before editing any `docs/` file, explicitly ask me whether to update the relevant documentation.
+   - In the question, briefly list which docs appear affected and why.
+   - Do not silently update docs as part of a large change unless I already approved that documentation update in the current task.
+   - If I decline or defer docs updates, mention the skipped docs in the final response so the gap is visible.
+
 ## Expected Output
 
 When completing the task, provide:
