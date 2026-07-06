@@ -1,4 +1,5 @@
 import type {
+  AdminAuthUsersResponse,
   AdminSnapshotResponse,
   AdminPromptPreviewResponse,
   ChatMessage,
@@ -11,6 +12,7 @@ import type {
   ExperimentCondition,
   HistoricalEvent,
   ParticipantMeResponse,
+  Participant,
   Persona,
   SessionStateResponse,
   TaskDraftResponse,
@@ -78,6 +80,11 @@ export type ConditionUpdateInput = Pick<
   'label' | 'ebl_enabled' | 'roleplay_enabled' | 'agent_mode' | 'response_policy' | 'description' | 'active'
 >;
 
+export type ParticipantUpdateInput = Partial<Pick<
+  Participant,
+  'auth_user_id' | 'display_name' | 'cohort' | 'condition_list' | 'status' | 'notes' | 'metadata'
+>>;
+
 const adminHeaders = (adminKey: string) => ({ 'x-admin-key': adminKey });
 
 export const fetchConditions = (fetcher: FrontendFetcher = $fetch) => {
@@ -90,6 +97,12 @@ export const fetchEvents = (fetcher: FrontendFetcher = $fetch) => {
 
 export const fetchAdminSnapshot = (adminKey: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<AdminSnapshotResponse>('/api/admin/snapshot', {
+    headers: adminHeaders(adminKey),
+  });
+};
+
+export const fetchAdminAuthUsers = (adminKey: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<AdminAuthUsersResponse>('/api/admin/auth-users', {
     headers: adminHeaders(adminKey),
   });
 };
@@ -228,6 +241,19 @@ export const updateAdminCondition = (
   fetcher: FrontendFetcher = $fetch,
 ) => {
   return fetcher<ExperimentCondition>(`/api/admin/conditions/${conditionId}`, {
+    method: 'PATCH',
+    headers: adminHeaders(adminKey),
+    body,
+  });
+};
+
+export const updateAdminParticipant = (
+  adminKey: string,
+  participantId: string,
+  body: ParticipantUpdateInput,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<Participant>(`/api/admin/participants/${participantId}`, {
     method: 'PATCH',
     headers: adminHeaders(adminKey),
     body,

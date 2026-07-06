@@ -244,3 +244,19 @@ class ExperimentConditionUpdateRequest(BaseModel):
     response_policy: str | None = None
     description: str | None = None
     active: bool | None = None
+
+
+class ParticipantUpdateRequest(BaseModel):
+    """Participant registry 更新請求（Admin PATCH）。
+
+    Participant 只管理研究端顯示與分派資訊；正式實驗紀錄仍使用
+    Supabase Auth user id。此 request 不允許修改 participant id/code。
+    """
+
+    auth_user_id: str | None = None
+    display_name: str | None = None
+    cohort: str | None = None
+    condition_list: list[Literal["01", "02", "03", "04"]] | None = None
+    status: Literal["active", "completed", "excluded", "archived"] | None = None
+    notes: str | None = None
+    metadata: dict[str, Any] | None = None

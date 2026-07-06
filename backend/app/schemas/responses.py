@@ -192,6 +192,23 @@ class AdminSnapshotResponse(BaseModel):
     research_logs: list[ResearchLog] = Field(default_factory=list)
 
 
+class AdminAuthUserSummary(BaseModel):
+    """Admin 綁定 participant 時可選的 Supabase Auth user 摘要。"""
+
+    id: str
+    email: str | None = None
+    created_at: str | None = None
+    last_sign_in_at: str | None = None
+    bound_participant_id: str | None = None
+    bound_participant_code: str | None = None
+
+
+class AdminAuthUsersResponse(BaseModel):
+    """Admin Auth user 清單回應。"""
+
+    users: list[AdminAuthUserSummary] = Field(default_factory=list)
+
+
 class PromptPreviewModule(BaseModel):
     """Prompt 預覽模組。
 

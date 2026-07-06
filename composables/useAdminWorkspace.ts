@@ -6,6 +6,7 @@ import { taskControlQuestions } from '~/composables/useTaskControl';
 import type {
   AdminPromptPreviewResponse,
   AdminSnapshotResponse,
+  AdminAuthUserSummary,
   EventTask,
   EventWithPersonas,
   ExperimentCondition,
@@ -19,12 +20,15 @@ import {
   sortPromptConditions,
 } from '~/utils/adminWorkspaceState';
 import {
+  fetchAdminAuthUsers,
   fetchAdminSnapshot,
   fetchAdminPromptPreview,
   updateAdminCondition,
   updateAdminEvent,
+  updateAdminParticipant,
   updateAdminPersona,
   updateAdminTask,
+  type ParticipantUpdateInput,
 } from '~/utils/histosphereApi';
 
 export const useAdminWorkspace = (
@@ -32,11 +36,14 @@ export const useAdminWorkspace = (
 ) => {
   const adminKey = ref('');
   const snapshot = ref<AdminSnapshotResponse | null>(null);
+  const authUsers = ref<AdminAuthUserSummary[]>([]);
   const error = ref<string | null>(null);
+  const authUsersError = ref<string | null>(null);
   const taskJson = ref<Record<string, string>>({});
   const personaJson = ref<Record<string, string>>({});
   const selectedConditionId = ref<string | null>(null);
   const selectedEventId = ref<string | null>(null);
+  const savingParticipantId = ref<string | null>(null);
   const promptPreview = ref<AdminPromptPreviewResponse | null>(null);
   const promptPreviewLoading = ref(false);
   const promptPreviewMessage = ref('請說明這個事件的重要性。');
@@ -61,7 +68,9 @@ export const useAdminWorkspace = (
   const resetWorkspace = (clearStoredKey = true) => {
     adminKey.value = '';
     snapshot.value = null;
+    authUsers.value = [];
     error.value = null;
+    authUsersError.value = null;
     taskJson.value = {};
     personaJson.value = {};
     promptPreview.value = null;
@@ -77,10 +86,22 @@ export const useAdminWorkspace = (
     adminKey.value = localStorage.getItem('histosphere_admin_key') || '';
   };
 
+  const loadAuthUsers = async () => {
+    authUsersError.value = null;
+    try {
+      const response = await fetchAdminAuthUsers(adminKey.value);
+      authUsers.value = response.users || [];
+    } catch (e: any) {
+      authUsers.value = [];
+      authUsersError.value = formatAdminApiError(e, 'Auth users 載入失敗。');
+    }
+  };
+
   const loadSnapshot = async () => {
     error.value = null;
     if (!isAuthenticated.value) {
       snapshot.value = null;
+      authUsers.value = [];
       error.value = '請先登入管理員帳號。';
       return;
     }
@@ -102,6 +123,7 @@ export const useAdminWorkspace = (
       if (!selectedConditionId.value || !data.conditions.some((condition) => condition.id === selectedConditionId.value)) {
         selectedConditionId.value = sortPromptConditions(data.conditions)[0]?.id || null;
       }
+      await loadAuthUsers();
     } catch (e: any) {
       error.value = formatAdminApiError(e, '後台資料載入失敗，請確認 admin key。');
     }
@@ -192,6 +214,19 @@ export const useAdminWorkspace = (
     }
   };
 
+  const saveParticipant = async (participantId: string, body: ParticipantUpdateInput) => {
+    savingParticipantId.value = participantId;
+    error.value = null;
+    try {
+      await updateAdminParticipant(adminKey.value, participantId, body);
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '受測者資料儲存失敗。');
+    } finally {
+      savingParticipantId.value = null;
+    }
+  };
+
   const loadPromptPreview = async (event: EventWithPersonas, condition: ExperimentCondition) => {
     promptPreviewLoading.value = true;
     error.value = null;
@@ -215,11 +250,14 @@ export const useAdminWorkspace = (
 
   return {
     adminKey,
+    authUsers,
+    authUsersError,
     conditionModeLabel,
     conditionOrdinal,
     error,
     eventYearRange,
     loadSnapshot,
+    loadAuthUsers,
     loadPromptPreview,
     personaJson,
     promptPreview,
@@ -231,7 +269,9 @@ export const useAdminWorkspace = (
     saveCondition,
     saveEvent,
     savePersona,
+    saveParticipant,
     saveTask,
+    savingParticipantId,
     selectedCondition,
     selectedConditionId,
     selectedEvent,

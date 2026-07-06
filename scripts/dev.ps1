@@ -229,6 +229,34 @@ function Test-SupabaseRunning {
   return $false
 }
 
+function ConvertTo-Base64Url {
+  param([byte[]]$Bytes)
+  return [Convert]::ToBase64String($Bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+}
+
+function New-LocalSupabaseServiceRoleKey {
+  param([string]$ProjectRef)
+
+  $JwtSecret = "super-secret-jwt-token-with-at-least-32-characters-long"
+  $Now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  $HeaderJson = @{ alg = "HS256"; typ = "JWT" } | ConvertTo-Json -Compress
+  $PayloadJson = @{
+    iss = "supabase"
+    ref = $ProjectRef
+    role = "service_role"
+    iat = $Now
+    exp = $Now + 315360000
+  } | ConvertTo-Json -Compress
+
+  $Header = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($HeaderJson))
+  $Payload = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($PayloadJson))
+  $UnsignedToken = "$Header.$Payload"
+  $Hmac = [System.Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($JwtSecret))
+  $Signature = ConvertTo-Base64Url ($Hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($UnsignedToken)))
+  $Hmac.Dispose()
+  return "$UnsignedToken.$Signature"
+}
+
 Ensure-Command "python"
 Ensure-Command "pnpm"
 
@@ -256,6 +284,10 @@ if ($UseSupabase) {
   }
   $env:BACKEND_REPOSITORY = "supabase"
   $env:SUPABASE_URL = "http://${HostAddress}:54321"
+  $LocalServiceRoleKey = New-LocalSupabaseServiceRoleKey -ProjectRef $ProjectName
+  $env:SUPABASE_SERVICE_ROLE_KEY = $LocalServiceRoleKey
+  $env:SUPABASE_KEY = $LocalServiceRoleKey
+  $env:SUPABASE_KEY_SERVICE_ROLE = $LocalServiceRoleKey
 }
 
 if (-not (Test-Path $PythonExe)) {
@@ -295,7 +327,13 @@ $BackendProcess = Start-Process `
 
 Write-DevLog "Starting Nuxt frontend at $FrontendUrl"
 $env:NUXT_API_URL = $BackendUrl
-$FrontendCommand = "pnpm dev --host $HostAddress --port $FrontendPort"
+$NuxtCmd = Join-Path $Root "node_modules\.bin\nuxt.cmd"
+if (Test-Path $NuxtCmd) {
+  $FrontendCommand = "& `"$NuxtCmd`" dev --host $HostAddress --port $FrontendPort"
+}
+else {
+  $FrontendCommand = "pnpm dev --host $HostAddress --port $FrontendPort"
+}
 $FrontendProcess = Start-Process `
   -FilePath "powershell" `
   -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $FrontendCommand) `

@@ -272,6 +272,19 @@ export interface AdminSnapshotResponse {
   research_logs: Array<Record<string, unknown>>;
 }
 
+export interface AdminAuthUserSummary {
+  id: string;
+  email?: string | null;
+  created_at?: string | null;
+  last_sign_in_at?: string | null;
+  bound_participant_id?: string | null;
+  bound_participant_code?: string | null;
+}
+
+export interface AdminAuthUsersResponse {
+  users: AdminAuthUserSummary[];
+}
+
 export interface PromptPreviewModule {
   name: string;
   content: string;

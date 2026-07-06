@@ -80,6 +80,31 @@
       </section>
 
       <section v-if="snapshot" class="space-y-5">
+        <section class="admin-panel">
+          <button class="admin-accordion-header" type="button" @click="toggleSection('participants')">
+            <span>
+              <span class="admin-kicker">Research dashboard</span>
+              <span class="admin-accordion-title">受測者管理</span>
+            </span>
+            <span class="admin-accordion-meta">
+              {{ participantRows.length }} 位受測者
+              <Icon :name="openSections.participants ? 'mdi:chevron-down' : 'mdi:arrow-right'" class="h-5 w-5" />
+            </span>
+          </button>
+
+          <div v-show="openSections.participants" class="admin-accordion-body">
+            <p v-if="authUsersError" class="admin-error mb-4 whitespace-pre-line px-3 py-2 text-sm font-semibold">
+              {{ authUsersError }}
+            </p>
+            <AdminParticipantDashboard
+              :rows="participantRows"
+              :auth-users="authUsers"
+              :saving-participant-id="savingParticipantId"
+              @save="saveParticipant"
+            />
+          </div>
+        </section>
+
         <section v-if="!selectedEvent" class="admin-panel">
           <div class="admin-accordion-header">
             <span>
@@ -414,15 +439,17 @@
 // 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
 import { computed, onMounted, ref, watch } from 'vue';
+import { buildParticipantDashboardRows } from '~/utils/adminParticipantDashboard';
 
 definePageMeta({
   layout: false,
   name: 'admin',
 });
 
-type AdminSectionKey = 'tasks' | 'events' | 'personas';
+type AdminSectionKey = 'participants' | 'tasks' | 'events' | 'personas';
 
 const openSections = ref<Record<AdminSectionKey, boolean>>({
+  participants: true,
   tasks: true,
   events: true,
   personas: true,
@@ -438,6 +465,8 @@ const {
 const authUserId = computed(() => user.value?.id || null);
 const {
   adminKey,
+  authUsers,
+  authUsersError,
   conditionModeLabel,
   conditionOrdinal,
   error,
@@ -454,7 +483,9 @@ const {
   saveCondition,
   saveEvent,
   savePersona,
+  saveParticipant,
   saveTask,
+  savingParticipantId,
   selectedCondition,
   selectedConditionId,
   selectedEvent,
@@ -463,6 +494,10 @@ const {
   taskJson,
   taskQuestionCount,
 } = useAdminWorkspace(isAuthenticated);
+
+const participantRows = computed(() => {
+  return snapshot.value ? buildParticipantDashboardRows(snapshot.value, authUsers.value) : [];
+});
 
 // 後台採 Supabase Auth + admin key；未登入時不顯示 key 表單，也不載入任何後台資料。
 onMounted(async () => {
@@ -494,6 +529,7 @@ const toggleSection = (section: AdminSectionKey) => {
 const selectEvent = (eventId: string) => {
   selectedEventId.value = eventId;
   openSections.value = {
+    participants: true,
     tasks: true,
     events: true,
     personas: true,

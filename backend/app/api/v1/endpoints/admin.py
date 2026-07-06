@@ -5,26 +5,40 @@
 
 Routes:
     GET   /api/admin/snapshot:                一次載入 admin UI 全部所需資料。
+    GET   /api/admin/auth-users:              列出可綁定 participant 的 Supabase Auth users。
     GET   /api/admin/prompt-preview:          預覽聊天 prompt 組裝結果。
     PATCH /api/admin/events/{event_id}:       更新歷史事件基本資料。
     PATCH /api/admin/tasks/{task_id}:         更新 task 文字與評量結構。
     PATCH /api/admin/personas/{persona_id}:   更新 persona 資料。
+    PATCH /api/admin/participants/{participant_id}: 更新 participant registry。
     PATCH /api/admin/conditions/{condition_id}: 更新實驗條件設定。
     GET   /api/admin/research-logs:           列出流程行為紀錄。
 """
 
+import os
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import get_prompt_service, get_rag_pipeline, get_repository, require_admin_key
+from app.core.config import get_settings
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import Event, EventTask, ExperimentCondition, Persona, ResearchLog
+from app.models.domain import Event, EventTask, ExperimentCondition, Participant, Persona, ResearchLog
 from app.schemas.requests import (
     EventUpdateRequest,
     EventTaskUpdateRequest,
     ExperimentConditionUpdateRequest,
+    ParticipantUpdateRequest,
     PersonaUpdateRequest,
 )
-from app.schemas.responses import AdminPromptPreviewResponse, AdminSnapshotResponse, EventListItem, PromptPreviewModule
+from app.schemas.responses import (
+    AdminAuthUserSummary,
+    AdminAuthUsersResponse,
+    AdminPromptPreviewResponse,
+    AdminSnapshotResponse,
+    EventListItem,
+    PromptPreviewModule,
+)
 from app.services import PromptService, RagPipelineService
 from app.services.task_payload_validator import validate_task_authoring_payload
 
@@ -64,6 +78,73 @@ def admin_snapshot(repository: RepositoryProtocol = Depends(get_repository)) -> 
         sessions=repository.list_sessions(),
         research_logs=repository.list_research_logs(),
     )
+
+
+@router.get("/auth-users", response_model=AdminAuthUsersResponse)
+def list_auth_users(repository: RepositoryProtocol = Depends(get_repository)) -> AdminAuthUsersResponse:
+    """列出 Supabase Auth users，供 admin 綁定 participant 使用。
+
+    此 endpoint 只讀取 Supabase Auth Admin API，不修改任何資料。
+    回傳值會標示每個 Auth user 是否已綁定 participant。
+    """
+    settings = get_settings()
+    auth_admin_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY_SERVICE_ROLE")
+        or os.getenv("SUPABASE_KEY_service_role")
+        or settings.supabase_service_role_key
+    )
+    if not settings.supabase_url or not auth_admin_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Supabase admin credentials are not configured")
+
+    try:
+        response = httpx.get(
+            f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users",
+            headers={
+                "apikey": auth_admin_key,
+                "authorization": f"Bearer {auth_admin_key}",
+            },
+            params={"page": "1", "per_page": "200"},
+            timeout=15.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase service role key is required to list Auth users",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to load Supabase Auth users") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to load Supabase Auth users") from exc
+
+    payload = response.json()
+    raw_users = payload.get("users") if isinstance(payload, dict) else payload
+    if not isinstance(raw_users, list):
+        raw_users = []
+
+    participants_by_auth_id = {
+        participant.auth_user_id: participant
+        for participant in repository.list_participants()
+        if participant.auth_user_id
+    }
+    users: list[AdminAuthUserSummary] = []
+    for user in raw_users:
+        if not isinstance(user, dict) or not user.get("id"):
+            continue
+        participant = participants_by_auth_id.get(user["id"])
+        users.append(
+            AdminAuthUserSummary(
+                id=user["id"],
+                email=user.get("email"),
+                created_at=user.get("created_at"),
+                last_sign_in_at=user.get("last_sign_in_at"),
+                bound_participant_id=participant.id if participant else None,
+                bound_participant_code=participant.code if participant else None,
+            )
+        )
+    users.sort(key=lambda item: (item.email or "", item.id))
+    return AdminAuthUsersResponse(users=users)
 
 
 @router.get("/prompt-preview", response_model=AdminPromptPreviewResponse)
@@ -286,6 +367,55 @@ def update_admin_persona(
     for key, value in updates.items():
         setattr(persona, key, value)
     return repository.save_persona(persona)
+
+
+@router.patch("/participants/{participant_id}", response_model=Participant)
+def update_participant(
+    participant_id: str,
+    request: ParticipantUpdateRequest,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Participant:
+    """更新 participant registry，不修改正式實驗紀錄 identity。
+
+    Participant 僅用於研究端顯示、Auth user 對應與 condition 指派。
+    ``experiment_sessions.user_id`` 等正式紀錄仍維持 Supabase Auth user id。
+    """
+    participant = repository.get_participant(participant_id)
+    if not participant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+
+    updates = request.model_dump(exclude_unset=True)
+    if "auth_user_id" in updates:
+        raw_auth_user_id = updates["auth_user_id"]
+        next_auth_user_id = raw_auth_user_id.strip() if isinstance(raw_auth_user_id, str) else None
+        updates["auth_user_id"] = next_auth_user_id or None
+        if updates["auth_user_id"]:
+            existing = repository.get_participant_by_auth_user(updates["auth_user_id"])
+            if existing and existing.id != participant.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Auth user already bound to participant {existing.code}",
+                )
+
+    if "condition_list" in updates and updates["condition_list"] is not None:
+        order = {"01": 1, "02": 2, "03": 3, "04": 4}
+        updates["condition_list"] = sorted(set(updates["condition_list"]), key=lambda code: order[code])
+
+    for key, value in updates.items():
+        setattr(participant, key, value)
+
+    saved = repository.save_participant(participant)
+    repository.log_research(
+        ResearchLog(
+            action_type="participant_updated",
+            payload={
+                "participant_id": saved.id,
+                "participant_code": saved.code,
+                "updated_fields": sorted(updates.keys()),
+            },
+        )
+    )
+    return saved
 
 
 @router.patch("/conditions/{condition_id}", response_model=ExperimentCondition)
