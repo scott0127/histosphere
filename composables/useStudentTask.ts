@@ -5,6 +5,7 @@ import type {
   EventTask,
   ExperimentCondition,
   TaskAnswerValue,
+  TaskAttempt,
   TaskQuestion,
   TaskStudentAnswer,
   TaskSubmitResponse,
@@ -140,6 +141,95 @@ export const taskAnswerValueToText = (value: TaskAnswerValue) => {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'boolean') return value ? '是' : '否';
   return value || '';
+};
+
+export type TaskAnswerReviewStatus = 'correct' | 'incorrect' | 'unanswered' | 'ungraded';
+
+export type TaskAnswerReview = {
+  question: TaskQuestion;
+  label: string;
+  value: TaskAnswerValue;
+  answerText: string;
+  status: TaskAnswerReviewStatus;
+};
+
+const hasTaskAnswerValue = (value: TaskAnswerValue) => {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined;
+};
+
+const normalizeComparableText = (value: unknown) => {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase();
+};
+
+const taskAnswerMatches = (answer: TaskAnswerValue, expected: unknown) => {
+  if (typeof expected === 'boolean') {
+    if (typeof answer === 'boolean') return answer === expected;
+    const normalized = normalizeComparableText(answer);
+    return expected ? ['true', '是'].includes(normalized) : ['false', '否'].includes(normalized);
+  }
+
+  if (Array.isArray(expected)) {
+    if (Array.isArray(answer)) {
+      const actualValues = answer.map(normalizeComparableText).sort();
+      const expectedValues = expected.map(normalizeComparableText).sort();
+      return actualValues.length === expectedValues.length
+        && actualValues.every((value, index) => value === expectedValues[index]);
+    }
+    return expected.some((value) => normalizeComparableText(value) === normalizeComparableText(answer));
+  }
+
+  return normalizeComparableText(answer) === normalizeComparableText(expected);
+};
+
+const taskAttemptAnswers = (attempt: TaskAttempt): TaskStudentAnswer[] => {
+  const rawAnswers = attempt.response_payload?.answers;
+  if (!Array.isArray(rawAnswers)) return [];
+
+  return rawAnswers.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const answer = item as Partial<TaskStudentAnswer>;
+    if (typeof answer.question_id !== 'string') return [];
+    return [{
+      question_id: answer.question_id,
+      blank_id: typeof answer.blank_id === 'string' ? answer.blank_id : answer.question_id,
+      type: answer.type || 'short_answer',
+      prompt: typeof answer.prompt === 'string' ? answer.prompt : '',
+      value: answer.value ?? null,
+    }];
+  });
+};
+
+// 將提交答案轉成逐題事實；只判斷正誤，不產生 misconception summary 或解析。
+export const buildTaskAnswerReviews = (task: EventTask, attempt: TaskAttempt): TaskAnswerReview[] => {
+  const answers = taskAttemptAnswers(attempt);
+  const answerByQuestionId = new Map(answers.map((answer) => [answer.question_id, answer]));
+
+  return normalizeTaskQuestions(task).map((question, index) => {
+    const answer = answerByQuestionId.get(question.id)
+      || answers.find((item) => item.blank_id === (question.blank_id || question.id));
+    const value = answer?.value ?? null;
+    let status: TaskAnswerReviewStatus = 'ungraded';
+
+    if (!hasTaskAnswerValue(value)) {
+      status = 'unanswered';
+    } else if (question.correct_answer !== undefined && question.correct_answer !== null) {
+      status = taskAnswerMatches(value, question.correct_answer) ? 'correct' : 'incorrect';
+    }
+
+    return {
+      question,
+      label: `Q${String(index + 1).padStart(2, '0')}`,
+      value,
+      answerText: taskAnswerValueToText(value) || '未作答',
+      status,
+    };
+  });
 };
 
 // 受測者代號目前是可讀字串；後端 user_id 用 UUID，因此先做 deterministic UUID。

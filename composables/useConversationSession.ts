@@ -32,6 +32,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
   const loadError = ref<string | null>(null);
 
   const taskAttempt = computed(() => chatState.value?.attempt || chatState.value?.task_attempt || null);
+  const task = computed(() => chatState.value?.task || null);
 
   const loadConversation = async () => {
     const currentConversationId = conversationId.value;
@@ -118,6 +119,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     loadError,
     resetConversationState,
     sendMessage,
+    task,
     taskAttempt,
   };
 };

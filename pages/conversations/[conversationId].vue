@@ -7,6 +7,7 @@
     :history="history"
     :conversation-id="conversationId"
     :condition="chatState.condition"
+    :task="task"
     :task-attempt="taskAttempt"
     :dynamic-context="dynamicContext"
     @reset="handleReset"
@@ -38,6 +39,7 @@ const {
   loadError,
   resetConversationState,
   sendMessage,
+  task,
   taskAttempt,
 } = useConversationSession(conversationId);
 

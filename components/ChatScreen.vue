@@ -28,6 +28,11 @@
 
     <main class="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <section class="flex min-h-0 flex-col rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-soft)]">
+        <TaskAttemptReview
+          v-if="task && taskAttempt"
+          :task="task"
+          :attempt="taskAttempt"
+        />
         <div ref="chatContainerRef" class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <!-- message.speaker_type 是新版 message contract 的核心欄位，用來區分 learner/persona/assistant。 -->
           <div
@@ -117,14 +122,7 @@
       </section>
 
       <aside class="hidden min-h-0 space-y-4 lg:block">
-        <!-- 右側欄提供 task judgement 與 persona 摘要；不是主要互動區，手機版先隱藏。 -->
-        <div class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
-          <h2 class="text-sm font-semibold text-[var(--admin-text)]">作答回饋</h2>
-          <p class="mt-2 text-sm leading-6 text-[var(--admin-copy)]">
-            {{ taskAttempt?.judgement_payload?.misconception_summary || '尚無回饋。' }}
-          </p>
-        </div>
-
+        <!-- persona 摘要只在 role-play 條件出現；作答結果統一顯示於聊天主區。 -->
         <div v-if="condition?.roleplay_enabled" class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
           <h2 class="text-sm font-semibold text-[var(--admin-text)]">歷史人物</h2>
           <div class="mt-3 space-y-3">
@@ -163,10 +161,11 @@
 // ChatScreen 只管理本地輸入框、persona selector 與畫面捲動。
 // 對話 state、API error handling、history 替換都在 useConversationSession 處理。
 import { computed, nextTick, ref, watch } from 'vue';
-import type { ChatMessage, ExperimentCondition, HistoricalEvent, Persona, TaskAttempt } from '~/types';
+import type { ChatMessage, EventTask, ExperimentCondition, HistoricalEvent, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';
 import AnnotatedText from './AnnotatedText.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
+import TaskAttemptReview from '~/components/task-student/TaskAttemptReview.vue';
 import { studentActivityTitle } from '~/composables/useStudentTask';
 
 const props = defineProps<{
@@ -175,6 +174,7 @@ const props = defineProps<{
   history: ChatMessage[];
   conversationId: string;
   condition?: ExperimentCondition | null;
+  task?: EventTask | null;
   taskAttempt?: TaskAttempt | null;
   dynamicContext: string;
 }>();

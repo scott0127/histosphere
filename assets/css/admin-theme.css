@@ -19,6 +19,8 @@
   --admin-danger: #a5483d;
   --admin-danger-hover: #fff8f6;
   --admin-danger-soft: #fff0ed;
+  --admin-success: #4f6b52;
+  --admin-success-soft: #edf3ec;
   --admin-warning: #7c5a2f;
   --admin-warning-soft: #fff6dd;
 }

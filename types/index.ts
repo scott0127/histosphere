@@ -208,6 +208,7 @@ export interface ConversationLoadResponse {
   personas: Persona[];
   messages: ChatMessage[];
   condition?: ExperimentCondition | null;
+  task?: EventTask | null;
   task_attempt?: TaskAttempt | null;
   related_events?: RelatedEvent[];
 }

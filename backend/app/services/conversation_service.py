@@ -83,12 +83,20 @@ class ConversationService:
             if conversation.task_attempt_id
             else None
         )
+        task = (
+            self.repository.get_event_task(task_attempt.task_id)
+            if task_attempt
+            else None
+        )
+        if not task:
+            task = self.repository.get_latest_event_task(event.id)
         return ConversationLoadResponse(
             conversation_id=conversation.id,
             event=event,
             personas=self.repository.list_personas(event.id),
             messages=self.repository.list_messages(conversation.id),
             condition=condition,
+            task=task,
             task_attempt=task_attempt,
             related_events=[],
         )

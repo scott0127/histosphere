@@ -135,6 +135,7 @@ class ConversationLoadResponse(BaseModel):
         personas: 可用的 Persona 清單。
         messages: 歷史訊息清單。
         condition: 使用的實驗條件（可為 None）。
+        task: 關聯的前置任務（可為 None）。
         task_attempt: 關聯的 TaskAttempt（可為 None）。
         related_events: 關聯事件清單。
     """
@@ -144,6 +145,7 @@ class ConversationLoadResponse(BaseModel):
     personas: list[Persona]
     messages: list[ChatMessage]
     condition: ExperimentCondition | None = None
+    task: EventTask | None = None
     task_attempt: TaskAttempt | None = None
     related_events: list[RelatedEvent] = Field(default_factory=list)
 
