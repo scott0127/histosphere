@@ -64,12 +64,20 @@
       @confirm="confirmSubmit"
       @cancel="showSubmitConfirmDialog = false"
     />
+
+    <TaskTransitionOverlay
+      :show="isSubmitting"
+      :event-name="taskData?.event.canonical_name || '歷史事件'"
+      :start-year="taskData?.event.start_year"
+      :end-year="taskData?.event.end_year"
+    />
   </TaskStudentShell>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
+import TaskTransitionOverlay from '~/components/task-student/TaskTransitionOverlay.vue';
 import type { EventInitializeResponse, TaskStudentAnswer } from '~/types';
 import { hasInlineTaskBlanks, studentActivityTitle } from '~/composables/useStudentTask';
 
