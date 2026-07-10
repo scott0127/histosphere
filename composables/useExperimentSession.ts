@@ -28,6 +28,12 @@ export type LocalConditionProgress = {
   updatedAt: string;
 };
 
+export type ExperimentStartOptions = {
+  userId?: string;
+  participantId?: string;
+  reuseProgress?: boolean;
+};
+
 const progressItemsToLocalMap = (items: UserProgressItem[]) => {
   const next: Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>> = {};
   for (const item of items) {
@@ -164,8 +170,16 @@ export const useExperimentSession = (
     return progressByEvent.value[eventId]?.[conditionKey] || null;
   };
 
-  const startCondition = async (event: EventWithPersonas, condition: ExperimentCondition) => {
-    const progress = progressForEvent(event.id, condition.condition_key);
+  const startCondition = async (
+    event: EventWithPersonas,
+    condition: ExperimentCondition,
+    options: ExperimentStartOptions = {},
+  ) => {
+    const progress = options.reuseProgress === false
+      ? null
+      : progressForEvent(event.id, condition.condition_key);
+    const routeParticipantId = options.participantId || participantId.value;
+    const requestUserId = options.userId || authUserId.value;
     if (progress?.conversationId) {
       await navigateTo({
         path: `/conversations/${progress.conversationId}`,
@@ -176,13 +190,17 @@ export const useExperimentSession = (
       await navigateTo({
         path: `/sessions/${progress.sessionId}/task`,
         query: {
-          participantId: participantId.value,
-          authUserId: authUserId.value,
+          participantId: routeParticipantId,
+          authUserId: requestUserId,
         },
       });
       return;
     }
-    await initializeEvent(event.canonical_name, condition.condition_key, false, true);
+    await initializeEvent(event.canonical_name, condition.condition_key, false, true, {
+      participantId: routeParticipantId,
+      userId: requestUserId,
+      reloadProgress: !options.userId,
+    });
   };
 
   const initializeEvent = async (
@@ -190,6 +208,11 @@ export const useExperimentSession = (
     conditionKey: ConditionKey,
     rebuild: boolean,
     navigateToTask: boolean,
+    runtime: {
+      participantId?: string;
+      userId?: string;
+      reloadProgress?: boolean;
+    } = {},
   ) => {
     isInitializing.value = true;
     initializeError.value = null;
@@ -198,7 +221,7 @@ export const useExperimentSession = (
         eventName: name,
         conditionKey,
         rebuild,
-        userId: authUserId.value,
+        userId: runtime.userId || authUserId.value,
       });
 
       if (navigateToTask) {
@@ -208,14 +231,16 @@ export const useExperimentSession = (
           taskId: response.task.id,
           updatedAt: new Date().toISOString(),
         });
-        await loadProgressFromApi();
+        if (runtime.reloadProgress !== false) {
+          await loadProgressFromApi();
+        }
         const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
         taskData.value = response;
         await navigateTo({
           path: `/sessions/${response.session_id}/task`,
           query: {
-            participantId: participantId.value,
-            authUserId: authUserId.value,
+            participantId: runtime.participantId || participantId.value,
+            authUserId: runtime.userId || authUserId.value,
           },
         });
       }

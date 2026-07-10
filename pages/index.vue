@@ -48,6 +48,7 @@
       :conditions="visibleConditions"
       :progress-by-condition="detailConditionProgress"
       :activity-mode="activityMode"
+      :admin-access="isAdminMode"
       :participant="participant"
       :participant-error="participantError"
       :participant-loading="isParticipantLoading"
@@ -89,7 +90,7 @@ import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vu
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
-import { studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
+import { participantUuid, studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import { fetchAdminSnapshot } from '~/utils/histosphereApi';
 
@@ -132,6 +133,7 @@ const defaultParticipantId = computed(() => {
   const emailPrefix = user.value?.email?.split('@')[0]?.trim();
   return emailPrefix || 'scott-test';
 });
+const adminTestUserId = computed(() => participantUuid(`admin-test:${user.value?.id || 'local'}`));
 const {
   initializeError,
   initializeEvent,
@@ -154,7 +156,7 @@ const detailConditionProgress = computed(() => {
 });
 
 const visibleConditions = computed(() => {
-  if (activityMode.value === 'admin') return conditions.value;
+  if (isAdminMode.value) return conditions.value;
   const assigned = new Set(assignedConditionCodes.value);
   return conditions.value.filter((condition) => {
     const code = studentConditionCode(condition);
@@ -164,6 +166,7 @@ const visibleConditions = computed(() => {
 
 const pendingStartProgress = computed(() => {
   if (!pendingStartCondition.value) return null;
+  if (isAdminMode.value) return null;
   return detailConditionProgress.value[pendingStartCondition.value.condition_key] || null;
 });
 
@@ -265,7 +268,7 @@ const handleCreateEvent = async () => {
 // 啟動指定 condition；若本機已有對話紀錄，直接回到該 conversation。
 const startCondition = async (condition: ExperimentCondition) => {
   if (!detailEvent.value) return;
-  if (!participant.value) {
+  if (!isAdminMode.value && !participant.value) {
     alert(participantError.value || '請先登入已設定的受測者帳號。');
     await navigateTo('/auth/login');
     return;
@@ -284,7 +287,17 @@ const confirmStartCondition = async () => {
   const condition = pendingStartCondition.value;
   showStartConfirmDialog.value = false;
   pendingStartCondition.value = null;
-  await startExperimentCondition(detailEvent.value, condition);
+  await startExperimentCondition(
+    detailEvent.value,
+    condition,
+    isAdminMode.value
+      ? {
+          participantId: 'ADMIN',
+          userId: adminTestUserId.value,
+          reuseProgress: false,
+        }
+      : undefined,
+  );
 };
 
 // 開啟事件詳情，讓主頁維持單純的輸入與列表。

@@ -53,9 +53,15 @@
 
           <aside class="space-y-4">
             <section class="block rounded-[10px] border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3 shadow-[var(--admin-shadow-soft)]">
-              <span class="text-xs font-black uppercase tracking-[0.18em] text-[var(--admin-coffee)]">受測者</span>
+              <span class="text-xs font-black uppercase tracking-[0.18em] text-[var(--admin-coffee)]">
+                {{ adminAccess ? '測試身分' : '受測者' }}
+              </span>
               <div class="mt-2 rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 py-3">
-                <p v-if="participantLoading" class="text-sm font-bold text-[var(--admin-copy)]">載入受測者資料...</p>
+                <template v-if="adminAccess">
+                  <p class="text-base font-black text-[var(--admin-text)]">ADMIN</p>
+                  <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">可測試全部 01–04 模式</p>
+                </template>
+                <p v-else-if="participantLoading" class="text-sm font-bold text-[var(--admin-copy)]">載入受測者資料...</p>
                 <template v-else-if="participant">
                   <p class="text-base font-black text-[var(--admin-text)]">{{ participant.code }}</p>
                   <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">
@@ -123,6 +129,7 @@ defineProps<{
   conditions: ExperimentCondition[];
   progressByCondition: Partial<Record<ConditionKey, LocalConditionProgress>>;
   activityMode: 'admin' | 'learner';
+  adminAccess: boolean;
 }>();
 
 defineEmits<{

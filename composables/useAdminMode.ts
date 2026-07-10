@@ -7,8 +7,9 @@ const adminViewStorageKey = 'histosphere-admin-view-mode';
 
 export function useAdminMode() {
   const initAdminMode = () => {
-    isAdminMode.value = false;
     if (!import.meta.client) return;
+    // 已驗證的 key 在同一登入狀態內維持 admin access；退出或登出時會一併清除。
+    isAdminMode.value = Boolean(localStorage.getItem('histosphere_admin_key')?.trim());
     const savedViewMode = localStorage.getItem(adminViewStorageKey);
     adminViewMode.value = savedViewMode === 'admin' ? 'admin' : 'learner';
   };
