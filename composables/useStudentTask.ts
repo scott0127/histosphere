@@ -10,6 +10,7 @@ import type {
   TaskSubmitResponse,
   UserProgressStatus,
 } from '~/types';
+import { experimentConditionCode } from '~/utils/experimentConditions';
 
 export type TaskStorySegment =
   | { type: 'text'; text: string }
@@ -26,15 +27,8 @@ type LocalConditionProgress = {
   updatedAt: string;
 };
 
-export const studentConditionCodeByKey: Record<ConditionKey, string> = {
-  no_ebl_no_roleplay: '01',
-  ebl_no_roleplay: '02',
-  no_ebl_roleplay: '03',
-  ebl_roleplay: '04',
-};
-
 export const studentConditionCode = (condition: ExperimentCondition) => {
-  return studentConditionCodeByKey[condition.condition_key] || null;
+  return experimentConditionCode(condition);
 };
 
 // 學生端只顯示實驗代號，避免暴露實際 treatment。
@@ -162,7 +156,7 @@ export const participantUuid = (value: string) => {
   );
 };
 
-// 第一版進度存在 localStorage；正式研究若要跨裝置追蹤，應改由 sessions API 提供。
+// 舊版相容快取仍寫入 localStorage；正式進度的權威來源是 sessions API。
 export const markStudentConditionProgress = (
   participantId: string,
   response: TaskSubmitResponse,

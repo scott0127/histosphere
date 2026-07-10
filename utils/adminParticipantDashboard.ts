@@ -1,4 +1,9 @@
-import type { AdminAuthUserSummary, AdminSnapshotResponse, ConditionKey, ExperimentSession, Participant } from '~/types';
+import type { AdminAuthUserSummary, AdminSnapshotResponse, ExperimentSession, Participant } from '~/types';
+import {
+  experimentConditionCodeByKey,
+  experimentConditionCodes,
+  experimentConditionLabels,
+} from '~/utils/experimentConditions';
 
 export type ParticipantStage = 'not_started' | 'task' | 'chat' | 'completed';
 
@@ -20,14 +25,7 @@ export type ParticipantDashboardRow = {
   updatedAt?: string;
 };
 
-const conditionCodeOrder = ['01', '02', '03', '04'];
-
-export const participantConditionLabels: Record<string, string> = {
-  '01': 'Baseline',
-  '02': 'AI Error-based learning',
-  '03': 'AI Role-play learning',
-  '04': 'EBL AI Role-play',
-};
+export const participantConditionLabels: Record<string, string> = experimentConditionLabels;
 
 export const participantStageLabels: Record<ParticipantStage, string> = {
   not_started: '未開始',
@@ -36,16 +34,9 @@ export const participantStageLabels: Record<ParticipantStage, string> = {
   completed: '完成',
 };
 
-const conditionKeyToCode: Record<ConditionKey, string> = {
-  no_ebl_no_roleplay: '01',
-  ebl_no_roleplay: '02',
-  no_ebl_roleplay: '03',
-  ebl_roleplay: '04',
-};
-
 const normalizeConditionCodes = (codes: string[]) => {
   const unique = new Set(codes.filter((code) => participantConditionLabels[code]));
-  return conditionCodeOrder.filter((code) => unique.has(code));
+  return experimentConditionCodes.filter((code) => unique.has(code));
 };
 
 export const conditionDisplayLabel = (code: string) => {
@@ -72,7 +63,7 @@ export const buildParticipantDashboardRows = (
 
   for (const session of snapshot.sessions) {
     if (!session.user_id) continue;
-    const code = conditionKeyToCode[session.condition_key_snapshot];
+    const code = experimentConditionCodeByKey[session.condition_key_snapshot];
     if (!code) continue;
     const key = `${session.user_id}:${code}`;
     sessionsByUserAndCode.set(key, [...(sessionsByUserAndCode.get(key) || []), session]);

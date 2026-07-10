@@ -17,7 +17,7 @@
 
     <div v-if="sortedConditions.length" class="grid gap-3 md:grid-cols-2">
       <button
-        v-for="(condition, index) in sortedConditions"
+        v-for="condition in sortedConditions"
         :key="condition.id"
         type="button"
         :class="activityButtonClass(condition)"
@@ -66,7 +66,7 @@
 
         <div class="relative z-10 flex h-full items-start justify-between gap-4 rounded-[8px] border border-[var(--admin-border-soft)] bg-[rgba(255,253,248,0.86)] p-5">
           <div>
-            <p class="text-lg font-black leading-snug text-[var(--admin-text)]">{{ conditionTitle(condition, index) }}</p>
+            <p class="text-lg font-black leading-snug text-[var(--admin-text)]">{{ conditionTitle(condition) }}</p>
             <p v-if="mode === 'admin'" class="mt-2 max-w-[18rem] text-xs font-bold leading-5 text-[var(--admin-copy)]">
               {{ conditionHint(condition) }}
             </p>
@@ -89,6 +89,7 @@
 // 資料與導頁由 page 傳入/接收；這裡只負責排序、標籤、狀態與視覺互動。
 import { computed } from 'vue';
 import type { ConditionKey, ExperimentCondition, UserProgressStatus } from '~/types';
+import { experimentConditionCode, sortExperimentConditions } from '~/utils/experimentConditions';
 
 type LocalConditionProgress = {
   status: 'not_started' | UserProgressStatus;
@@ -111,20 +112,16 @@ const emit = defineEmits<{
 
 // 固定活動排序，確保研究流程與 UI 呈現一致，不受後端回傳順序影響。
 const sortedConditions = computed(() => {
-  const order: ConditionKey[] = ['ebl_no_roleplay', 'ebl_roleplay', 'no_ebl_no_roleplay', 'no_ebl_roleplay'];
-  return [...props.conditions].sort((a, b) => {
-    const aIndex = order.indexOf(a.condition_key);
-    const bIndex = order.indexOf(b.condition_key);
-    return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex);
-  });
+  return sortExperimentConditions(props.conditions);
 });
 
 // 顯示受測者可理解的活動名稱，避免揭露內部實驗設定。
 const mode = computed(() => props.mode);
 
-const conditionTitle = (condition: ExperimentCondition, index: number) => {
+const conditionTitle = (condition: ExperimentCondition) => {
   if (props.mode === 'learner') {
-    return `${String(index + 1).padStart(2, '0')}模式`;
+    const code = experimentConditionCode(condition);
+    return code ? `${code}模式` : '活動代號未設定';
   }
   if (condition.ebl_enabled && condition.roleplay_enabled) return '沉浸式角色扮演 + 錯誤中學習';
   if (condition.ebl_enabled) return '錯誤中學習';
