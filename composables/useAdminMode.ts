@@ -1,7 +1,11 @@
-export type AdminViewMode = 'learner' | 'admin';
+import {
+  activityModeForAdminView,
+  normalizeAdminViewMode,
+  type AdminViewMode,
+} from '~/utils/adminMode';
 
 const isAdminMode = ref(false);
-const adminViewMode = ref<AdminViewMode>('learner');
+const adminViewMode = ref<AdminViewMode>('admin_mode');
 
 const adminViewStorageKey = 'histosphere-admin-view-mode';
 
@@ -11,7 +15,7 @@ export function useAdminMode() {
     // 已驗證的 key 在同一登入狀態內維持 admin access；退出或登出時會一併清除。
     isAdminMode.value = Boolean(localStorage.getItem('histosphere_admin_key')?.trim());
     const savedViewMode = localStorage.getItem(adminViewStorageKey);
-    adminViewMode.value = savedViewMode === 'admin' ? 'admin' : 'learner';
+    adminViewMode.value = normalizeAdminViewMode(savedViewMode);
   };
 
   const persistAdminMode = () => {
@@ -21,13 +25,13 @@ export function useAdminMode() {
 
   const enterAdminMode = () => {
     isAdminMode.value = true;
-    adminViewMode.value = 'admin';
+    adminViewMode.value = 'admin_mode';
     persistAdminMode();
   };
 
   const exitAdminMode = () => {
     isAdminMode.value = false;
-    adminViewMode.value = 'learner';
+    adminViewMode.value = 'admin_mode';
     persistAdminMode();
   };
 
@@ -38,7 +42,9 @@ export function useAdminMode() {
   };
 
   const activityMode = computed(() => {
-    return isAdminMode.value && adminViewMode.value === 'admin' ? 'admin' : 'learner';
+    return isAdminMode.value
+      ? activityModeForAdminView(adminViewMode.value)
+      : 'learner';
   });
 
   return {

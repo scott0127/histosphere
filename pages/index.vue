@@ -92,6 +92,7 @@ import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
 import { participantUuid, studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
+import { shouldExitAdminModeForAuthTransition } from '~/utils/adminMode';
 import { fetchAdminSnapshot } from '~/utils/histosphereApi';
 
 definePageMeta({
@@ -194,16 +195,18 @@ onMounted(async () => {
   await initializeAuth();
   initializeParticipant();
   await loadEventLibrary();
-  if (user.value?.id) {
+  if (user.value?.id && !isAdminMode.value) {
     await loadParticipantForAuthUser(user.value.id);
   }
 });
 
-watch(authStorageScope, async () => {
-  handleExitAdminMode();
+watch(authStorageScope, async (nextScope, previousScope) => {
+  if (shouldExitAdminModeForAuthTransition(previousScope, nextScope)) {
+    await handleExitAdminMode(false);
+  }
   detailEvent.value = null;
   await resetForAuthScope();
-  if (user.value?.id) {
+  if (user.value?.id && !isAdminMode.value) {
     await loadParticipantForAuthUser(user.value.id);
   }
 });
@@ -237,11 +240,15 @@ const verifyAndEnterAdminMode = async (adminKey: string) => {
   }
 };
 
-const handleExitAdminMode = () => {
+const handleExitAdminMode = async (reloadParticipant = true) => {
   exitAdminMode();
   adminModeError.value = null;
   if (import.meta.client) {
     localStorage.removeItem('histosphere_admin_key');
+  }
+  if (reloadParticipant && user.value?.id) {
+    await resetForAuthScope();
+    await loadParticipantForAuthUser(user.value.id);
   }
 };
 

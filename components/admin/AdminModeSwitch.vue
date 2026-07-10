@@ -62,22 +62,24 @@
       <div class="admin-mode-segment" role="group" aria-label="Admin view mode">
         <button
           type="button"
-          :class="segmentClass('learner')"
-          @click="$emit('update:view-mode', 'learner')"
+          :class="segmentClass('admin_mode')"
+          title="管理與編輯系統資料"
+          @click="$emit('update:view-mode', 'admin_mode')"
         >
-          學習者
+          管理模式
         </button>
         <button
           type="button"
-          :class="segmentClass('admin')"
-          @click="$emit('update:view-mode', 'admin')"
+          :class="segmentClass('admin_testmode')"
+          title="以受測者視角測試全部流程"
+          @click="$emit('update:view-mode', 'admin_testmode')"
         >
-          管理員
+          受測者測試
         </button>
       </div>
 
       <NuxtLink
-        v-if="viewMode === 'admin'"
+        v-if="viewMode === 'admin_mode'"
         to="/admin"
         class="admin-mode-icon-button"
         title="開啟後台"
@@ -99,7 +101,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { AdminViewMode } from '~/composables/useAdminMode';
+import type { AdminViewMode } from '~/utils/adminMode';
 
 const props = defineProps<{
   isAuthenticated: boolean;

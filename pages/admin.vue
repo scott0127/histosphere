@@ -16,9 +16,18 @@
             <span class="admin-caption block text-xs font-semibold tracking-[0.08em]">研究者 / 老師操作端</span>
           </span>
         </NuxtLink>
-        <span class="admin-badge">
-          Admin
-        </span>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="snapshot"
+            type="button"
+            class="admin-button-secondary inline-flex min-h-10 items-center justify-center gap-2 px-4 text-xs font-bold"
+            @click="enterAdminTestMode"
+          >
+            <Icon name="mdi:eye" class="h-4 w-4" />
+            受測者測試
+          </button>
+          <span class="admin-badge">Admin mode</span>
+        </div>
       </div>
     </header>
 
@@ -463,6 +472,7 @@ const {
   user,
 } = useAuth();
 const authUserId = computed(() => user.value?.id || null);
+const { enterAdminMode, initAdminMode, setAdminViewMode } = useAdminMode();
 const {
   adminKey,
   authUsers,
@@ -501,6 +511,7 @@ const participantRows = computed(() => {
 
 // 後台採 Supabase Auth + admin key；未登入時不顯示 key 表單，也不載入任何後台資料。
 onMounted(async () => {
+  initAdminMode();
   await initializeAuth();
   if (isAuthenticated.value) {
     restoreStoredAdminKey();
@@ -509,6 +520,12 @@ onMounted(async () => {
     }
   }
 });
+
+const enterAdminTestMode = async () => {
+  enterAdminMode();
+  setAdminViewMode('admin_testmode');
+  await navigateTo('/');
+};
 
 watch(isAuthenticated, (authenticated) => {
   if (authenticated) return;

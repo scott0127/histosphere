@@ -39,7 +39,7 @@
 
 <script setup lang="ts">
 // EventLibraryHeader 是純導覽元件；重新整理由 page 接收事件後執行。
-import type { AdminViewMode } from '~/composables/useAdminMode';
+import type { AdminViewMode } from '~/utils/adminMode';
 
 defineProps<{
   isRefreshing: boolean;

@@ -58,8 +58,12 @@
               </span>
               <div class="mt-2 rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 py-3">
                 <template v-if="adminAccess">
-                  <p class="text-base font-black text-[var(--admin-text)]">ADMIN</p>
-                  <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">可測試全部 01–04 模式</p>
+                  <p class="text-base font-black text-[var(--admin-text)]">
+                    {{ activityMode === 'admin' ? 'ADMIN MODE' : 'ADMIN TESTMODE' }}
+                  </p>
+                  <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">
+                    {{ activityMode === 'admin' ? '管理與測試全部功能' : '受測者視角，可測試全部 01–04 模式' }}
+                  </p>
                 </template>
                 <p v-else-if="participantLoading" class="text-sm font-bold text-[var(--admin-copy)]">載入受測者資料...</p>
                 <template v-else-if="participant">
