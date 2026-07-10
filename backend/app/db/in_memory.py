@@ -7,6 +7,7 @@
 初始化時會自動 seed 四組 2x2 實驗條件。
 """
 
+from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS, condition_sort_index
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import (
     ChatMessage,
@@ -91,41 +92,15 @@ class InMemoryRepository(RepositoryProtocol):
         """
         seed = [
             ExperimentCondition(
-                condition_key="no_ebl_no_roleplay",
-                label="Without EBL + Without AI Role-play",
-                ebl_enabled=False,
-                roleplay_enabled=False,
-                agent_mode="generic",
-                response_policy="direct",
-                description="一般 ChatGPT 式回答；可直接給正確答案。",
-            ),
-            ExperimentCondition(
-                condition_key="ebl_no_roleplay",
-                label="With EBL + Without AI Role-play",
-                ebl_enabled=True,
-                roleplay_enabled=False,
-                agent_mode="generic",
-                response_policy="scaffold",
-                description="一般 tutor chatbot；引導 historical thinking、evidence-based argumentation、source interpretation。",
-            ),
-            ExperimentCondition(
-                condition_key="no_ebl_roleplay",
-                label="Without EBL + With AI Role-play",
-                ebl_enabled=False,
-                roleplay_enabled=True,
-                agent_mode="persona",
-                response_policy="direct",
-                description="AI historical persona role-play；沉浸式回答，可直接給答案。",
-            ),
-            ExperimentCondition(
-                condition_key="ebl_roleplay",
-                label="With EBL + With AI Role-play",
-                ebl_enabled=True,
-                roleplay_enabled=True,
-                agent_mode="persona",
-                response_policy="scaffold",
-                description="AI historical persona 基於 learner misconceptions 展開對話並引導 historical thinking。",
-            ),
+                condition_key=definition.condition_key,
+                label=definition.default_label,
+                ebl_enabled=definition.ebl_enabled,
+                roleplay_enabled=definition.roleplay_enabled,
+                agent_mode=definition.agent_mode,
+                response_policy=definition.response_policy,
+                description=definition.default_description,
+            )
+            for definition in EXPERIMENT_CONDITION_DEFINITIONS
         ]
         for condition in seed:
             self.save_condition(condition)
@@ -256,7 +231,7 @@ class InMemoryRepository(RepositoryProtocol):
         return [chunk for chunk in self.knowledge_chunks.values() if chunk.event_id == event_id]
 
     def list_conditions(self, active_only: bool = True) -> list[ExperimentCondition]:
-        """列出實驗條件，依 condition_key 排序。
+        """列出實驗條件，依 learner-facing 01–04 代號排序。
 
         Args:
             active_only: 若為 True，僅回傳 active=True 的條件。
@@ -267,7 +242,7 @@ class InMemoryRepository(RepositoryProtocol):
         conditions = list(self.conditions.values())
         if active_only:
             conditions = [condition for condition in conditions if condition.active]
-        return sorted(conditions, key=lambda item: item.condition_key)
+        return sorted(conditions, key=lambda item: condition_sort_index(item.condition_key))
 
     def get_condition_by_key(self, condition_key: str) -> ExperimentCondition | None:
         """依 condition_key 取得條件。

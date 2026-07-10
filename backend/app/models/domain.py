@@ -18,7 +18,9 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.experiment_conditions import validate_condition_behavior
 
 
 ConditionKey = Literal[
@@ -188,6 +190,18 @@ class ExperimentCondition(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
+    @model_validator(mode="after")
+    def validate_fixed_factor_matrix(self) -> "ExperimentCondition":
+        """Keep each condition key bound to its canonical 2x2 behavior."""
+        validate_condition_behavior(
+            self.condition_key,
+            ebl_enabled=self.ebl_enabled,
+            roleplay_enabled=self.roleplay_enabled,
+            agent_mode=self.agent_mode,
+            response_policy=self.response_policy,
+        )
+        return self
+
 
 class Participant(BaseModel):
     """研究受測者 registry。
@@ -266,9 +280,9 @@ class EventTask(BaseModel):
         id: Task UUID。
         event_id: 關聯事件 ID。
         title: Task 標題。
-        story_text: 完整正確故事文字（含答案）。
-        display_text: 顯示用文字（含空格「____」供填答）。
-        evaluation_payload: 評量結構（rubric、expected_points 等）。
+        story_text: 完整原始文本，供研究者對照與編輯。
+        display_text: 學生端故事文字，以 ``{{blank:qNN}}`` token 標記文中題目。
+        evaluation_payload: 評量結構，包含 rubric 與 questions 題目定義。
         revision_state: 修訂狀態（LLM 生成 / 教師修改 / 手動）。
         created_at: 建立時間。
         updated_at: 最後更新時間。

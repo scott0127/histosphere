@@ -17,6 +17,7 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel
 
+from app.core.experiment_conditions import condition_sort_index
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import (
     ChatMessage,
@@ -304,7 +305,7 @@ class SupabaseRepository(RepositoryProtocol):
     # ── ExperimentCondition ────────────────────────────────────
 
     def list_conditions(self, active_only: bool = True) -> list[ExperimentCondition]:
-        """列出實驗條件，依 condition_key 排序。
+        """列出實驗條件，依 learner-facing 01–04 代號排序。
 
         Args:
             active_only: 若為 True，僅回傳 active=True 的條件。
@@ -312,10 +313,11 @@ class SupabaseRepository(RepositoryProtocol):
         Returns:
             list[ExperimentCondition]: 條件清單。
         """
-        params = {"order": "condition_key.asc"}
+        params = {}
         if active_only:
             params["active"] = "eq.true"
-        return self._select_many("experiment_conditions", ExperimentCondition, params)
+        conditions = self._select_many("experiment_conditions", ExperimentCondition, params)
+        return sorted(conditions, key=lambda item: condition_sort_index(item.condition_key))
 
     def get_condition_by_key(self, condition_key: str) -> ExperimentCondition | None:
         """依 condition_key 取得條件。

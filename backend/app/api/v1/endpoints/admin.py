@@ -19,9 +19,11 @@ import os
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 
 from app.api.deps import get_prompt_service, get_rag_pipeline, get_repository, require_admin_key
 from app.core.config import get_settings
+from app.core.experiment_conditions import sort_condition_codes
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentCondition, Participant, Persona, ResearchLog
 from app.schemas.requests import (
@@ -398,8 +400,7 @@ def update_participant(
                 )
 
     if "condition_list" in updates and updates["condition_list"] is not None:
-        order = {"01": 1, "02": 2, "03": 3, "04": 4}
-        updates["condition_list"] = sorted(set(updates["condition_list"]), key=lambda code: order[code])
+        updates["condition_list"] = sort_condition_codes(updates["condition_list"])
 
     for key, value in updates.items():
         setattr(participant, key, value)
@@ -424,11 +425,10 @@ def update_condition(
     request: ExperimentConditionUpdateRequest,
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> ExperimentCondition:
-    """更新 2x2 實驗條件設定，例如 EBL/role-play 是否啟用。
+    """更新 2x2 實驗條件的可編輯資料。
 
-    可修改 label、ebl_enabled、roleplay_enabled、agent_mode、
-    response_policy、description 與 active 等欄位。
-    支援部分更新（PATCH 語意）。
+    label、description 與 active 可調整；EBL、role-play、agent mode 與
+    response policy 必須維持 condition key 對應的固定實驗矩陣。
 
     Args:
         condition_id: 目標 condition 的 UUID 字串。
@@ -440,14 +440,20 @@ def update_condition(
 
     Raises:
         HTTPException: 404 — 指定 condition_id 不存在時。
+        ValidationError: 更新內容違反固定 2x2 矩陣時。
     """
     condition = repository.get_condition(condition_id)
     if not condition:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condition not found")
     updates = request.model_dump(exclude_unset=True)
-    for key, value in updates.items():
-        setattr(condition, key, value)
-    return repository.save_condition(condition)
+    try:
+        validated = ExperimentCondition.model_validate({**condition.model_dump(), **updates})
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Condition behavior must match its fixed 01-04 experiment mapping",
+        ) from exc
+    return repository.save_condition(validated)
 
 
 @router.get("/research-logs", response_model=list[ResearchLog])
