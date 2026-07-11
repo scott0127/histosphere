@@ -88,10 +88,10 @@ def delete_persona(
     persona_id: str,
     service: PersonaService = Depends(get_persona_service),
 ) -> dict[str, bool]:
-    """刪除 persona；研究資料固定後需謹慎使用。
+    """停用或刪除 persona；研究資料固定後需謹慎使用。
 
-    永久移除指定 persona。若實驗已進行中，刪除角色可能
-    影響已建立的 conversation 回放一致性，應謹慎操作。
+    實際策略由 repository 決定；Supabase 實作會將 active 設為 False，
+    保留既有 conversation 的回放關聯。
 
     Args:
         persona_id: 要刪除的 persona UUID 字串。

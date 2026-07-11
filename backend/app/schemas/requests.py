@@ -125,7 +125,7 @@ class ChatRequest(BaseModel):
     Attributes:
         conversation_id: 所屬 Conversation UUID（至少 1 字元）。
         user_message: 使用者訊息內容（至少 1 字元）。
-        history: 前端持有的歷史訊息（用於 context；可選）。
+        history: 前端持有的歷史訊息（相容欄位；目前 ChatService 尚未納入 prompt context）。
         target_persona_id: 指定回覆的 Persona ID（可選）。
     """
 
@@ -204,15 +204,15 @@ class PersonaUpdateRequest(BaseModel):
 class EventTaskUpdateRequest(BaseModel):
     """Task 更新請求（Admin PATCH）。
 
-    支援部分更新。更新後 revision_state 預設切換為
-    ``"teacher_modified"``。
+    支援部分更新。API handler 使用 ``exclude_unset=True``，因此未提供的
+    revision_state 會維持原值；前端正式儲存流程會明確送出 ``"teacher_modified"``。
 
     Attributes:
         title: 新的 task 標題（可選）。
         story_text: 新的完整故事文字（可選）。
         display_text: 新的顯示用文字（可選）。
         evaluation_payload: 新的評量結構（可選）。
-        revision_state: 修訂狀態，預設 ``"teacher_modified"``。
+        revision_state: 修訂狀態；只有 request 明確提供時才會套用。
     """
 
     title: str | None = None
