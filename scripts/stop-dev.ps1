@@ -5,7 +5,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$ProjectName = Split-Path $Root -Leaf
 
 function Write-CleanupLog {
   param([string]$Message)
@@ -51,17 +50,15 @@ Write-CleanupLog "Done."
 
 if ($Supabase) {
   Write-CleanupLog "Stopping local Supabase stack..."
-  npx -y supabase@latest stop --no-backup
-
-  $StaleContainers = @(
-    docker ps -a --filter "name=supabase_" --format "{{.Names}}" |
-      Where-Object { $_ -like "supabase_*_$ProjectName" }
-  )
-
-  foreach ($ContainerName in $StaleContainers) {
-    Write-CleanupLog "Removing stale Supabase container $ContainerName"
-    docker rm -f $ContainerName | Out-Null
+  Push-Location $Root
+  try {
+    pnpm supabase:stop
+    if ($LASTEXITCODE -ne 0) {
+      throw "Supabase CLI could not stop the local stack."
+    }
   }
-
-  Write-CleanupLog "Supabase stop requested. Volumes were not removed."
+  finally {
+    Pop-Location
+  }
+  Write-CleanupLog "Supabase stopped with its database backup preserved."
 }

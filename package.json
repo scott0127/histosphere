@@ -9,10 +9,10 @@
     "dev:full:supabase": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1 -StartSupabase -KillExisting",
     "dev:cleanup": "powershell -ExecutionPolicy Bypass -File ./scripts/stop-dev.ps1",
     "dev:cleanup:supabase": "powershell -ExecutionPolicy Bypass -File ./scripts/stop-dev.ps1 -Supabase",
-    "supabase:start": "npx -y supabase@latest start",
-    "supabase:stop": "npx -y supabase@latest stop",
-    "supabase:status": "npx -y supabase@latest status",
-    "supabase:reset": "npx -y supabase@latest db reset",
+    "dev:repair:supabase-ports": "powershell -ExecutionPolicy Bypass -File ./scripts/release-supabase-ports.ps1",
+    "supabase:start": "supabase start -x edge-runtime,imgproxy,logflare,mailpit,realtime,vector",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -31,6 +31,7 @@
     "@nuxt/icon": "^2.1.0",
     "@nuxtjs/tailwindcss": "^6.14.0",
     "jimp": "0.22.10",
+    "supabase": "2.109.1",
     "typescript": "^5.9.3"
   }
 }

@@ -16,6 +16,8 @@ $BackendDir = Join-Path $Root "backend"
 $PythonExe = Join-Path $BackendDir ".venv\Scripts\python.exe"
 $Requirements = Join-Path $BackendDir "requirements.txt"
 $LogDir = Join-Path $Root ".dev-logs"
+$SupabaseConfig = Join-Path $Root "supabase\config.toml"
+$StartupStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 function Write-DevLog {
   param([string]$Message)
@@ -84,6 +86,65 @@ function Wait-HttpOk {
   }
   Write-Status $Name $false "not responding at $Url"
   return $false
+}
+
+function Get-TomlPort {
+  param(
+    [string]$Path,
+    [string]$Section
+  )
+
+  $CurrentSection = ""
+  foreach ($Line in Get-Content -LiteralPath $Path) {
+    if ($Line -match '^\s*\[([^]]+)\]\s*$') {
+      $CurrentSection = $Matches[1]
+      continue
+    }
+    if ($CurrentSection -eq $Section -and $Line -match '^\s*port\s*=\s*(\d+)') {
+      return [int]$Matches[1]
+    }
+  }
+
+  throw "Could not find port for [$Section] in $Path."
+}
+
+function Test-WindowsExcludedPort {
+  param([int]$Port)
+
+  if (-not $IsWindows -and $env:OS -ne "Windows_NT") {
+    return $false
+  }
+
+  $Ranges = netsh interface ipv4 show excludedportrange protocol=tcp 2>$null
+  foreach ($Line in $Ranges) {
+    if ($Line -match '^\s*(\d+)\s+(\d+)(\s+\*)?\s*$') {
+      $Start = [int]$Matches[1]
+      $End = [int]$Matches[2]
+      $Administered = -not [string]::IsNullOrWhiteSpace($Matches[3])
+      if (-not $Administered -and $Port -ge $Start -and $Port -le $End) {
+        return $true
+      }
+    }
+  }
+
+  return $false
+}
+
+function Get-SupabaseStatus {
+  Push-Location $Root
+  try {
+    $StatusJson = (& pnpm exec supabase status --output json 2>$null) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($StatusJson)) {
+      return $null
+    }
+    return $StatusJson | ConvertFrom-Json
+  }
+  catch {
+    return $null
+  }
+  finally {
+    Pop-Location
+  }
 }
 
 function Get-ListeningProcessIds {
@@ -204,73 +265,122 @@ function Test-DockerRunning {
 }
 
 function Test-SupabaseRunning {
+  param(
+    [int]$ApiPort,
+    [switch]$Quiet
+  )
+
   $DbContainer = "supabase_db_$ProjectName"
   $KongContainer = "supabase_kong_$ProjectName"
 
   $DbStatus = & cmd.exe /c "docker inspect --format ""{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}"" $DbContainer 2>NUL"
   if ($LASTEXITCODE -ne 0) {
-    Write-Status "Supabase" $false "DB container '$DbContainer' is missing; local stack is incomplete"
+    if (-not $Quiet) {
+      Write-Status "Supabase" $false "DB container '$DbContainer' is missing; local stack is incomplete"
+    }
     return $false
   }
 
   $KongStatus = & cmd.exe /c "docker inspect --format ""{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}"" $KongContainer 2>NUL"
   if ($LASTEXITCODE -ne 0) {
-    Write-Status "Supabase" $false "Kong container '$KongContainer' is missing"
+    if (-not $Quiet) {
+      Write-Status "Supabase" $false "Kong container '$KongContainer' is missing"
+    }
     return $false
   }
 
-  $SupabasePortOpen = Test-TcpPort $HostAddress 54321
+  $SupabasePortOpen = Test-TcpPort $HostAddress $ApiPort
   if ($DbStatus -match "^running (healthy|no-healthcheck)" -and $KongStatus -match "^running (healthy|no-healthcheck)" -and $SupabasePortOpen) {
-    Write-Status "Supabase" $true "local stack is running at http://${HostAddress}:54321"
+    if (-not $Quiet) {
+      Write-Status "Supabase" $true "local stack is running at http://${HostAddress}:$ApiPort"
+    }
     return $true
   }
 
-  Write-Status "Supabase" $false "local stack is not healthy (db: $DbStatus, kong: $KongStatus, port 54321 open: $SupabasePortOpen)"
+  if (-not $Quiet) {
+    Write-Status "Supabase" $false "local stack is not healthy (db: $DbStatus, kong: $KongStatus, port $ApiPort open: $SupabasePortOpen)"
+  }
   return $false
 }
 
-function ConvertTo-Base64Url {
-  param([byte[]]$Bytes)
-  return [Convert]::ToBase64String($Bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
-}
+function Wait-SupabaseRunning {
+  param(
+    [int]$ApiPort,
+    [int]$TimeoutSeconds = 90
+  )
 
-function New-LocalSupabaseServiceRoleKey {
-  param([string]$ProjectRef)
+  $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $Deadline) {
+    if (Test-SupabaseRunning -ApiPort $ApiPort -Quiet) {
+      Test-SupabaseRunning -ApiPort $ApiPort | Out-Null
+      return $true
+    }
+    Start-Sleep -Seconds 1
+  }
 
-  $JwtSecret = "super-secret-jwt-token-with-at-least-32-characters-long"
-  $Now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-  $HeaderJson = @{ alg = "HS256"; typ = "JWT" } | ConvertTo-Json -Compress
-  $PayloadJson = @{
-    iss = "supabase"
-    ref = $ProjectRef
-    role = "service_role"
-    iat = $Now
-    exp = $Now + 315360000
-  } | ConvertTo-Json -Compress
-
-  $Header = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($HeaderJson))
-  $Payload = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($PayloadJson))
-  $UnsignedToken = "$Header.$Payload"
-  $Hmac = [System.Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($JwtSecret))
-  $Signature = ConvertTo-Base64Url ($Hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($UnsignedToken)))
-  $Hmac.Dispose()
-  return "$UnsignedToken.$Signature"
+  Test-SupabaseRunning -ApiPort $ApiPort | Out-Null
+  return $false
 }
 
 Ensure-Command "python"
 Ensure-Command "pnpm"
 
+$BackendUrl = "http://${HostAddress}:$BackendPort"
+$FrontendUrl = "http://${HostAddress}:$FrontendPort"
+$BackendLog = Join-Path $LogDir "backend.log"
+$BackendErrLog = Join-Path $LogDir "backend.err.log"
+$FrontendLog = Join-Path $LogDir "frontend.log"
+$FrontendErrLog = Join-Path $LogDir "frontend.err.log"
+$SupabaseApiPort = Get-TomlPort -Path $SupabaseConfig -Section "api"
+
+if (Test-WindowsExcludedPort -Port $SupabaseApiPort) {
+  throw "Supabase ports are reserved by Windows. Run 'pnpm dev:repair:supabase-ports' once as Administrator, then run pnpm dev:full again."
+}
+
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+Assert-PortFree $BackendPort
+Assert-PortFree $FrontendPort
+Reset-LogFiles -Paths @($BackendLog, $BackendErrLog, $FrontendLog, $FrontendErrLog)
+
 $DockerRunning = Test-DockerRunning
-$SupabaseRunning = Test-SupabaseRunning
+$SupabaseRunning = $false
+if ($DockerRunning) {
+  $SupabaseRunning = Test-SupabaseRunning -ApiPort $SupabaseApiPort
+}
 
 if ($StartSupabase) {
   if (-not $DockerRunning) {
     throw "Cannot start Supabase because Docker Desktop is not running. Start Docker Desktop first, then run pnpm dev:full:supabase."
   }
   if (-not $SupabaseRunning) {
+    $KongContainer = "supabase_kong_$ProjectName"
+    $PublishedPorts = (& docker port $KongContainer 2>$null) -join "`n"
+    if ($LASTEXITCODE -eq 0 -and $PublishedPorts -and $PublishedPorts -notmatch ":$SupabaseApiPort\s*$") {
+      Write-DevLog "Supabase is using an older port configuration; stopping it safely before restart..."
+      Push-Location $Root
+      try {
+        pnpm supabase:stop
+        if ($LASTEXITCODE -ne 0) {
+          throw "Could not stop the existing Supabase stack."
+        }
+      }
+      finally {
+        Pop-Location
+      }
+    }
+
     Write-DevLog "Starting local Supabase..."
-    pnpm supabase:start
-    $SupabaseRunning = Test-SupabaseRunning
+    Push-Location $Root
+    try {
+      pnpm supabase:start
+      if ($LASTEXITCODE -ne 0) {
+        throw "Supabase CLI failed to start the local stack."
+      }
+    }
+    finally {
+      Pop-Location
+    }
+    $SupabaseRunning = Wait-SupabaseRunning -ApiPort $SupabaseApiPort
   }
 }
 
@@ -280,14 +390,21 @@ if (-not $UseSupabase) {
 
 if ($UseSupabase) {
   if (-not $SupabaseRunning) {
-    throw "Supabase is required for dev runtime, but local Supabase is not healthy. Run pnpm dev:cleanup:supabase, then pnpm dev:full."
+    throw "Supabase is required for dev runtime, but local Supabase is not healthy at port $SupabaseApiPort."
   }
+
+  $SupabaseStatus = Get-SupabaseStatus
+  if (-not $SupabaseStatus) {
+    throw "Supabase is running, but its local connection settings could not be read."
+  }
+
   $env:BACKEND_REPOSITORY = "supabase"
-  $env:SUPABASE_URL = "http://${HostAddress}:54321"
-  $LocalServiceRoleKey = New-LocalSupabaseServiceRoleKey -ProjectRef $ProjectName
-  $env:SUPABASE_SERVICE_ROLE_KEY = $LocalServiceRoleKey
-  $env:SUPABASE_KEY = $LocalServiceRoleKey
-  $env:SUPABASE_KEY_SERVICE_ROLE = $LocalServiceRoleKey
+  $env:SUPABASE_URL = $SupabaseStatus.API_URL
+  $env:SUPABASE_SERVICE_ROLE_KEY = $SupabaseStatus.SERVICE_ROLE_KEY
+  $env:SUPABASE_KEY = $SupabaseStatus.SERVICE_ROLE_KEY
+  $env:SUPABASE_KEY_SERVICE_ROLE = $SupabaseStatus.SERVICE_ROLE_KEY
+  $env:VITE_SUPABASE_URL = $SupabaseStatus.API_URL
+  $env:VITE_SUPABASE_ANON_KEY = $SupabaseStatus.ANON_KEY
 }
 
 if (-not (Test-Path $PythonExe)) {
@@ -300,19 +417,6 @@ if ($Install) {
   Write-DevLog "Installing backend Python dependencies..."
   & $PythonExe -m pip install -r $Requirements
 }
-
-$BackendUrl = "http://${HostAddress}:$BackendPort"
-$FrontendUrl = "http://${HostAddress}:$FrontendPort"
-$BackendLog = Join-Path $LogDir "backend.log"
-$BackendErrLog = Join-Path $LogDir "backend.err.log"
-$FrontendLog = Join-Path $LogDir "frontend.log"
-$FrontendErrLog = Join-Path $LogDir "frontend.err.log"
-
-New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
-
-Assert-PortFree $BackendPort
-Assert-PortFree $FrontendPort
-Reset-LogFiles -Paths @($BackendLog, $BackendErrLog, $FrontendLog, $FrontendErrLog)
 
 Write-DevLog "Starting FastAPI backend at $BackendUrl"
 $BackendCommand = "& `"$PythonExe`" -m uvicorn app.main:app --reload --host $HostAddress --port $BackendPort"
@@ -350,11 +454,13 @@ if ($env:BACKEND_REPOSITORY -eq "supabase") {
 }
 Wait-HttpOk "Backend" "$BackendUrl/health" 30 | Out-Null
 Wait-HttpOk "Frontend" $FrontendUrl 45 | Out-Null
-Test-SupabaseRunning | Out-Null
+Test-SupabaseRunning -ApiPort $SupabaseApiPort | Out-Null
 
+$StartupStopwatch.Stop()
 Write-DevLog "Frontend: $FrontendUrl"
 Write-DevLog "Backend:  $BackendUrl"
 Write-DevLog "Logs:     $LogDir"
+Write-DevLog ("Ready in {0:N1}s" -f $StartupStopwatch.Elapsed.TotalSeconds)
 Write-DevLog "Press Ctrl+C to stop both servers."
 
 try {
