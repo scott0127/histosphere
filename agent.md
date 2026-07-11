@@ -13,7 +13,7 @@ Your goal is to implement the requested feature in a production-realistic way. D
 2. **Use `codebase-memory-mcp` actively**
    - Use `codebase-memory-mcp` to understand prior decisions, existing architecture, completed tasks, unresolved issues, and conventions.
    - Before making architectural changes, check whether relevant decisions already exist in memory.
-   - After completing meaningful work, update memory only with concise, useful engineering notes.
+   - Update persistent memory only when the user explicitly asks for a memory update; keep any approved note concise and engineering-focused.
 
 3. **Do not invent unnecessary custom behavior**
    - Do not add custom configuration, custom abstractions, custom routing, custom state layers, or custom backend logic unless the project clearly needs it.
@@ -86,10 +86,13 @@ Your goal is to implement the requested feature in a production-realistic way. D
 
 11. **Documentation update workflow**
    - After completing a large new feature, large refactor, database change, API change, architecture change, or major UI flow change, check whether files under `docs/` should be updated.
-   - Before editing any `docs/` file, explicitly ask me whether to update the relevant documentation.
+   - After implementation and verification, proactively identify the affected files under `docs/` and explicitly ask me whether to update them before editing.
    - In the question, briefly list which docs appear affected and why.
    - Do not silently update docs as part of a large change unless I already approved that documentation update in the current task.
+   - Approval applies only to the documentation scope named or clearly implied in the current task; it is not standing permission for later unrelated changes.
+   - If the current task explicitly asks to update docs, treat that as approval and do not ask the same question again.
    - If I decline or defer docs updates, mention the skipped docs in the final response so the gap is visible.
+   - Documentation must describe verified behavior in the current working tree. Mark work-in-progress or unverified behavior clearly instead of presenting it as released.
 
 ## Expected Output
 

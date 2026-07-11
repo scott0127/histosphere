@@ -17,6 +17,7 @@ import {
 } from '~/composables/useStudentTask';
 import {
   fetchSessionState,
+  fetchTaskSubmissionStatus,
   saveTaskDraft,
   submitTaskAnswers,
 } from '~/utils/histosphereApi';
@@ -52,6 +53,8 @@ export const useTaskGate = (
   const draftSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null);
   const lastDraftPayload = ref<string | null>(null);
   const judgement = ref<Record<string, any> | null>(null);
+  const session = ref<SessionStateResponse['session'] | null>(null);
+  const isUnmounted = ref(false);
 
   const taskQuestions = computed(() => taskData.value ? normalizeTaskQuestions(taskData.value.task) : []);
   const canSubmit = computed(() => isTaskAnswerComplete(taskQuestions.value, answers.value));
@@ -74,6 +77,7 @@ export const useTaskGate = (
   );
 
   onBeforeUnmount(() => {
+    isUnmounted.value = true;
     clearDraftTimer();
   });
 
@@ -84,21 +88,15 @@ export const useTaskGate = (
     error.value = null;
     draftError.value = null;
     try {
-      const response: TaskSubmitResponse = await submitTaskAnswers(taskData.value.task.id, {
+      const accepted = await submitTaskAnswers(taskData.value.task.id, {
         sessionId: taskData.value.session_id,
         userId: userIdForRequest.value,
         responsePayload: buildTaskResponsePayload(answers.value),
       });
-      judgement.value = response.judgement;
-      markStudentConditionProgress(participantId.value, response);
-
-      const chatData = useState<TaskSubmitResponse | null>('chatData', () => null);
-      chatData.value = response;
-      await navigateTo({
-        path: `/conversations/${response.conversation_id}`,
-      });
+      const response = await waitForSubmission(accepted.attempt_id);
+      await finishSubmission(response);
     } catch (e: any) {
-      error.value = e.data?.detail || e.data?.message || '送出失敗，請稍後再試。';
+      error.value = e.data?.detail || e.data?.message || e.message || '送出失敗，請稍後再試。';
     } finally {
       isSubmitting.value = false;
     }
@@ -110,6 +108,7 @@ export const useTaskGate = (
     error.value = null;
     try {
       const state: SessionStateResponse = await fetchSessionState(routeSessionId);
+      session.value = state.session;
       if (state.conversation_id) {
         await navigateTo({
           path: `/conversations/${state.conversation_id}`,
@@ -132,6 +131,19 @@ export const useTaskGate = (
       lastDraftPayload.value = answers.value.length
         ? JSON.stringify(buildTaskResponsePayload(answers.value))
         : null;
+      if (state.attempt?.status === 'processing') {
+        isSubmitting.value = true;
+        try {
+          const response = await waitForSubmission(state.attempt.id);
+          await finishSubmission(response);
+        } catch (e: any) {
+          error.value = e.data?.detail || e.data?.message || e.message || '任務處理失敗，請重新送出。';
+        } finally {
+          isSubmitting.value = false;
+        }
+      } else if (state.attempt?.status === 'failed') {
+        error.value = String(state.attempt.judgement_payload?.error || '上次處理失敗，請重新送出。');
+      }
     } catch (e: any) {
       error.value = e.data?.detail || e.data?.message || '載入任務資料失敗，請回首頁重新開始。';
     } finally {
@@ -173,12 +185,36 @@ export const useTaskGate = (
     }
   };
 
+  const waitForSubmission = async (attemptId: string): Promise<TaskSubmitResponse> => {
+    const deadline = Date.now() + 4 * 60 * 1000;
+    while (!isUnmounted.value && Date.now() < deadline) {
+      const state = await fetchTaskSubmissionStatus(attemptId);
+      if (state.attempt.status === 'failed') {
+        throw new Error(state.error || 'Task processing failed.');
+      }
+      if (state.attempt.status === 'submitted' && state.result) {
+        return state.result;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error('任務仍在處理中，請重新整理頁面繼續等待。');
+  };
+
+  const finishSubmission = async (response: TaskSubmitResponse) => {
+    judgement.value = response.judgement;
+    markStudentConditionProgress(participantId.value, response);
+    const chatData = useState<TaskSubmitResponse | null>('chatData', () => null);
+    chatData.value = response;
+    await navigateTo({ path: `/conversations/${response.conversation_id}` });
+  };
+
   return {
     answers,
     canSubmit,
     isLoading,
     isSubmitting,
     judgement,
+    session,
     submitError,
     submitTask,
     taskData,

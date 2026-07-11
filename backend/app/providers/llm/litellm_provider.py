@@ -306,7 +306,7 @@ class LiteLLMProvider:
         payload = await self.runner.run_json(
             schema=ChatOutputPayload,
             task_name="generate_chat_response",
-            system_prompt=self._system_prompt(condition),
+            system_prompt=self._system_prompt(),
             user_prompt=(
                 "Respond to the learner according to the provided prompt modules.\n"
                 "Respect role-play boundaries and EBL/direct-answer policy.\n"

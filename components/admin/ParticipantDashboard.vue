@@ -64,6 +64,43 @@
             <p class="admin-caption mt-2 text-right text-xs font-bold">
               {{ row.updatedAt ? `最後活動 ${formatDate(row.updatedAt)}` : '尚無活動紀錄' }}
             </p>
+            <div
+              v-if="row.latestActiveSession"
+              class="mt-3 flex min-h-10 items-center justify-end gap-2 border-t border-[var(--admin-border-soft)] pt-3"
+            >
+              <template v-if="row.latestActiveSession.timer_ends_at">
+                <span class="admin-caption text-xs font-bold">
+                  計時至 {{ formatDate(row.latestActiveSession.timer_ends_at) }}
+                </span>
+                <button
+                  type="button"
+                  class="admin-button-secondary min-h-9 px-3 text-xs font-bold"
+                  :disabled="updatingTimerSessionId === row.latestActiveSession.id"
+                  @click="$emit('cancel-timer', row.latestActiveSession.id)"
+                >
+                  停止計時
+                </button>
+              </template>
+              <template v-else>
+                <input
+                  :value="timerMinutes[row.participant.id] || 30"
+                  type="number"
+                  min="1"
+                  max="240"
+                  class="admin-field h-9 w-20 px-2 text-center text-xs font-bold"
+                  title="計時分鐘數"
+                  @input="setTimerMinutes(row.participant.id, $event)"
+                />
+                <button
+                  type="button"
+                  class="admin-button-primary min-h-9 px-3 text-xs font-bold"
+                  :disabled="updatingTimerSessionId === row.latestActiveSession.id"
+                  @click="$emit('start-timer', row.latestActiveSession.id, timerMinutes[row.participant.id] || 30)"
+                >
+                  啟動計時
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </article>
@@ -170,6 +207,7 @@ import type { AdminAuthUserSummary } from '~/types';
 import type { ParticipantUpdateInput } from '~/utils/histosphereApi';
 import {
   conditionDisplayLabel,
+  conditionName,
   participantConditionLabels,
   participantStageLabels,
   type ParticipantDashboardRow,
@@ -180,21 +218,25 @@ const props = defineProps<{
   rows: ParticipantDashboardRow[];
   authUsers: AdminAuthUserSummary[];
   savingParticipantId: string | null;
+  updatingTimerSessionId: string | null;
 }>();
 
 const emit = defineEmits<{
   (event: 'save', participantId: string, payload: ParticipantUpdateInput): void;
+  (event: 'start-timer', sessionId: string, durationMinutes: number): void;
+  (event: 'cancel-timer', sessionId: string): void;
 }>();
 
 const stages: ParticipantStage[] = ['not_started', 'task', 'chat', 'completed'];
 const editingRow = ref<ParticipantDashboardRow | null>(null);
 const draftAuthUserId = ref('');
 const draftConditionCodes = ref<string[]>([]);
+const timerMinutes = ref<Record<string, number>>({});
 
 const conditionOptions = computed(() => {
   return Object.keys(participantConditionLabels).map((code) => ({
     code,
-    label: participantConditionLabels[code],
+    label: conditionName(code),
     display: conditionDisplayLabel(code),
   }));
 });
@@ -240,5 +282,10 @@ const formatDate = (value: string) => {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+};
+
+const setTimerMinutes = (participantId: string, event: Event) => {
+  const value = Number((event.target as HTMLInputElement).value);
+  timerMinutes.value[participantId] = Math.min(240, Math.max(1, Number.isFinite(value) ? value : 30));
 };
 </script>

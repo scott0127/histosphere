@@ -4,6 +4,7 @@ import {
   experimentConditionCodes,
   experimentConditionLabels,
 } from '~/utils/experimentConditions';
+import type { ExperimentConditionCode } from '~/utils/experimentConditions';
 
 export type ParticipantStage = 'not_started' | 'task' | 'chat' | 'completed';
 
@@ -12,7 +13,9 @@ export type ParticipantConditionProgress = {
   label: string;
   stage: ParticipantStage;
   sessionId?: string;
+  session?: ExperimentSession;
   updatedAt?: string;
+  latestActiveSession?: ExperimentSession;
 };
 
 export type ParticipantDashboardRow = {
@@ -23,9 +26,10 @@ export type ParticipantDashboardRow = {
   conditionProgress: ParticipantConditionProgress[];
   currentStage: ParticipantStage;
   updatedAt?: string;
+  latestActiveSession?: ExperimentSession;
 };
 
-export const participantConditionLabels: Record<string, string> = experimentConditionLabels;
+export const participantConditionLabels: Record<ExperimentConditionCode, string> = experimentConditionLabels;
 
 export const participantStageLabels: Record<ParticipantStage, string> = {
   not_started: '未開始',
@@ -34,13 +38,19 @@ export const participantStageLabels: Record<ParticipantStage, string> = {
   completed: '完成',
 };
 
-const normalizeConditionCodes = (codes: string[]) => {
-  const unique = new Set(codes.filter((code) => participantConditionLabels[code]));
+const normalizeConditionCodes = (codes: string[]): ExperimentConditionCode[] => {
+  const unique = new Set(codes.filter((code): code is ExperimentConditionCode => (
+    experimentConditionCodes.includes(code as ExperimentConditionCode)
+  )));
   return experimentConditionCodes.filter((code) => unique.has(code));
 };
 
+export const conditionName = (code: string) => {
+  return experimentConditionLabels[code as ExperimentConditionCode] || 'Unknown';
+};
+
 export const conditionDisplayLabel = (code: string) => {
-  return `${code} ${participantConditionLabels[code] || 'Unknown'}`;
+  return `${code} ${conditionName(code)}`;
 };
 
 export const sessionStage = (session?: ExperimentSession | null): ParticipantStage => {
@@ -83,6 +93,7 @@ export const buildParticipantDashboardRows = (
           label: participantConditionLabels[code],
           stage: sessionStage(session),
           sessionId: session?.id,
+          session: session || undefined,
           updatedAt: session?.updated_at,
         };
       });
@@ -98,6 +109,12 @@ export const buildParticipantDashboardRows = (
         .map((progress) => progress.updatedAt)
         .filter((value): value is string => Boolean(value))
         .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+      const latestActiveSession = conditionProgress
+        .map((progress) => progress.session)
+        .filter((session): session is ExperimentSession => Boolean(
+          session && session.status !== 'completed' && session.status !== 'archived',
+        ))
+        .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
 
       return {
         participant,
@@ -110,6 +127,7 @@ export const buildParticipantDashboardRows = (
         conditionProgress,
         currentStage,
         updatedAt,
+        latestActiveSession,
       };
     });
 };

@@ -10,6 +10,7 @@
     </div>
 
     <section v-else class="space-y-7">
+      <SessionTimerBanner :session="session" />
       <section class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-1.5 shadow-[var(--admin-shadow-soft)]">
         <div class="rounded-[10px] border border-[var(--admin-border-soft)] p-5 md:p-6">
           <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
@@ -34,6 +35,7 @@
         </div>
       </section>
 
+      <fieldset :disabled="sessionClosed" class="space-y-7 disabled:opacity-70">
       <TaskStudentStory :model-value="modelValue" :task="taskData.task" @update:model-value="emit('update:modelValue', $event)" />
 
       <form class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-5 shadow-md" @submit.prevent="openSubmitConfirm">
@@ -51,6 +53,7 @@
           :judgement="judgement"
         />
       </form>
+      </fieldset>
     </section>
 
     <ConfirmActionModal
@@ -75,10 +78,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import TaskTransitionOverlay from '~/components/task-student/TaskTransitionOverlay.vue';
-import type { EventInitializeResponse, TaskStudentAnswer } from '~/types';
+import type { EventInitializeResponse, ExperimentSession, TaskStudentAnswer } from '~/types';
+import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
 import { hasInlineTaskBlanks, studentActivityTitle } from '~/composables/useStudentTask';
 
 const props = defineProps<{
@@ -89,6 +93,7 @@ const props = defineProps<{
   isLoading: boolean;
   isSubmitting: boolean;
   judgement: Record<string, any> | null;
+  session?: ExperimentSession | null;
 }>();
 
 const emit = defineEmits<{
@@ -97,9 +102,19 @@ const emit = defineEmits<{
 }>();
 
 const showSubmitConfirmDialog = ref(false);
+const now = ref(Date.now());
+let timerId: ReturnType<typeof setInterval> | null = null;
+const sessionClosed = computed(() => {
+  return props.session?.status === 'completed'
+    || props.session?.status === 'archived'
+    || Boolean(props.session?.timer_ends_at && Date.parse(props.session.timer_ends_at) <= now.value);
+});
+
+onMounted(() => { timerId = setInterval(() => { now.value = Date.now(); }, 1000); });
+onBeforeUnmount(() => { if (timerId) clearInterval(timerId); });
 
 const openSubmitConfirm = () => {
-  if (!props.canSubmit || props.isSubmitting) return;
+  if (!props.canSubmit || props.isSubmitting || sessionClosed.value) return;
   showSubmitConfirmDialog.value = true;
 };
 

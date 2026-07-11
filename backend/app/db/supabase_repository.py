@@ -32,6 +32,7 @@ from app.models.domain import (
     ResearchLog,
     TaskAttempt,
     WikiSource,
+    utc_now,
 )
 
 
@@ -192,7 +193,7 @@ class SupabaseRepository(RepositoryProtocol):
 
     # ── Event ──────────────────────────────────────────────────
 
-    def find_event_by_name(self, event_name: str) -> Event | None:
+    def find_event_by_name(self, event_name: str, include_archived: bool = False) -> Event | None:
         """依事件名稱查詢（case-insensitive ilike）。
 
         Args:
@@ -201,10 +202,13 @@ class SupabaseRepository(RepositoryProtocol):
         Returns:
             Event | None: 匹配的事件，或 None。
         """
+        params = {"canonical_name": f"ilike.{event_name.strip()}"}
+        if not include_archived:
+            params["archived_at"] = "is.null"
         return self._select_one(
             "events",
             Event,
-            {"canonical_name": f"ilike.{event_name.strip()}"},
+            params,
         )
 
     def save_event(self, event: Event) -> Event:
@@ -218,13 +222,16 @@ class SupabaseRepository(RepositoryProtocol):
         """
         return self._upsert("events", event)
 
-    def list_events(self) -> list[Event]:
+    def list_events(self, include_archived: bool = False) -> list[Event]:
         """列出所有事件，依建立時間倒序。
 
         Returns:
             list[Event]: 事件清單。
         """
-        return self._select_many("events", Event, {"order": "created_at.desc"})
+        params = {"order": "created_at.desc"}
+        if not include_archived:
+            params["archived_at"] = "is.null"
+        return self._select_many("events", Event, params)
 
     def get_event(self, event_id: str) -> Event | None:
         """依 ID 取得事件。
@@ -237,22 +244,13 @@ class SupabaseRepository(RepositoryProtocol):
         """
         return self._select_one("events", Event, {"id": f"eq.{event_id}"})
 
-    def delete_event(self, event_id: str) -> bool:
-        """刪除事件（DB cascade 處理關聯資料）。
+    def archive_event(self, event_id: str) -> Event | None:
+        """Soft archive an event by setting archived_at."""
+        return self._patch("events", Event, event_id, {"archived_at": utc_now().isoformat()})
 
-        Args:
-            event_id: 事件 UUID 字串。
-
-        Returns:
-            bool: 是否成功刪除。
-        """
-        data = self._request(
-            "DELETE",
-            "events",
-            params={"id": f"eq.{event_id}"},
-            prefer="return=representation",
-        )
-        return bool(data)
+    def restore_event(self, event_id: str) -> Event | None:
+        """Restore an archived event."""
+        return self._patch("events", Event, event_id, {"archived_at": None})
 
     # ── WikiSource ─────────────────────────────────────────────
 

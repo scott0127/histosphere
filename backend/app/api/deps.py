@@ -66,6 +66,10 @@ def get_session_service(request: Request) -> SessionService:
 
 
 def require_admin_key(x_admin_key: str | None = Header(default=None)) -> None:
-    settings = get_settings()
-    if not x_admin_key or x_admin_key != settings.admin_key:
+    if not is_valid_admin_key(x_admin_key):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin key")
+
+
+def is_valid_admin_key(value: str | None) -> bool:
+    """Return whether an optional header contains the configured admin key."""
+    return bool(value and value == get_settings().admin_key)

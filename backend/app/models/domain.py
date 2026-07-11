@@ -18,9 +18,10 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.experiment_conditions import validate_condition_behavior
+from app.core.persona_prompt_contract import normalize_persona_prompt_profile
 
 
 ConditionKey = Literal[
@@ -84,6 +85,7 @@ class Event(BaseModel):
     context: str | None = None
     source_summary: dict[str, Any] = Field(default_factory=dict)
     created_by: str | None = None
+    archived_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -266,6 +268,10 @@ class ExperimentSession(BaseModel):
         "completed",
         "archived",
     ] = "initialized"
+    timer_started_at: datetime | None = None
+    timer_ends_at: datetime | None = None
+    completed_at: datetime | None = None
+    completion_reason: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -324,7 +330,7 @@ class TaskAttempt(BaseModel):
     event_id: str
     session_id: str | None = None
     user_id: str | None = None
-    status: Literal["in_progress", "submitted"] = "in_progress"
+    status: Literal["in_progress", "processing", "submitted", "failed"] = "in_progress"
     response_payload: dict[str, Any] = Field(default_factory=dict)
     judgement_payload: dict[str, Any] = Field(default_factory=dict)
     submitted_at: datetime | None = None
@@ -371,6 +377,12 @@ class Persona(BaseModel):
     revision_state: Literal["llm_generated", "teacher_modified", "manual"] = "llm_generated"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("prompt_profile", mode="before")
+    @classmethod
+    def validate_prompt_contract(cls, value: Any) -> dict[str, Any]:
+        """Normalize legacy profiles into persona_prompt_v1 on read and write."""
+        return normalize_persona_prompt_profile(value)
 
 
 class Conversation(BaseModel):

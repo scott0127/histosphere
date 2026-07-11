@@ -10,6 +10,7 @@
     :task="task"
     :task-attempt="taskAttempt"
     :dynamic-context="dynamicContext"
+    :session="session"
     @reset="handleReset"
     @send-message="sendMessage"
   />
@@ -39,6 +40,7 @@ const {
   loadError,
   resetConversationState,
   sendMessage,
+  session,
   task,
   taskAttempt,
 } = useConversationSession(conversationId);

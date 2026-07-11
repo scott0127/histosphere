@@ -105,7 +105,7 @@ class InMemoryRepository(RepositoryProtocol):
         for condition in seed:
             self.save_condition(condition)
 
-    def find_event_by_name(self, event_name: str) -> Event | None:
+    def find_event_by_name(self, event_name: str, include_archived: bool = False) -> Event | None:
         """依正規化名稱查詢事件。
 
         Args:
@@ -115,7 +115,10 @@ class InMemoryRepository(RepositoryProtocol):
             Event | None: 匹配的事件，或 None。
         """
         event_id = self.event_names.get(self.normalize_event_name(event_name))
-        return self.events.get(event_id) if event_id else None
+        event = self.events.get(event_id) if event_id else None
+        if event and event.archived_at and not include_archived:
+            return None
+        return event
 
     def save_event(self, event: Event) -> Event:
         """儲存事件並更新名稱索引。
@@ -131,13 +134,16 @@ class InMemoryRepository(RepositoryProtocol):
         self.event_names[self.normalize_event_name(event.canonical_name)] = event.id
         return event
 
-    def list_events(self) -> list[Event]:
+    def list_events(self, include_archived: bool = False) -> list[Event]:
         """列出所有事件，依建立時間倒序。
 
         Returns:
             list[Event]: 事件清單。
         """
-        return sorted(self.events.values(), key=lambda item: item.created_at, reverse=True)
+        events = list(self.events.values())
+        if not include_archived:
+            events = [event for event in events if event.archived_at is None]
+        return sorted(events, key=lambda item: item.created_at, reverse=True)
 
     def get_event(self, event_id: str) -> Event | None:
         """依 ID 取得事件。
@@ -150,39 +156,21 @@ class InMemoryRepository(RepositoryProtocol):
         """
         return self.events.get(event_id)
 
-    def delete_event(self, event_id: str) -> bool:
-        """刪除事件及所有關聯資料（模擬 cascade delete）。
-
-        移除的關聯資料包含: wiki_sources、knowledge_chunks、
-        event_tasks、task_attempts、personas、sessions、
-        conversations 及其 messages。
-
-        Args:
-            event_id: 事件 UUID 字串。
-
-        Returns:
-            bool: 若事件存在且已刪除回傳 True，否則 False。
-        """
-        event = self.events.pop(event_id, None)
+    def archive_event(self, event_id: str) -> Event | None:
+        """Soft archive an event while preserving every related record."""
+        event = self.events.get(event_id)
         if not event:
-            return False
-        self.event_names.pop(self.normalize_event_name(event.canonical_name), None)
-        for source_id in [s.id for s in self.wiki_sources.values() if s.event_id == event_id]:
-            self.wiki_sources.pop(source_id, None)
-        for chunk_id in [c.id for c in self.knowledge_chunks.values() if c.event_id == event_id]:
-            self.knowledge_chunks.pop(chunk_id, None)
-        for task_id in [t.id for t in self.event_tasks.values() if t.event_id == event_id]:
-            self.event_tasks.pop(task_id, None)
-        for attempt_id in [a.id for a in self.task_attempts.values() if a.event_id == event_id]:
-            self.task_attempts.pop(attempt_id, None)
-        for persona_id in [p.id for p in self.personas.values() if p.event_id == event_id]:
-            self.personas.pop(persona_id, None)
-        for session_id in [s.id for s in self.sessions.values() if s.event_id == event_id]:
-            self.sessions.pop(session_id, None)
-        for conversation_id in [c.id for c in self.conversations.values() if c.event_id == event_id]:
-            self.conversations.pop(conversation_id, None)
-            self.messages.pop(conversation_id, None)
-        return True
+            return None
+        event.archived_at = utc_now()
+        return self.save_event(event)
+
+    def restore_event(self, event_id: str) -> Event | None:
+        """Restore an archived event."""
+        event = self.events.get(event_id)
+        if not event:
+            return None
+        event.archived_at = None
+        return self.save_event(event)
 
     def save_wiki_source(self, source: WikiSource) -> WikiSource:
         """儲存 Wikipedia 來源。

@@ -7,6 +7,7 @@
 
 from fastapi import HTTPException, status
 
+from app.core.experiment_conditions import condition_code_for_key
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentSession, ResearchLog
 from app.providers.llm.base import LLMProvider
@@ -30,7 +31,12 @@ class EventInitializationService:
         self.wikipedia_provider = wikipedia_provider
         self.llm_provider = llm_provider
 
-    async def initialize(self, request: EventInitializeRequest) -> EventInitializeResponse:
+    async def initialize(
+        self,
+        request: EventInitializeRequest,
+        *,
+        admin_override: bool = False,
+    ) -> EventInitializeResponse:
         """初始化事件、task、primary persona 與 session，供前端導向 task 頁。"""
         event_name = normalize_display_text(request.event_name.strip()) or request.event_name.strip()
         if not event_name:
@@ -40,7 +46,16 @@ class EventInitializationService:
         if not condition or not condition.active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
 
+        if not admin_override:
+            self._validate_participant_assignment(request.user_id, condition.condition_key)
+
         existing = self.repository.find_event_by_name(event_name)
+        archived = self.repository.find_event_by_name(event_name, include_archived=True)
+        if archived and archived.archived_at and not existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Historical event is archived. An admin must restore it before use.",
+            )
         rebuild_ignored = bool(existing and request.rebuild)
 
         if existing:
@@ -50,6 +65,11 @@ class EventInitializationService:
             task = self._ensure_task(event, sources)
             personas = await self._ensure_personas(event, sources)
         else:
+            if not admin_override:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only an admin can create new historical event materials.",
+                )
             draft_event = Event(canonical_name=event_name)
             # Supabase 有 foreign key 約束；必須先建立 event row，wiki_sources 才能引用 event_id。
             event = self.repository.save_event(draft_event)
@@ -99,6 +119,34 @@ class EventInitializationService:
             personas=personas,
             condition=condition,
         )
+
+    def _validate_participant_assignment(self, user_id: str | None, condition_key: str) -> None:
+        """Enforce the Auth user to participant condition assignment at session creation."""
+        normalized_user_id = (user_id or "").strip()
+        if not normalized_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="A participant-bound Supabase Auth user is required.",
+            )
+
+        participant = self.repository.get_participant_by_auth_user(normalized_user_id)
+        if not participant:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Participant mapping not found for this Auth user.",
+            )
+        if participant.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Participant {participant.code} is not active.",
+            )
+
+        assigned_code = condition_code_for_key(condition_key)
+        if assigned_code not in participant.condition_list:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Condition {assigned_code} is not assigned to participant {participant.code}.",
+            )
 
     def _ensure_task(self, event: Event, sources) -> EventTask:
         """確保事件至少有一份可作答 task；缺少時建立保守 fallback。"""

@@ -21,27 +21,31 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 
-from app.api.deps import get_prompt_service, get_rag_pipeline, get_repository, require_admin_key
+from app.api.deps import get_llm_provider, get_prompt_service, get_rag_pipeline, get_repository, get_session_service, require_admin_key
 from app.core.config import get_settings
 from app.core.experiment_conditions import sort_condition_codes
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import Event, EventTask, ExperimentCondition, Participant, Persona, ResearchLog
+from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, Participant, Persona, ResearchLog
+from app.providers.llm.base import LLMProvider
 from app.schemas.requests import (
+    AdminPromptDryRunRequest,
     EventUpdateRequest,
     EventTaskUpdateRequest,
     ExperimentConditionUpdateRequest,
     ParticipantUpdateRequest,
     PersonaUpdateRequest,
+    SessionTimerStartRequest,
 )
 from app.schemas.responses import (
     AdminAuthUserSummary,
     AdminAuthUsersResponse,
+    AdminPromptDryRunResponse,
     AdminPromptPreviewResponse,
     AdminSnapshotResponse,
     EventListItem,
     PromptPreviewModule,
 )
-from app.services import PromptService, RagPipelineService
+from app.services import PromptService, RagPipelineService, SessionService
 from app.services.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
@@ -68,7 +72,7 @@ def admin_snapshot(repository: RepositoryProtocol = Depends(get_repository)) -> 
             與 research_logs。
     """
     events: list[EventListItem] = []
-    for event in repository.list_events():
+    for event in repository.list_events(include_archived=True):
         payload = event.model_dump()
         payload["personas"] = repository.list_personas(event.id, active_only=False)
         payload["latest_task"] = repository.get_latest_event_task(event.id)
@@ -222,6 +226,69 @@ def prompt_preview(
     )
 
 
+@router.post("/prompt-dry-run", response_model=AdminPromptDryRunResponse)
+async def prompt_dry_run(
+    request: AdminPromptDryRunRequest,
+    repository: RepositoryProtocol = Depends(get_repository),
+    prompt_service: PromptService = Depends(get_prompt_service),
+    rag_pipeline: RagPipelineService = Depends(get_rag_pipeline),
+    llm_provider: LLMProvider = Depends(get_llm_provider),
+) -> AdminPromptDryRunResponse:
+    """Run the exact persona completion contract without persisting messages or logs."""
+    event = repository.get_event(request.event_id)
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    condition = repository.get_condition_by_key(request.condition_key)
+    if not condition:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
+
+    persona = None
+    if condition.roleplay_enabled:
+        personas = repository.list_personas(event.id)
+        if request.persona_id:
+            persona = repository.get_persona(request.persona_id)
+            if not persona or persona.event_id != event.id or not persona.active:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected persona not found")
+        elif personas:
+            persona = personas[0]
+        if not persona:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active personas found")
+
+    rag_sources = rag_pipeline.retrieve(event.id, request.sample_user_message)
+    modules = prompt_service.assemble_chat_modules(
+        event=event,
+        persona=persona,
+        condition=condition,
+        task_attempt=None,
+        user_message=request.sample_user_message,
+        rag_sources=rag_sources,
+        conversation_history=[],
+    )
+    prompt = prompt_service.render_modules(modules)
+    response, annotations, related_events, dynamic_context = await llm_provider.generate_chat_response(
+        event=event,
+        persona=persona,
+        condition=condition,
+        task_attempt=None,
+        user_message=request.sample_user_message,
+        prompt=prompt,
+        rag_sources=rag_sources,
+    )
+    return AdminPromptDryRunResponse(
+        event=event,
+        condition=condition,
+        persona=persona,
+        sample_user_message=request.sample_user_message,
+        modules=[PromptPreviewModule(name=module.name, content=module.content) for module in modules],
+        prompt=prompt,
+        response=response,
+        annotations=annotations,
+        related_events=related_events,
+        dynamic_context=dynamic_context,
+        rag_sources=rag_sources,
+    )
+
+
 @router.patch("/events/{event_id}", response_model=Event)
 def update_event(
     event_id: str,
@@ -261,6 +328,36 @@ def update_event(
         )
     )
     return saved
+
+
+@router.post("/events/{event_id}/archive", response_model=Event)
+def archive_event(
+    event_id: str,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Event:
+    """Archive event materials without deleting any related rows."""
+    event = repository.archive_event(event_id)
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    repository.log_research(
+        ResearchLog(event_id=event.id, action_type="event_archived", payload={})
+    )
+    return event
+
+
+@router.post("/events/{event_id}/restore", response_model=Event)
+def restore_event(
+    event_id: str,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Event:
+    """Restore archived event materials to the learner library."""
+    event = repository.restore_event(event_id)
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    repository.log_research(
+        ResearchLog(event_id=event.id, action_type="event_restored", payload={})
+    )
+    return event
 
 
 @router.patch("/tasks/{task_id}", response_model=EventTask)
@@ -417,6 +514,25 @@ def update_participant(
         )
     )
     return saved
+
+
+@router.post("/sessions/{session_id}/timer", response_model=ExperimentSession)
+def start_session_timer(
+    session_id: str,
+    request: SessionTimerStartRequest,
+    service: SessionService = Depends(get_session_service),
+) -> ExperimentSession:
+    """Opt in one active experiment session to automatic timed completion."""
+    return service.start_timer(session_id, request.duration_minutes)
+
+
+@router.delete("/sessions/{session_id}/timer", response_model=ExperimentSession)
+def cancel_session_timer(
+    session_id: str,
+    service: SessionService = Depends(get_session_service),
+) -> ExperimentSession:
+    """Disable a previously enabled timer without closing the session."""
+    return service.cancel_timer(session_id)
 
 
 @router.patch("/conditions/{condition_id}", response_model=ExperimentCondition)

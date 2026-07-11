@@ -109,6 +109,7 @@ const segments = computed<StorySegment[]>(() => {
   for (const match of displayText.matchAll(blankPattern)) {
     const token = match[0];
     const blankId = match[1];
+    if (!blankId) continue;
     const offset = match.index ?? 0;
     parsed.push({
       type: 'text',

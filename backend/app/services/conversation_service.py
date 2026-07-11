@@ -11,6 +11,7 @@ from app.models.domain import ChatMessage, Conversation
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.providers.llm.base import LLMProvider
 from app.crud.protocols import RepositoryProtocol
+from app.services.session_runtime import expire_session_if_due
 
 
 class ConversationService:
@@ -77,6 +78,8 @@ class ConversationService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
         session = self.repository.get_session(conversation.session_id) if conversation.session_id else None
+        if session:
+            session = expire_session_if_due(self.repository, session)
         condition = self.repository.get_condition_by_key(session.condition_key_snapshot) if session else None
         task_attempt = (
             self.repository.get_task_attempt(conversation.task_attempt_id)
@@ -92,6 +95,7 @@ class ConversationService:
             task = self.repository.get_latest_event_task(event.id)
         return ConversationLoadResponse(
             conversation_id=conversation.id,
+            session=session,
             event=event,
             personas=self.repository.list_personas(event.id),
             messages=self.repository.list_messages(conversation.id),

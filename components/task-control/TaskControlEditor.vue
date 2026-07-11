@@ -268,7 +268,7 @@ watch(
       return;
     }
     if (!selectedQuestionId.value || !nextQuestions.some((question) => question.id === selectedQuestionId.value)) {
-      selectedQuestionId.value = nextQuestions[0].id;
+      selectedQuestionId.value = nextQuestions[0]?.id || null;
     }
   },
   { immediate: true },

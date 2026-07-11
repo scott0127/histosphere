@@ -109,7 +109,10 @@
               :rows="participantRows"
               :auth-users="authUsers"
               :saving-participant-id="savingParticipantId"
+              :updating-timer-session-id="updatingTimerSessionId"
               @save="saveParticipant"
+              @start-timer="startSessionTimer"
+              @cancel-timer="cancelSessionTimer"
             />
           </div>
         </section>
@@ -134,7 +137,10 @@
               >
                 <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px_140px] lg:items-center">
                   <div>
-                    <p class="admin-kicker">歷史事件</p>
+                    <div class="flex items-center gap-2">
+                      <p class="admin-kicker">歷史事件</p>
+                      <span v-if="event.archived_at" class="admin-badge">已封存</span>
+                    </div>
                     <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ event.canonical_name }}</h2>
                     <p class="admin-copy mt-2 line-clamp-2 max-w-4xl text-sm font-semibold leading-7">
                       {{ event.description || event.context || '尚未建立事件描述。' }}
@@ -156,13 +162,22 @@
                     </div>
                   </div>
 
-                  <button
-                    class="admin-button-primary inline-flex min-h-11 items-center justify-center px-4 text-sm font-bold"
-                    type="button"
-                    @click="selectEvent(event.id)"
-                  >
-                    管理
-                  </button>
+                  <div class="grid gap-2">
+                    <button
+                      class="admin-button-primary inline-flex min-h-11 items-center justify-center px-4 text-sm font-bold"
+                      type="button"
+                      @click="selectEvent(event.id)"
+                    >
+                      管理
+                    </button>
+                    <button
+                      class="admin-button-secondary inline-flex min-h-10 items-center justify-center px-4 text-xs font-bold"
+                      type="button"
+                      @click="setEventArchived(event, !event.archived_at)"
+                    >
+                      {{ event.archived_at ? '恢復事件' : '封存事件' }}
+                    </button>
+                  </div>
                 </div>
               </article>
 
@@ -413,14 +428,24 @@
                         <span class="admin-label block">後端 prompt 預覽</span>
                         <span class="admin-caption mt-1 block text-xs">只讀，來自後端 PromptService</span>
                       </span>
-                      <button
-                        class="admin-button-secondary px-3 py-2 text-xs font-bold"
-                        type="button"
-                        :disabled="promptPreviewLoading"
-                        @click="loadPromptPreview(selectedEvent, selectedCondition)"
-                      >
-                        {{ promptPreviewLoading ? '載入中' : '預覽' }}
-                      </button>
+                      <span class="flex items-center gap-2">
+                        <button
+                          class="admin-button-secondary px-3 py-2 text-xs font-bold"
+                          type="button"
+                          :disabled="promptPreviewLoading"
+                          @click="loadPromptPreview(selectedEvent, selectedCondition)"
+                        >
+                          {{ promptPreviewLoading ? '載入中' : '預覽' }}
+                        </button>
+                        <button
+                          class="admin-button-primary px-3 py-2 text-xs font-bold"
+                          type="button"
+                          :disabled="promptDryRunLoading"
+                          @click="runPromptDryRun(selectedEvent, selectedCondition)"
+                        >
+                          {{ promptDryRunLoading ? '推論中' : '執行測試' }}
+                        </button>
+                      </span>
                     </div>
                     <textarea
                       v-model="promptPreviewMessage"
@@ -431,6 +456,10 @@
                       v-if="promptPreview"
                       class="admin-code-editor mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-md border border-[var(--admin-border)] bg-[var(--admin-panel)] p-3 text-xs leading-5"
                     >{{ promptPreview.prompt }}</pre>
+                    <div v-if="promptDryRun" class="mt-3 rounded-md border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3">
+                      <span class="admin-label block">Dry-run 回覆（未寫入對話）</span>
+                      <p class="admin-copy mt-2 whitespace-pre-wrap text-sm leading-6">{{ promptDryRun.response }}</p>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -477,6 +506,7 @@ const {
   adminKey,
   authUsers,
   authUsersError,
+  cancelSessionTimer,
   conditionModeLabel,
   conditionOrdinal,
   error,
@@ -484,17 +514,22 @@ const {
   loadSnapshot,
   loadPromptPreview,
   personaJson,
+  promptDryRun,
+  promptDryRunLoading,
   promptPreview,
   promptPreviewLoading,
   promptPreviewMessage,
   promptConditions,
   resetWorkspace,
   restoreStoredAdminKey,
+  runPromptDryRun,
   saveCondition,
   saveEvent,
+  setEventArchived,
   savePersona,
   saveParticipant,
   saveTask,
+  startSessionTimer,
   savingParticipantId,
   selectedCondition,
   selectedConditionId,
@@ -503,6 +538,7 @@ const {
   snapshot,
   taskJson,
   taskQuestionCount,
+  updatingTimerSessionId,
 } = useAdminWorkspace(isAuthenticated);
 
 const participantRows = computed(() => {

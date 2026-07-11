@@ -15,6 +15,7 @@
             {{ events.length }} 筆
           </span>
           <button
+            v-if="canCreateEvent"
             type="button"
             class="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--admin-coffee)] bg-[var(--admin-coffee)] px-4 py-2 text-sm font-bold text-[var(--admin-surface)] shadow-sm transition hover:bg-[var(--admin-coffee-hover)] hover:shadow-md"
             @click="showCreateForm = !showCreateForm"
@@ -26,7 +27,7 @@
       </div>
 
       <form
-        v-if="showCreateForm"
+        v-if="canCreateEvent && showCreateForm"
         class="mb-6 rounded-[10px] border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-sm"
         @submit.prevent="$emit('create')"
       >
@@ -113,7 +114,9 @@
           <Icon name="mdi:book-open-blank-variant" class="h-8 w-8" />
         </div>
         <h3 class="mt-5 font-serif text-2xl font-black text-[var(--admin-text)]">尚未建立歷史篇章</h3>
-        <p class="mt-2 text-sm font-semibold leading-7 text-[var(--admin-copy)]">請點擊上方「新增歷史事件」，建立一組學習素材。</p>
+        <p class="mt-2 text-sm font-semibold leading-7 text-[var(--admin-copy)]">
+          {{ canCreateEvent ? '請點擊上方「新增歷史事件」，建立一組學習素材。' : '目前尚無可參與的歷史事件。' }}
+        </p>
       </div>
     </div>
   </section>
@@ -131,6 +134,7 @@ defineProps<{
   loadingEvents: boolean;
   creatingEvent: boolean;
   createError: string | null;
+  canCreateEvent: boolean;
 }>();
 
 const emit = defineEmits<{

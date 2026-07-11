@@ -7,6 +7,7 @@ def initialize_event(client, event_name="法國大革命", condition_key="ebl_ro
             "rebuild": False,
             "user_id": user_id,
         },
+        headers={"x-admin-key": "test-admin"},
     )
     assert response.status_code == 200
     return response.json()
@@ -95,8 +96,11 @@ def test_submit_transitions_session_to_conversation_started(client):
             },
         },
     )
-    assert submitted.status_code == 200
-    submitted_payload = submitted.json()
+    assert submitted.status_code == 202
+    accepted_payload = submitted.json()
+    polled = client.get(accepted_payload["poll_url"])
+    assert polled.status_code == 200
+    submitted_payload = polled.json()["result"]
     assert submitted_payload["conversation_id"]
     assert submitted_payload["attempt"]["status"] == "submitted"
     assert submitted_payload["history"][0]["speaker_type"] == "assistant"

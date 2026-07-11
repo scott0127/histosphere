@@ -1,6 +1,6 @@
 """Event API endpoints.
 
-本模組提供歷史事件查詢、初始化、列表與刪除入口。
+本模組提供歷史事件查詢、初始化與公開列表入口。
 V1 的核心入口是 /event/initialize：建立 event workspace、
 產生 task、產生 personas，並建立 experiment session。
 
@@ -8,13 +8,12 @@ Routes:
     POST   /api/event/check:                     檢查事件名稱是否已存在。
     POST   /api/event/initialize:                初始化事件學習工作區。
     GET    /api/events:                          列出所有歷史事件摘要。
-    DELETE /api/event/{event_id}:                刪除指定事件（含 cascade）。
     POST   /api/event/{event_id}/regenerate-background: 重新生成背景圖。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 
-from app.api.deps import get_event_initialization_service, get_event_service
+from app.api.deps import get_event_initialization_service, get_event_service, is_valid_admin_key
 from app.schemas.requests import EventCheckRequest, EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse, EventListItem
 from app.services import EventInitializationService, EventService
@@ -45,6 +44,7 @@ def check_event(
 @router.post("/event/initialize", response_model=EventInitializeResponse)
 async def initialize_event(
     request: EventInitializeRequest,
+    x_admin_key: str | None = Header(default=None),
     service: EventInitializationService = Depends(get_event_initialization_service),
 ) -> EventInitializeResponse:
     """建立事件學習工作區，但不直接建立 conversation。
@@ -62,7 +62,7 @@ async def initialize_event(
         EventInitializeResponse: 包含 event_id、session_id、
             event、task、personas 與 condition。
     """
-    return await service.initialize(request)
+    return await service.initialize(request, admin_override=is_valid_admin_key(x_admin_key))
 
 
 @router.get("/events", response_model=list[EventListItem])
@@ -79,26 +79,6 @@ def list_events(service: EventService = Depends(get_event_service)) -> list[Even
         list[EventListItem]: 含 personas 與 latest_task 的事件清單。
     """
     return service.list_events()
-
-
-@router.delete("/event/{event_id}")
-def delete_event(
-    event_id: str,
-    service: EventService = Depends(get_event_service),
-) -> dict[str, bool]:
-    """刪除指定事件；資料庫 cascade 會一併清除其 task/persona/conversation。
-
-    此操作不可逆，所有關聯的 task_attempts、conversations、
-    messages 與 research_logs 都會隨 cascade 被移除。
-
-    Args:
-        event_id: 要刪除的事件 UUID 字串。
-        service: 由 Dependency Injection 注入的 EventService 實例。
-
-    Returns:
-        dict[str, bool]: ``{"success": True/False}``。
-    """
-    return service.delete_event(event_id)
 
 
 @router.post("/event/{event_id}/regenerate-background")

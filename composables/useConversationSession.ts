@@ -33,6 +33,9 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
 
   const taskAttempt = computed(() => chatState.value?.attempt || chatState.value?.task_attempt || null);
   const task = computed(() => chatState.value?.task || null);
+  const session = computed(() => {
+    return chatState.value && 'session' in chatState.value ? chatState.value.session || null : null;
+  });
 
   const loadConversation = async () => {
     const currentConversationId = conversationId.value;
@@ -43,7 +46,6 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
       : [];
     if (cachedHistory.length > 0) {
       history.value = cachedHistory;
-      return;
     }
 
     isLoading.value = true;
@@ -119,6 +121,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     loadError,
     resetConversationState,
     sendMessage,
+    session,
     task,
     taskAttempt,
   };

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.main import create_app
-from app.models.domain import Event, EventTask, ExperimentCondition, Persona, RagSource, TaskAttempt, WikiSource
+from app.models.domain import Event, EventTask, ExperimentCondition, Participant, Persona, RagSource, TaskAttempt, WikiSource
 
 
 class FakeWikipediaProvider:
@@ -29,6 +29,9 @@ class FakeWikipediaProvider:
 
 
 class FakeLLMProvider:
+    def __init__(self) -> None:
+        self.chat_prompts: list[str] = []
+
     async def generate_event_profile(self, event_name: str, sources: list[WikiSource]) -> dict:
         return {
             "canonical_name": event_name,
@@ -108,6 +111,7 @@ class FakeLLMProvider:
         prompt: str,
         rag_sources: list[RagSource],
     ) -> tuple[str, list, list, str]:
+        self.chat_prompts.append(prompt)
         speaker = persona.name if persona else "AI Tutor"
         return (
             f"{speaker} 回覆：{event.canonical_name} 的測試回答。",
@@ -124,6 +128,13 @@ def client(monkeypatch) -> TestClient:
     monkeypatch.setenv("HISTOSPHERE_ADMIN_KEY", "test-admin")
     get_settings.cache_clear()
     app = create_app()
+    app.state.repository.save_participant(
+        Participant(
+            code="PTEST",
+            auth_user_id="participant-001",
+            condition_list=["01", "02", "03", "04"],
+        )
+    )
     fake_provider = FakeWikipediaProvider()
     fake_llm = FakeLLMProvider()
     app.state.wikipedia_provider = fake_provider

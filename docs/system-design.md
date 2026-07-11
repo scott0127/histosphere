@@ -63,8 +63,12 @@ Backend:
 - Supabase PostgREST repository for local/cloud runtime.
 - Wikipedia provider with `summary` and `full` fetch modes.
 - Event initialization returns event/task/primary persona/session, not conversation.
-- Task submit stores response and LLM judgement, then creates conversation.
-- Chat service switches generic/persona and direct/scaffold behavior from condition.
+- Learner initialization enforces Auth-to-participant mapping and assigned condition; only Admin can create new event materials.
+- Event material uses reversible archive/restore instead of learner-facing permanent deletion.
+- Task submit persists a processing attempt and returns `202`; judgement, conversation and greeting complete asynchronously behind a polling endpoint.
+- Chat service switches generic/persona and direct/EBL behavior from condition and loads bounded multi-turn history from DB messages.
+- `persona_prompt_v1` and canonical prompt modules are shared by runtime, Admin preview and non-persisting Admin dry-run.
+- Session timer is disabled by default and may be started/cancelled by Admin; backend enforces expiry.
 - Research logs record event/task/conversation/message actions.
 - Admin key endpoints manage conditions, tasks, personas, events, and logs.
 - Session progress and state reload endpoints.
@@ -93,6 +97,8 @@ Generate or reuse:
 
 The backend should not fabricate uncertain historical metadata. Store nullable fields as `null`.
 
+Learner runtime can only reuse an existing, non-archived event. A valid Admin override is required to generate new event/task/persona material. Archiving sets `events.archived_at`; restoring clears it, so related sessions and research data are never removed as part of ordinary event management.
+
 Each event should have one primary historical persona in V1. Runtime generation uses LiteLLM so prototype testing follows the same provider path as production-like execution. Formal experiment material should still be reviewed or edited by teacher/admin users. If the teacher has not specified the persona, the LLM provider should select the most historically central or representative figure for the event.
 
 ### Task Gate
@@ -117,6 +123,13 @@ Expected judgement shape:
 }
 ```
 
+Submission is asynchronous:
+
+```text
+POST submit -> 202 + attempt_id -> poll attempt -> submitted + conversation
+                                   \-> failed (saved and retryable)
+```
+
 ### Conversation
 
 Conversation is created only after task submit.
@@ -126,6 +139,8 @@ Messages use:
 - `speaker_type`: `learner`, `assistant`, `persona`
 - `speaker_name`: display-name snapshot
 - `sequence_index`: stable replay order
+
+Each completion loads the latest persisted conversation turns from `messages`. The current bounded window is 12 messages, up to 1600 characters per message. Generated-message metadata records prompt/profile hashes, module names, history message ids and actual provider/model.
 
 ### Admin
 
@@ -143,6 +158,8 @@ Admin can edit:
 - persona profile and prompt profile
 - persona active state
 
+Admin can also archive/restore events, preview prompt modules, run a non-persisting prompt dry-run, and start/cancel an optional session timer.
+
 ## Frontend Responsibilities
 
 ### `/`
@@ -152,8 +169,9 @@ Purpose: start a research session.
 Controls:
 
 - 2x2 condition selector.
-- historical event input.
-- existing event list with delete confirmation.
+- existing event list.
+- Admin-only historical event creation input.
+- Admin archive confirmation; learners cannot create or archive event materials.
 
 Output:
 
@@ -173,8 +191,9 @@ Controls:
 
 Output:
 
-- calls `POST /api/tasks/{task_id}/submit`.
-- stores `TaskSubmitResponse` in `useState('chatData')`.
+- calls `POST /api/tasks/{task_id}/submit` and receives `202 Accepted`.
+- polls `GET /api/tasks/attempts/{attemptId}` while the transition screen explains the LLM wait.
+- stores the final task/conversation payload when processing reaches `submitted`.
 - navigates to `/conversations/[conversationId]`.
 
 ### `/conversations/[conversationId]`
@@ -187,6 +206,7 @@ Controls:
 - input box.
 - persona selector only when `condition.roleplay_enabled = true`.
 - task judgement side panel.
+- optional session countdown banner when Admin has enabled a timer.
 
 ### `/admin`
 
@@ -200,6 +220,8 @@ Controls:
 - structured task editor with story-first blank tokens, undo/redo, validation, and learner preview.
 - persona `prompt_profile` editor (advanced JSON).
 - read-only backend prompt preview for the selected event and condition.
+- non-persisting prompt dry-run using the actual provider.
+- event archive/restore and per-session timer controls.
 - research log preview.
 
 ## Database Decisions
@@ -250,6 +272,8 @@ Future normalized answers may store:
 
 V1 does not perform RAG.
 
+RAG is explicitly deferred. Runtime must say retrieval is disabled and must not imply citations were retrieved.
+
 Future design:
 
 ```text
@@ -266,6 +290,14 @@ Potential future providers:
 - OpenAI embeddings
 - local embedding model
 - Supabase pgvector
+
+### Material Version Lock
+
+Formal event/task/persona/prompt snapshots are deferred until draft/publish semantics and migration strategy are approved. Current prompt/profile hashes improve auditing but do not prevent Admin edits from changing material read by a later turn in an active session.
+
+### Unspecified Requirements
+
+The earlier numbered requirements 6 and 8 remain deferred because their behavior and acceptance criteria were not fully specified. If item 8 refers to RAG, the RAG deferral above applies.
 
 ### Controlled AI-Generated Inaccuracies
 
@@ -300,7 +332,8 @@ Preview flow:
 Database:
 
 ```powershell
-pnpm supabase:reset
+pnpm exec supabase status
+pnpm exec supabase migration list --local
 ```
 
-After reset, verify migration comments and seeded conditions.
+Do not use `supabase db reset` against a database containing local research data. Migration/reset smoke tests must run against an isolated disposable database.

@@ -1,5 +1,6 @@
 import type {
   AdminAuthUsersResponse,
+  AdminPromptDryRunResponse,
   AdminSnapshotResponse,
   AdminPromptPreviewResponse,
   ChatMessage,
@@ -10,13 +11,15 @@ import type {
   EventTask,
   EventWithPersonas,
   ExperimentCondition,
+  ExperimentSession,
   HistoricalEvent,
   ParticipantMeResponse,
   Participant,
   Persona,
   SessionStateResponse,
   TaskDraftResponse,
-  TaskSubmitResponse,
+  TaskSubmissionAcceptedResponse,
+  TaskSubmissionStatusResponse,
   UserProgressResponse,
 } from '../types';
 
@@ -24,7 +27,7 @@ export type FrontendFetchOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   headers?: Record<string, string>;
   query?: Record<string, string>;
-  body?: unknown;
+  body?: any;
 };
 
 export type FrontendFetcher = <T>(url: string, options?: FrontendFetchOptions) => Promise<T>;
@@ -34,6 +37,7 @@ export type InitializeEventInput = {
   conditionKey: ConditionKey;
   rebuild: boolean;
   userId?: string | null;
+  adminKey?: string | null;
 };
 
 export type TaskDraftInput = {
@@ -123,9 +127,27 @@ export const fetchAdminPromptPreview = (
   });
 };
 
+export const runAdminPromptDryRun = (
+  adminKey: string,
+  input: PromptPreviewInput,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<AdminPromptDryRunResponse>('/api/admin/prompt-dry-run', {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+    body: {
+      event_id: input.eventId,
+      condition_key: input.conditionKey,
+      persona_id: input.personaId || null,
+      sample_user_message: input.sampleUserMessage || '請說明這個事件的重要性。',
+    },
+  });
+};
+
 export const initializeEventMaterial = (input: InitializeEventInput, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<EventInitializeResponse>('/api/event/initialize', {
     method: 'POST',
+    ...(input.adminKey ? { headers: adminHeaders(input.adminKey) } : {}),
     body: {
       event_name: input.eventName,
       condition_key: input.conditionKey,
@@ -135,9 +157,17 @@ export const initializeEventMaterial = (input: InitializeEventInput, fetcher: Fr
   });
 };
 
-export const deleteEventMaterial = (eventId: string, fetcher: FrontendFetcher = $fetch) => {
-  return fetcher<{ success: boolean }>(`/api/event/${eventId}`, {
-    method: 'DELETE',
+export const archiveAdminEvent = (adminKey: string, eventId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<HistoricalEvent>(`/api/admin/events/${eventId}/archive`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+  });
+};
+
+export const restoreAdminEvent = (adminKey: string, eventId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<HistoricalEvent>(`/api/admin/events/${eventId}/restore`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
   });
 };
 
@@ -169,7 +199,7 @@ export const saveTaskDraft = (taskId: string, input: TaskDraftInput, fetcher: Fr
 };
 
 export const submitTaskAnswers = (taskId: string, input: TaskSubmitInput, fetcher: FrontendFetcher = $fetch) => {
-  return fetcher<TaskSubmitResponse>(`/api/tasks/${taskId}/submit`, {
+  return fetcher<TaskSubmissionAcceptedResponse>(`/api/tasks/${taskId}/submit`, {
     method: 'POST',
     body: {
       session_id: input.sessionId,
@@ -177,6 +207,10 @@ export const submitTaskAnswers = (taskId: string, input: TaskSubmitInput, fetche
       response_payload: input.responsePayload,
     },
   });
+};
+
+export const fetchTaskSubmissionStatus = (attemptId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<TaskSubmissionStatusResponse>(`/api/tasks/attempts/${attemptId}`);
 };
 
 export const fetchConversation = (conversationId: string, fetcher: FrontendFetcher = $fetch) => {
@@ -257,5 +291,29 @@ export const updateAdminParticipant = (
     method: 'PATCH',
     headers: adminHeaders(adminKey),
     body,
+  });
+};
+
+export const startAdminSessionTimer = (
+  adminKey: string,
+  sessionId: string,
+  durationMinutes: number,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<ExperimentSession>(`/api/admin/sessions/${sessionId}/timer`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+    body: { duration_minutes: durationMinutes },
+  });
+};
+
+export const cancelAdminSessionTimer = (
+  adminKey: string,
+  sessionId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<ExperimentSession>(`/api/admin/sessions/${sessionId}/timer`, {
+    method: 'DELETE',
+    headers: adminHeaders(adminKey),
   });
 };

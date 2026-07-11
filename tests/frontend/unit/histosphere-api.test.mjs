@@ -52,6 +52,19 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
       modules: [{ name: 'event_context', content: '法國大革命' }],
       prompt: '[event_context]\n法國大革命',
     },
+    'POST /api/admin/prompt-dry-run': {
+      event: sampleEvent,
+      condition: sampleCondition,
+      persona: samplePersona,
+      sample_user_message: '請說明重要性。',
+      modules: [{ name: 'event_context', content: '法國大革命' }],
+      prompt: '[event_context]\n法國大革命',
+      response: '測試回應',
+      annotations: [],
+      related_events: [],
+      dynamic_context: '',
+      rag_sources: [],
+    },
     'PATCH /api/admin/events/event-1': sampleEvent,
     'PATCH /api/admin/tasks/task-1': sampleTask,
     'PATCH /api/admin/personas/persona-1': samplePersona,
@@ -60,6 +73,12 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
 
   await api.fetchAdminSnapshot('test-admin', fetcher);
   await api.fetchAdminPromptPreview('test-admin', {
+    eventId: 'event-1',
+    conditionKey: 'ebl_roleplay',
+    personaId: 'persona-1',
+    sampleUserMessage: '請說明重要性。',
+  }, fetcher);
+  await api.runAdminPromptDryRun('test-admin', {
     eventId: 'event-1',
     conditionKey: 'ebl_roleplay',
     personaId: 'persona-1',
@@ -99,7 +118,7 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
     active: true,
   }, fetcher);
 
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 7);
   for (const call of calls) {
     assert.deepEqual(call.options.headers, { 'x-admin-key': 'test-admin' });
   }
@@ -109,8 +128,59 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
     persona_id: 'persona-1',
     sample_user_message: '請說明重要性。',
   });
-  assert.equal(calls[2].options.method, 'PATCH');
-  assert.equal(calls[3].options.body.revision_state, 'teacher_modified');
+  assert.deepEqual(calls[2], {
+    url: '/api/admin/prompt-dry-run',
+    options: {
+      method: 'POST',
+      headers: { 'x-admin-key': 'test-admin' },
+      body: {
+        event_id: 'event-1',
+        condition_key: 'ebl_roleplay',
+        persona_id: 'persona-1',
+        sample_user_message: '請說明重要性。',
+      },
+    },
+  });
+  assert.equal(calls[3].options.method, 'PATCH');
+  assert.equal(calls[4].options.body.revision_state, 'teacher_modified');
+});
+
+test('frontend api client archives and restores events through protected admin endpoints', async () => {
+  const archivedEvent = { ...sampleEvent, archived_at: '2026-07-11T00:00:00Z' };
+  const restoredEvent = { ...sampleEvent, archived_at: null };
+  const { calls, fetcher } = createFetchRecorder({
+    'POST /api/admin/events/event-1/archive': archivedEvent,
+    'POST /api/admin/events/event-1/restore': restoredEvent,
+  });
+
+  assert.deepEqual(await api.archiveAdminEvent('test-admin', 'event-1', fetcher), archivedEvent);
+  assert.deepEqual(await api.restoreAdminEvent('test-admin', 'event-1', fetcher), restoredEvent);
+  assert.deepEqual(calls, [
+    {
+      url: '/api/admin/events/event-1/archive',
+      options: { method: 'POST', headers: { 'x-admin-key': 'test-admin' } },
+    },
+    {
+      url: '/api/admin/events/event-1/restore',
+      options: { method: 'POST', headers: { 'x-admin-key': 'test-admin' } },
+    },
+  ]);
+});
+
+test('prompt dry-run uses a deterministic sample message when none is supplied', async () => {
+  const { calls, fetcher } = createFetchRecorder();
+
+  await api.runAdminPromptDryRun('test-admin', {
+    eventId: 'event-1',
+    conditionKey: 'no_ebl_no_roleplay',
+  }, fetcher);
+
+  assert.deepEqual(calls[0].options.body, {
+    event_id: 'event-1',
+    condition_key: 'no_ebl_no_roleplay',
+    persona_id: null,
+    sample_user_message: '請說明這個事件的重要性。',
+  });
 });
 
 test('frontend api client initializes events and loads user progress with stable payload names', async () => {
@@ -165,14 +235,28 @@ test('frontend api client initializes events and loads user progress with stable
   });
 });
 
-test('frontend api client preserves task draft, submit, conversation, and chat contracts', async () => {
+test('frontend api client preserves task draft, asynchronous submit polling, conversation, and chat contracts', async () => {
+  const accepted = {
+    attempt_id: 'attempt-1',
+    status: 'processing',
+    poll_url: '/api/tasks/attempts/attempt-1',
+  };
+  const processing = {
+    attempt: {
+      id: 'attempt-1',
+      status: 'processing',
+      response_payload: { answer_text: '回答' },
+    },
+    result: null,
+    error: null,
+  };
   const { calls, fetcher } = createFetchRecorder({
     'GET /api/sessions/session-1/state': { session: { id: 'session-1' } },
     'PATCH /api/tasks/task-1/draft': { attempt: { id: 'attempt-1' } },
-    'POST /api/tasks/task-1/submit': { conversation_id: 'conversation-1' },
+    'POST /api/tasks/task-1/submit': accepted,
+    'GET /api/tasks/attempts/attempt-1': processing,
     'GET /api/conversations/conversation-1': { conversation_id: 'conversation-1', messages: [] },
     'POST /api/chat': { response: 'ok' },
-    'DELETE /api/event/event-1': { success: true },
   });
 
   await api.fetchSessionState('session-1', fetcher);
@@ -181,11 +265,12 @@ test('frontend api client preserves task draft, submit, conversation, and chat c
     userId: 'participant-uuid',
     responsePayload: { answers: [] },
   }, fetcher);
-  await api.submitTaskAnswers('task-1', {
+  assert.deepEqual(await api.submitTaskAnswers('task-1', {
     sessionId: 'session-1',
     userId: 'participant-uuid',
     responsePayload: { answer_text: '回答' },
-  }, fetcher);
+  }, fetcher), accepted);
+  assert.deepEqual(await api.fetchTaskSubmissionStatus('attempt-1', fetcher), processing);
   await api.fetchConversation('conversation-1', fetcher);
   await api.sendChatMessage({
     conversationId: 'conversation-1',
@@ -193,17 +278,57 @@ test('frontend api client preserves task draft, submit, conversation, and chat c
     history: [],
     targetPersonaId: null,
   }, fetcher);
-  await api.deleteEventMaterial('event-1', fetcher);
 
   assert.deepEqual(calls.map((call) => [call.url, call.options?.method || 'GET']), [
     ['/api/sessions/session-1/state', 'GET'],
     ['/api/tasks/task-1/draft', 'PATCH'],
     ['/api/tasks/task-1/submit', 'POST'],
+    ['/api/tasks/attempts/attempt-1', 'GET'],
     ['/api/conversations/conversation-1', 'GET'],
     ['/api/chat', 'POST'],
-    ['/api/event/event-1', 'DELETE'],
   ]);
   assert.equal(calls[1].options.body.session_id, 'session-1');
-  assert.equal(calls[2].options.body.response_payload.answer_text, '回答');
-  assert.equal(calls[4].options.body.user_message, '你好');
+  assert.deepEqual(calls[2].options.body, {
+    session_id: 'session-1',
+    user_id: 'participant-uuid',
+    response_payload: { answer_text: '回答' },
+  });
+  assert.equal(calls[5].options.body.user_message, '你好');
+});
+
+test('frontend api client starts and cancels optional session timers', async () => {
+  const runningSession = {
+    id: 'session-1',
+    timer_started_at: '2026-07-11T00:00:00Z',
+    timer_ends_at: '2026-07-11T00:30:00Z',
+  };
+  const untimedSession = {
+    ...runningSession,
+    timer_started_at: null,
+    timer_ends_at: null,
+  };
+  const { calls, fetcher } = createFetchRecorder({
+    'POST /api/admin/sessions/session-1/timer': runningSession,
+    'DELETE /api/admin/sessions/session-1/timer': untimedSession,
+  });
+
+  assert.deepEqual(await api.startAdminSessionTimer('test-admin', 'session-1', 30, fetcher), runningSession);
+  assert.deepEqual(await api.cancelAdminSessionTimer('test-admin', 'session-1', fetcher), untimedSession);
+  assert.deepEqual(calls, [
+    {
+      url: '/api/admin/sessions/session-1/timer',
+      options: {
+        method: 'POST',
+        headers: { 'x-admin-key': 'test-admin' },
+        body: { duration_minutes: 30 },
+      },
+    },
+    {
+      url: '/api/admin/sessions/session-1/timer',
+      options: {
+        method: 'DELETE',
+        headers: { 'x-admin-key': 'test-admin' },
+      },
+    },
+  ]);
 });

@@ -1,9 +1,9 @@
-// useEventLibrary 管理首頁事件素材庫的讀取、重新整理與刪除。
+// useEventLibrary 管理首頁事件素材庫的讀取、重新整理與封存。
 // 首頁仍保留 modal/selection UI；這裡只處理資料狀態與 API 邊界。
 import { ref } from 'vue';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import {
-  deleteEventMaterial,
+  archiveAdminEvent,
   fetchConditions as requestConditions,
   fetchEvents as requestEvents,
 } from '~/utils/histosphereApi';
@@ -43,8 +43,8 @@ export const useEventLibrary = () => {
     isRefreshing.value = false;
   };
 
-  const deleteEvent = async (eventId: string) => {
-    await deleteEventMaterial(eventId);
+  const archiveEvent = async (adminKey: string, eventId: string) => {
+    await archiveAdminEvent(adminKey, eventId);
     await fetchEvents();
   };
 
@@ -59,7 +59,7 @@ export const useEventLibrary = () => {
 
   return {
     conditions,
-    deleteEvent,
+    archiveEvent,
     events,
     fetchConditions,
     fetchEvents,

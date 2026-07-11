@@ -1,110 +1,101 @@
 # Development Gaps
 
-Updated: 2026-06-25
+Updated: 2026-07-11
 
-This document tracks what has been completed, what is still missing, and what frontend/backend gaps remain. It consolidates the former `admin-backend-todo.md`, `backend-implementation-audit.md`, and risk sections from `frontend-audit.md`.
+This document separates behavior implemented in the current working tree from remaining or explicitly deferred work. A working-tree item still requires the repository's full integration checks before release.
 
-## Recent Completions
+## Current Working Tree
 
-- Admin event update API `PATCH /api/admin/events/{event_id}` — admin UI "save event" now writes back to `events` and logs `research_logs.event_updated`.
-- `supabase/seed.sql` seeds sample events, personas, and tasks. Seed does not specify fixed UUIDs.
-- Backend tests use fake LLM provider to avoid calling external models during pytest.
-- `docs/supabase-schema.md` exports local Supabase `public` schema.
-- Condition-level LLM prompt no longer stored in Supabase; `experiment_conditions` only saves research condition fields, prompts managed by backend code.
-- Session progress endpoint `GET /api/sessions/progress` implemented.
-- Session state reload endpoint `GET /api/sessions/{session_id}/state` implemented.
-- Task draft save endpoint `PATCH /api/tasks/{task_id}/draft` implemented.
-- Frontend event library now reads condition progress from the session progress API, with localStorage only as a fallback.
-- Event initialize/progress orchestration moved from homepage code into `useExperimentSession`.
-- Frontend task gate now reloads from `sessionId` and autosaves draft answers through the task draft API.
-- Task UI moved to `/sessions/[sessionId]/task`; `/task?sessionId=...` remains only as a legacy redirect.
-- Task API orchestration moved from page code into `useTaskGate`.
-- Conversation UI moved to `/conversations/[conversationId]`; `/chat?conversationId=...` remains only as a legacy redirect.
-- Conversation API orchestration moved from page code into `useConversationSession`.
-- Frontend API contract calls centralized in `utils/histosphereApi.ts` for public event data, session/task recovery, conversation/chat, and admin writes.
-- Frontend unit tests added under `tests/frontend/unit`, with reusable fixtures under `tests/frontend/fixtures`.
-- Homepage event/condition list orchestration moved into `useEventLibrary`.
-- Admin snapshot, editable JSON maps, and save flows moved into `useAdminWorkspace`; pure admin ordering/format helpers live in `utils/adminWorkspaceState.ts`.
-- Admin task update now validates structured `display_text` tokens and `evaluation_payload.questions` before save, and logs `research_logs.task_updated`.
-- Admin prompt preview endpoint shows the backend-assembled prompt modules without calling the LLM or storing condition prompts in Supabase.
-- Backend session/task contract tests added under `backend/tests/api`, covering invalid UUID validation, draft recovery, progress, and submit-to-conversation transitions.
-- Legacy frontend components deleted: `AuthButtonLegacy`, `EventListClassicLegacy`, `ImmersiveLoadingLegacy`, `PersonaInputFormLegacy`, `LegendConfirmationModalLegacy`.
-- Development-only page `frontend-test.vue` and mock data `data/mockFrontend.ts` deleted.
-- One-time scripts (`test-gsap.mjs`, `process-image.mjs`) and broken font file deleted.
+### Runtime And Data Safety
+
+- Local development keeps the standard Supabase `54320-54329` port block. `pnpm dev:full` releases `3000`/`8000`, reuses a healthy Supabase stack, waits for readiness, and reports startup duration.
+- A one-time elevated Windows repair command prevents WinNAT from dynamically excluding the official Supabase port block; normal startup does not repeatedly stop WinNAT.
+- Events are archived and restored through Admin endpoints. Public event listing excludes archived materials; Admin snapshot includes them for recovery.
+- Learners can only start an existing active event. Creating new historical event materials requires an Admin override.
+- Learner session initialization requires a bound, active participant and verifies that the requested condition code is present in `participants.condition_list`.
+- Admin test flow can explicitly bypass participant assignment so researchers can test every condition without changing learner semantics.
+- Session timers are opt-in. Admin can start or cancel a timer; elapsed sessions are completed by both a background worker and lazy runtime checks at task/chat boundaries.
+
+### Task And Conversation Runtime
+
+- Task drafts persist in `task_attempts.response_payload`.
+- Task submit returns `202 Accepted`, persists a `processing` attempt, runs LLM judgement/conversation/greeting work in a background task, and exposes a polling endpoint.
+- Attempt state is `in_progress -> processing -> submitted`, with `failed` retained as a retryable error state.
+- Frontend polling resumes a persisted processing attempt after page reload and re-schedules orphaned work after a backend restart.
+- Chat loads authoritative multi-turn history from DB `messages`, not from client-submitted history.
+- Prompt context is bounded to the latest 12 messages and 1600 characters per message.
+- Generated message metadata records prompt/profile hashes, module names, history message ids, provider and model.
+
+### Prompt And Persona
+
+- Condition-level prompt logic remains backend-managed rather than stored in Supabase.
+- Canonical modules are `general_prompt`, `independent_1_prompt`, `independent_2_prompt`, `event_context`, `learner_task`, `conversation_history`, `persona_context`, `source_context`, `runtime_policy`, and `user_message`.
+- `persona_prompt_v1` validates speaking style, social position, temporal/geographic/knowledge boundaries, stance, source policy, forbidden claims and researcher notes.
+- Admin prompt preview renders the exact runtime modules without calling the LLM.
+- Admin prompt dry-run calls the same provider/modules without saving messages or research logs.
+- RAG is explicitly disabled in `source_context`; runtime must not imply that sources were retrieved.
 
 ## Gap Summary
 
-| Area | Current State | Missing |
-|---|---|---|
-| Task authoring | Admin UI patches `display_text` + `evaluation_payload` as a whole; server-side token/question validation protects saves; task draft save exists | Structured question CRUD, publish snapshot, answer version history |
-| Task answers | `task_attempts.response_payload` stores full answer bundle | `task_answers` table exists but unused; missing per-question scoring, answer key audit trail |
-| Event materials | Events can be PATCH-updated from admin UI; sample materials via seed.sql | Missing version history, material readiness check, archive strategy |
-| Prompt management | Condition-level prompt managed in backend code; `personas.prompt_profile` editable; admin prompt preview is read-only | Missing prompt dry-run endpoint, prompt hash/audit |
-| Participant/session | `experiment_sessions` has user_id; session progress/state endpoints exist; event library and task gate use them | Missing formal participant account mapping, participant roster/admin import, cross-device identity policy |
-| RAG/source | `wiki_sources` and `knowledge_chunks` tables exist; RAG retrieve is empty implementation | Missing ingestion, chunking, embedding/vector retrieval, source citation |
-| Admin auth | All `/api/admin/*` check `x-admin-key`; frontend uses Supabase Auth + admin key | Missing role-based admin policy, multi-user management, fine-grained audit diff |
-| Tests | Backend API tests use in-memory repository + fake LLM provider; frontend unit tests cover API contract calls and task answer logic | Missing Supabase repository integration tests, migration/seed SQL smoke test, DOM-level frontend component tests |
+| Area | Current State | Remaining |
+| --- | --- | --- |
+| Task authoring | Story-first UI, token/question validation, whole-payload save, draft autosave | Structured CRUD API, durable operation history, publish/readiness state |
+| Task answers | Full answer bundle and async judgement state in `task_attempts` | Per-question normalized scoring, accepted-answer policy, answer-key audit trail |
+| Event materials | Edit, archive and restore are available | Version history, before/after audit diff, publish snapshot/readiness |
+| Prompt runtime | Versioned persona contract, canonical modules, DB history, preview/dry-run and hashes | Retry/fallback contract, stable provider errors, usage/latency metrics, content version registry |
+| Participant/session | Auth mapping and condition assignment enforced; progress recovery and opt-in timer exist | Cross-device/re-login policy, stronger endpoint ownership checks, formal session close/debrief flow |
+| RAG/source | Source/chunk schema exists; runtime reports RAG disabled | Deferred ingestion, chunking, embedding, retrieval and citation UI |
+| Admin auth/audit | `x-admin-key` protects `/api/admin/*`; key plus Supabase Auth used by frontend | Key rotation, multi-admin roles, per-field audit diff, secret-management policy |
+| Tests | Backend API tests and frontend contract/pure-function tests exist | Supabase integration tests, migration smoke test, DOM-level Vue tests, provider failure/concurrency tests |
 
-## Task Authoring Gaps
+## Required Next Work
 
-- Build formal task question CRUD API instead of whole-JSON PATCH.
-- Support question ordering, duplication, deactivation, and deletion records.
-- Support durable undo/redo history for task authoring edits.
-- Support answer key version history so research data collected under previous answer keys remains traceable.
-- Support story-first token audit: record `display_text` token ↔ question mapping.
-- Build structured story segments to replace raw `display_text` string manipulation.
-- Build token-level operation APIs (insert, remove, move question tokens).
-- Expand backend task validation to cover future CRUD operations and material publish rules.
-- Support version diff for inline question insert/delete/type-change, including replaced `source_text`.
-- Backend judgement should read structured questions explicitly, not rely on LLM interpreting raw payload.
-- Build task publish/draft state so researchers can edit drafts before applying to learner flow.
-- Build formal experiment material snapshot: event, task, questions, personas, condition prompts locked at publish time.
-- Add task material readiness endpoint: check if four condition prompts, question answers, event context, and token↔question mapping are all complete.
+### Provider Reliability And Observability
 
-## Event Management Gaps
+- Define primary/fallback provider and model allowlist.
+- Classify timeout, rate limit, authentication, content-filter and provider 5xx errors.
+- Use bounded retry only for retryable failures.
+- Guarantee one learner turn creates at most one formal model message, even after retry or duplicate request.
+- Optional production hardening: replace client-driven orphan recovery with startup reconciliation or a durable queue if the experiment is ever deployed with multiple backend instances.
+- Persist correlation id, latency, token usage, fallback reason and provider attempt count.
+- Add a per-conversation concurrency guard.
+- Give task judgement, greeting, chat and persona generation separate runtime policies.
 
-- Event update should be versioned to prevent research material overwrite.
-- Add controlled event re-generation (task/persona) with old version preservation.
-- Build event data version history: who modified, when, before/after diff.
-- Add event delete/archive strategy to prevent accidental deletion of events bound to research sessions.
-- Build event material completeness check endpoint.
+### Experiment Reproducibility
 
-## Prompt & Persona Gaps
+- Add event/task/persona/answer-key version history.
+- Design draft, readiness and publish semantics.
+- Make stored prompt hashes resolvable to reviewed prompt content.
+- Add export format for thesis analysis.
+- Decide whether animation/typewriter behavior should be disabled during measured sessions.
 
-- Build prompt dry-run endpoint for test responses with fixed input.
-- 2x2 condition EBL/role-play/response-policy should be treated as research design constants; admin UI should not freely toggle them without stricter permission.
-- Persona `prompt_profile` is still raw JSON; consider splitting into speaking style, knowledge boundary, teacher notes, source policy fields.
-- Prompt save API should return schema validation errors.
+### Authorization And Ownership
 
-## Learning Flow & Conversation Gaps
+- Audit all non-Admin write endpoints, including legacy persona endpoints, for learner-access semantics.
+- Confirm task/chat/session reads and writes enforce the authenticated user's session ownership where required.
+- Replace generic errors with stable field/error codes where the frontend needs actionable states.
+- Add before/after payload diff to Admin write logs.
 
-- Keep `/chat?conversationId=...` as legacy redirect only; new links should use `/conversations/[conversationId]`.
-- Keep `/task?sessionId=...` as legacy redirect only; new links should use `/sessions/[sessionId]/task`.
-- Formalize participant ID ↔ Supabase user ID ↔ experiment session ID mapping.
-- Keep localStorage progress only as a temporary fallback; production flow should depend on backend session APIs.
-- Add UI/interaction audit log for formal experiment sessions.
+### Test Coverage
 
-## Auth & Audit Gaps
+- Add Supabase repository integration tests without resetting or deleting real local research data.
+- Add migration-up smoke tests against an isolated disposable database.
+- Add DOM-level component tests for archive/restore, Admin-only create, async polling, timer banner and expired-session controls.
+- Add prompt regression tests for all four condition cells and persona boundary violations.
+- Add async idempotency, failure recovery and duplicate-submit tests.
 
-- Short-term: Supabase Auth login + admin key dual-layer. Multi-user role-based access for later.
-- Frontend admin mode requires successful `/api/admin/snapshot` call; localStorage only remembers view preference.
-- All admin write operations need audit log with payload diff.
-- Backend should return validation errors per field, not generic failure.
+## Explicitly Deferred
 
-## Frontend Remaining Risks
+- **Material version lock:** deferred until snapshot schema, publish semantics and migration strategy are approved. Message-level hashes are not a substitute for a locked material snapshot.
+- **RAG:** deferred. `knowledge_chunks` and `messages.rag_sources` remain preparatory schema only.
+- **Requirement item 6:** deferred because no concrete behavior or acceptance criteria were specified.
+- **Requirement item 8:** deferred; if it refers to RAG, the RAG decision above applies. If it means another feature, requirements must be supplied first.
+- **Controlled deliberate historical errors:** disabled until a reviewed error contract, exposure log and debrief policy exist.
 
-1. `Typewriter` animation may affect reading-time measures. Consider disabling for formal experiment sessions.
-2. Admin dashboard still exposes advanced JSON for `prompt_profile` and `evaluation_payload`; structured task editing exists, but prompt editing still needs schema hints.
-3. Auth pages exist but are not connected to participant/session assignment.
-4. `tutorial.vue` still demonstrates old product style; should be rewritten as formal experiment instructions or removed.
-5. DOM-level frontend component tests are still missing. Current frontend unit tests cover API/data contracts and pure task/admin helpers, not rendered Vue component behavior.
+## Suggested Order
 
-## Suggested Next Milestones
-
-1. Add DOM-level component tests once the project adopts a Vue/Nuxt test runner.
-2. Add explicit participant/session ID handling.
-3. Harden LiteLLM structured outputs for task generation and judgement.
-4. Add save status/toasts to admin edits.
-5. Decide blank-level scoring and EBL coding with advisor.
-6. Add export format for thesis analysis.
-7. Rewrite tutorial as formal experiment instructions.
+1. Complete integration verification for the current working tree.
+2. Implement provider reliability, idempotency and observability.
+3. Audit endpoint ownership and add missing integration/DOM tests.
+4. Design material publish/version semantics with the researcher before writing schema.
+5. Keep RAG out of scope until source and citation policy are finalized.

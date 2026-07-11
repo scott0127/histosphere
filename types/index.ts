@@ -62,6 +62,7 @@ export interface HistoricalEvent {
   context?: string | null;
   source_summary?: Record<string, unknown>;
   created_by?: string | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -112,7 +113,7 @@ export interface TaskAttempt {
   event_id: string;
   session_id?: string | null;
   user_id?: string | null;
-  status: 'in_progress' | 'submitted';
+  status: 'in_progress' | 'processing' | 'submitted' | 'failed';
   response_payload: Record<string, unknown>;
   judgement_payload: Record<string, unknown>;
   submitted_at?: string | null;
@@ -198,12 +199,25 @@ export interface TaskSubmitResponse {
   history: ChatMessage[];
 }
 
+export interface TaskSubmissionAcceptedResponse {
+  attempt_id: string;
+  status: TaskAttempt['status'];
+  poll_url: string;
+}
+
+export interface TaskSubmissionStatusResponse {
+  attempt: TaskAttempt;
+  result?: TaskSubmitResponse | null;
+  error?: string | null;
+}
+
 export interface TaskDraftResponse {
   attempt: TaskAttempt;
 }
 
 export interface ConversationLoadResponse {
   conversation_id: string;
+  session?: ExperimentSession | null;
   event: HistoricalEvent;
   personas: Persona[];
   messages: ChatMessage[];
@@ -220,6 +234,10 @@ export interface ExperimentSession {
   user_id?: string | null;
   event_id: string;
   status: 'initialized' | 'task_submitted' | 'conversation_started' | 'completed' | 'archived';
+  timer_started_at?: string | null;
+  timer_ends_at?: string | null;
+  completed_at?: string | null;
+  completion_reason?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -298,4 +316,12 @@ export interface AdminPromptPreviewResponse {
   sample_user_message: string;
   modules: PromptPreviewModule[];
   prompt: string;
+}
+
+export interface AdminPromptDryRunResponse extends AdminPromptPreviewResponse {
+  response: string;
+  annotations: Annotation[];
+  related_events: RelatedEvent[];
+  dynamic_context: string;
+  rag_sources: RagSource[];
 }

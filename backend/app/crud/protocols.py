@@ -48,7 +48,7 @@ class RepositoryProtocol(Protocol):
 
     # ── Event ──────────────────────────────────────────────────
 
-    def find_event_by_name(self, event_name: str) -> Event | None:
+    def find_event_by_name(self, event_name: str, include_archived: bool = False) -> Event | None:
         """依事件名稱模糊查詢（case-insensitive）。
 
         Args:
@@ -70,7 +70,7 @@ class RepositoryProtocol(Protocol):
         """
         ...
 
-    def list_events(self) -> list[Event]:
+    def list_events(self, include_archived: bool = False) -> list[Event]:
         """列出所有事件，依建立時間倒序。
 
         Returns:
@@ -89,15 +89,12 @@ class RepositoryProtocol(Protocol):
         """
         ...
 
-    def delete_event(self, event_id: str) -> bool:
-        """刪除事件及其 cascade 關聯資料。
+    def archive_event(self, event_id: str) -> Event | None:
+        """Soft archive an event without deleting related research data."""
+        ...
 
-        Args:
-            event_id: 事件 UUID 字串。
-
-        Returns:
-            bool: 是否成功刪除。
-        """
+    def restore_event(self, event_id: str) -> Event | None:
+        """Restore a previously archived event."""
         ...
 
     # ── WikiSource ─────────────────────────────────────────────

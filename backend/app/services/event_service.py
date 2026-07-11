@@ -33,12 +33,19 @@ class EventService:
             items.append(EventListItem(**payload))
         return items
 
-    def delete_event(self, event_id: str) -> dict[str, bool]:
-        """刪除事件；關聯資料由資料庫 cascade 或 repository 實作處理。"""
-        deleted = self.repository.delete_event(event_id)
-        if not deleted:
+    def archive_event(self, event_id: str) -> Event:
+        """Hide an event from learner selection without deleting research data."""
+        event = self.repository.archive_event(event_id)
+        if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-        return {"success": True}
+        return event
+
+    def restore_event(self, event_id: str) -> Event:
+        """Restore an archived event to the learner event library."""
+        event = self.repository.restore_event(event_id)
+        if not event:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        return event
 
     def regenerate_background(self, event_id: str) -> dict[str, str | None]:
         """舊圖片背景功能的相容入口；新版研究 UI 不再產生背景圖。"""

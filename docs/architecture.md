@@ -82,6 +82,12 @@ backend/
 
 ## Runtime Configuration
 
+Local startup:
+
+- `pnpm dev:full` uses the pinned local Supabase CLI, keeps the standard `54320-54329` ports, releases project listeners on `3000`/`8000`, and waits for all services to become ready.
+- On Windows, `pnpm dev:repair:supabase-ports` is a one-time elevated repair for WinNAT dynamic excluded ranges; it does not move Supabase to non-standard ports.
+- See `local-development.md` for port ownership, cleanup and recovery details.
+
 Repository selection:
 
 - `BACKEND_REPOSITORY=in_memory`: tests only, requires `ALLOW_IN_MEMORY_REPOSITORY=true`.
@@ -115,7 +121,7 @@ Admin authorization:
 
 - Header: `x-admin-key`
 - Env: `HISTOSPHERE_ADMIN_KEY`
-- Default local value: `histosphere-local-admin`
+- Do not document or commit a real deployment key. Local fallback values are development-only and must be overridden for a formal experiment deployment.
 
 ## Feature Inventory
 
@@ -130,17 +136,26 @@ Output: `event_id`, `session_id`, `event`, `task`, `personas`, `condition`
 Important rules:
 
 - This endpoint does not create a conversation.
+- Learner runtime must resolve `user_id` to an active participant and the requested condition must appear in that participant's assigned condition list.
+- Learners may only start existing, non-archived event materials. Creating a new event requires the Admin override header.
+- Admin test mode may bypass participant assignment for research verification without changing learner assignment data.
 - V1 creates or reuses one primary historical persona per event.
 - Event profile, prototype task, and primary persona are generated through LiteLLM when no teacher/manual material exists.
 - `century`, `start_year`, `end_year`, and `context` may remain `null`.
 
-### Task Submit / Chat Unlock
+### Async Task Submit / Chat Unlock
 
-Purpose: store learner response, run simple LLM judgement, create conversation, and write research logs.
+Purpose: persist learner response immediately, then run LLM judgement, conversation creation and greeting asynchronously.
 
 Input: `task_id`, `session_id`, `response_payload`, `user_id`
 
-Output: `attempt_id`, `conversation_id`, `attempt`, `judgement`, `greeting`, `history`, `event`, `task`, `personas`, `condition`
+Initial output (`202 Accepted`): `attempt_id`, `status`, `poll_url`.
+
+Polling output: processing/failed status, or the final `conversation_id`, `attempt`, `judgement`, `greeting`, `history`, `event`, `task`, `personas`, and `condition` payload.
+
+Attempt lifecycle: `in_progress -> processing -> submitted`, with `failed` retained for a retryable processing failure.
+
+Processing uses an in-process FastAPI background task. The attempt id survives page reloads; polling a persisted `processing` attempt after backend restart re-schedules it with a process-local attempt-id guard. This is client-driven recovery, not a durable queue or multi-instance database claim.
 
 V1 judgement values: `correct`, `incorrect`, `partial`.
 
@@ -152,18 +167,27 @@ Input: `conversation_id`, `user_message`, `history`, `target_persona_id`
 
 Output: `response`, `message`, `assistant_name`, `selected_persona`, `annotations`, `related_events`, `dynamic_context`, `rag_sources`
 
+The backend loads the latest 12 authoritative messages from the database (up to 1600 characters each) and includes them in `conversation_history`. Client-provided history is not the source of truth.
+
 ### Prompt Modules
 
 Current modules in `PromptService`:
 
-- `condition_policy`: direct vs scaffold behavior.
+- `general_prompt`: shared language, historical-accuracy and no-fabrication policy.
+- `independent_1_prompt`: generic assistant vs historical persona identity.
+- `independent_2_prompt`: direct vs EBL historical-thinking interaction.
 - `event_context`: canonical event facts and nullable metadata.
 - `learner_task`: task response and LLM judgement.
-- `source_context`: currently notes RAG disabled; future source snippets can enter here.
-- `speaker_context`: generic assistant vs historical persona.
+- `conversation_history`: bounded, DB-backed prior turns.
+- `persona_context`: validated `persona_prompt_v1` profile and role boundary.
+- `source_context`: explicitly notes RAG disabled; future reviewed source snippets can enter here.
+- `runtime_policy`: hidden-prompt and output policy.
+- `user_message`: current learner turn, appended last.
 - `deliberate_error_slot`: reserved and disabled by default.
 
 Admin preview: `GET /api/admin/prompt-preview` renders the same modules through `PromptService` without calling the LLM.
+
+Admin dry-run: `POST /api/admin/prompt-dry-run` calls the configured provider with the same modules but does not persist messages or research logs.
 
 ## 2x2 Condition Matrix
 
@@ -215,7 +239,7 @@ Request body:
   "event_name": "Normandy landings",
   "condition_key": "ebl_roleplay",
   "rebuild": false,
-  "user_id": null
+  "user_id": "supabase-auth-user-uuid"
 }
 ```
 
@@ -234,6 +258,8 @@ Response body:
 
 Error cases: `400` empty event name, `404` condition not found, `5xx` Wikipedia/provider/Supabase failures.
 
+Learner authorization errors: `403` missing participant mapping, inactive participant, unassigned condition, or attempt to create new material. Archived events return `409` until an Admin restores them. A valid `x-admin-key` enables the explicit Admin test/create override.
+
 Frontend caller: `pages/index.vue` through `useExperimentSession`
 
 ---
@@ -248,11 +274,14 @@ Frontend caller: `pages/index.vue`
 
 ---
 
-### `DELETE /api/event/{event_id}`
+### Event Archive / Restore
 
-Purpose: delete event workspace and cascading data.
+There is no public event-delete route in the intended flow. Admin manages material visibility without cascading data deletion:
 
-Response: `{ "success": true }`
+- `POST /api/admin/events/{event_id}/archive`
+- `POST /api/admin/events/{event_id}/restore`
+
+Archived events are hidden from `GET /api/events` but remain available in the Admin snapshot.
 
 ---
 
@@ -272,7 +301,7 @@ Response: `TaskDraftResponse`
 
 ### `POST /api/tasks/{task_id}/submit`
 
-Purpose: submit task, judge response, create conversation, and write research logs.
+Purpose: persist the submission as `processing`, queue judgement/conversation/greeting work, and return immediately.
 
 Request body:
 
@@ -280,28 +309,31 @@ Request body:
 {
   "session_id": "...",
   "response_payload": { "answer_text": "..." },
-  "user_id": null
+  "user_id": "supabase-auth-user-uuid"
 }
 ```
 
-Response body:
+Response: `202 Accepted`
 
 ```json
 {
   "attempt_id": "...",
-  "conversation_id": "...",
-  "event": {},
-  "task": {},
-  "personas": [],
-  "condition": {},
-  "attempt": {},
-  "judgement": { "result": "partial", "misconception_summary": "..." },
-  "greeting": "...",
-  "history": []
+  "status": "processing",
+  "poll_url": "/api/tasks/attempts/..."
 }
 ```
 
-Error cases: `404` task/session/event/condition not found, `400` task does not belong to session event.
+Error cases: `404` task/session/event/condition not found, `400` task does not belong to session event, `403` session belongs to another Auth user, `409` session is closed.
+
+---
+
+### `GET /api/tasks/attempts/{attempt_id}`
+
+Purpose: poll asynchronous task processing.
+
+- `processing`: work has not finished.
+- `submitted`: response includes the final conversation/navigation payload.
+- `failed`: response includes a stable failure message and the saved attempt remains retryable.
 
 Frontend caller: `pages/sessions/[sessionId]/task.vue` through `useTaskGate`, then `/conversations/[conversationId]`
 
@@ -345,10 +377,11 @@ Request body:
 {
   "conversation_id": "...",
   "user_message": "Why was this event important?",
-  "history": [],
   "target_persona_id": null
 }
 ```
+
+Any legacy `history` field is not authoritative. Runtime context is loaded from persisted `messages`.
 
 Response body:
 
@@ -384,6 +417,11 @@ Frontend caller: `useConversationSession`
 - `GET /api/sessions/progress` — returns user progress across sessions.
 - `GET /api/sessions/{session_id}/state` — reload session state for `/sessions/[sessionId]/task` refresh safety.
 
+Admin-only timer controls:
+
+- `POST /api/admin/sessions/{session_id}/timer` — opt in and set duration.
+- `DELETE /api/admin/sessions/{session_id}/timer` — cancel the timer without closing the session.
+
 Response: `UserProgressResponse` / `SessionStateResponse`
 
 ---
@@ -400,9 +438,15 @@ All admin endpoints require `x-admin-key`.
 
 - `GET /api/admin/snapshot`
 - `GET /api/admin/prompt-preview?event_id=...&condition_key=...&persona_id=...` — renders backend prompt modules for researcher review without calling the LLM.
+- `POST /api/admin/prompt-dry-run` — calls the actual LLM contract without persisting a message/log.
 - `PATCH /api/admin/events/{event_id}`
+- `POST /api/admin/events/{event_id}/archive`
+- `POST /api/admin/events/{event_id}/restore`
 - `PATCH /api/admin/tasks/{task_id}` — validates structured `display_text` blank tokens against `evaluation_payload.questions` before saving. Validation errors return `422` with `detail.message` and `detail.issues[]`.
 - `PATCH /api/admin/personas/{persona_id}`
+- `PATCH /api/admin/participants/{participant_id}`
+- `POST /api/admin/sessions/{session_id}/timer`
+- `DELETE /api/admin/sessions/{session_id}/timer`
 - `PATCH /api/admin/conditions/{condition_id}`
 - `GET /api/admin/research-logs?limit=200`
 
@@ -414,6 +458,7 @@ The active schema lives in:
 
 - `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
 - `backend/migrations/001_ebl_roleplay_schema.sql`
+- `supabase/migrations/202607110001_runtime_safety_and_async.sql`
 
 See `supabase-schema.md` for the full table/column/FK/index reference.
 
@@ -425,9 +470,14 @@ Key comments:
 
 - `event_tasks.evaluation_payload`: V1 LLM judgement rubric/settings.
 - `task_attempts.judgement_payload`: LLM result and misconception summary.
-- `personas.prompt_profile`: teacher-editable persona/context engineering settings.
-- `messages.metadata`: model/prompt/profile snapshots or research flags.
+- `task_attempts.status`: includes `processing` and `failed` for asynchronous work.
+- `events.archived_at`: reversible material visibility state; not deletion.
+- `experiment_sessions.timer_started_at` / `timer_ends_at`: null unless Admin enables the timer.
+- `personas.prompt_profile`: validated by the `persona_prompt_v1` persona/context contract.
+- `messages.metadata`: prompt/profile hashes, module names, history ids, provider/model and research flags.
 - `research_logs`: behavioral trace table, not a replacement for `messages`.
+
+Material version lock and RAG remain deferred. Message-level hashes improve auditability but do not freeze event/task/persona content for a session.
 
 ## Research Logs
 
@@ -456,10 +506,11 @@ backend/.venv/Scripts/python.exe -m pytest -q
 Current coverage:
 
 - event initialize creates workspace but not conversation.
-- task submit creates attempt, judgement, conversation, greeting, and logs.
+- task submit returns `202`, exposes processing/submitted state, then creates judgement, conversation, greeting, and logs.
 - task draft save persists recoverable in-progress attempts.
 - admin task update rejects corrupt story tokens/questions and logs `task_updated` on success.
-- admin prompt preview returns runtime prompt modules without calling external LLM providers.
+- admin prompt preview returns runtime prompt modules without calling external LLM providers; dry-run persistence safety is part of runtime-safety coverage.
+- learner event creation/condition assignment, event archive/restore, DB-backed history and opt-in timer require runtime-safety regression coverage.
 - session state reload returns event/task/personas/condition/attempt/conversation id for `/sessions/[sessionId]/task`.
 - session progress returns per-user event/condition status for homepage recovery.
 - invalid UUID route parameters return validation errors instead of backend 500s.
@@ -476,15 +527,15 @@ Frontend:
 
 Current frontend unit coverage:
 
-- `utils/histosphereApi.ts` endpoint contract calls for public event data, admin snapshot/writes, event initialization, session progress/state, task draft/submit, conversation load, chat send, and event delete.
+- `utils/histosphereApi.ts` endpoint contract calls for public event data, admin snapshot/writes, event initialization, session progress/state, async task submit/status polling, conversation load, chat send, event archive/restore, prompt dry-run and timer controls.
 - `useStudentTask` pure task logic: question normalization, inline story segment rendering, answer completeness, response payload serialization, boolean answer text, and deterministic participant UUID.
 - `utils/adminWorkspaceState.ts` admin state helpers: editable JSON map generation, 01-04 condition ordering, condition labels, and event year range formatting.
 
 Frontend orchestration boundaries:
 
 - `useExperimentSession` owns participant/session initialization, progress recovery, and route handoff to task/conversation.
-- `useEventLibrary` owns homepage condition/event list loading, refresh, lookup, and deletion.
-- `useTaskGate` owns task state reload, draft autosave, submit, and route handoff to conversation.
+- `useEventLibrary` owns homepage condition/event list loading, refresh, lookup, Admin-only creation, and archive state.
+- `useTaskGate` owns task state reload, draft autosave, async submit polling/resume, and route handoff to conversation.
 - `useConversationSession` owns conversation reload and chat send.
 - `useAdminWorkspace` owns admin snapshot loading, editable task/persona JSON maps, selected event/condition state, and admin save flows.
 

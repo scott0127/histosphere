@@ -10,6 +10,7 @@ def initialize_event(client, event_name: str = "諾曼第登陸", condition_key:
     response = client.post(
         "/api/event/initialize",
         json={"event_name": event_name, "condition_key": condition_key, "rebuild": False},
+        headers={"x-admin-key": "test-admin"},
     )
     assert response.status_code == 200
     return response.json()
@@ -23,8 +24,13 @@ def submit_task(client, initialized: dict, answer_text: str = "1944 年盟軍在
             "response_payload": {"answer_text": answer_text},
         },
     )
-    assert response.status_code == 200
-    return response.json()
+    assert response.status_code == 202
+    accepted = response.json()
+    polled = client.get(accepted["poll_url"])
+    assert polled.status_code == 200
+    assert polled.json()["attempt"]["status"] == "submitted"
+    assert polled.json()["result"]
+    return polled.json()["result"]
 
 
 def test_health(client):
@@ -82,6 +88,7 @@ def test_public_initialize_does_not_rebuild_existing_event_materials(client):
     rebuilt = client.post(
         "/api/event/initialize",
         json={"event_name": "法國大革命", "condition_key": "ebl_roleplay", "rebuild": True},
+        headers={"x-admin-key": "test-admin"},
     )
 
     assert rebuilt.status_code == 200
@@ -178,6 +185,7 @@ def test_task_draft_and_session_progress_are_recoverable(client):
             "rebuild": False,
             "user_id": "participant-001",
         },
+        headers={"x-admin-key": "test-admin"},
     ).json()
 
     draft = client.patch(
@@ -381,6 +389,10 @@ def test_compatibility_endpoints(client):
     assert avatar.status_code == 200
     assert avatar.json()["success"] is True
 
-    deleted = client.delete(f"/api/event/{event_id}")
-    assert deleted.status_code == 200
-    assert deleted.json()["success"] is True
+    assert client.delete(f"/api/event/{event_id}").status_code == 404
+    archived = client.post(
+        f"/api/admin/events/{event_id}/archive",
+        headers={"x-admin-key": "test-admin"},
+    )
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"]

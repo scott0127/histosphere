@@ -84,10 +84,10 @@
                 <button
                   type="button"
                   class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100"
-                  title="刪除此事件"
-                  @click="$emit('delete', event.id)"
+                  title="封存此事件"
+                  @click="$emit('archive', event.id)"
                 >
-                  <Icon name="mdi:trash-can-outline" class="h-4 w-4" />
+                  <Icon name="mdi:archive-arrow-down-outline" class="h-4 w-4" />
                 </button>
               </div>
               <NuxtLink to="/admin" class="mt-3 inline-flex w-full items-center justify-center rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 py-3 text-sm font-black text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)]">
@@ -110,7 +110,7 @@
 
 <script setup lang="ts">
 // EventDetailModal 是事件素材與活動入口的組合元件。
-// 它不直接呼叫 API；刪除、受測者儲存、活動啟動都交回 page 控制。
+// 它不直接呼叫 API；封存與活動啟動都交回 page 控制。
 import type { ConditionKey, EventWithPersonas, ExperimentCondition, Participant, UserProgressStatus } from '~/types';
 import ActivityConditionGrid from '~/components/event-library/ActivityConditionGrid.vue';
 import { eventMotif, formatYears } from '~/utils/eventPresentation';
@@ -138,7 +138,7 @@ defineProps<{
 
 defineEmits<{
   (event: 'close'): void;
-  (event: 'delete', eventId: string): void;
+  (event: 'archive', eventId: string): void;
   (event: 'start-condition', condition: ExperimentCondition): void;
 }>();
 </script>

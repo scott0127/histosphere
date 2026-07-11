@@ -2,6 +2,7 @@ def initialize_event(client, event_name="法國大革命", condition_key="ebl_ro
     response = client.post(
         "/api/event/initialize",
         json={"event_name": event_name, "condition_key": condition_key, "rebuild": False},
+        headers={"x-admin-key": "test-admin"},
     )
     assert response.status_code == 200
     return response.json()
@@ -27,8 +28,11 @@ def test_admin_prompt_preview_returns_runtime_prompt_modules(client):
     assert payload["event"]["id"] == initialized["event_id"]
     assert payload["condition"]["condition_key"] == "ebl_roleplay"
     assert payload["persona"]["id"] == initialized["personas"][0]["id"]
-    assert "backend_teacher_prompt" in module_names
-    assert "speaker_context" in module_names
+    assert "general_prompt" in module_names
+    assert "independent_1_prompt" in module_names
+    assert "independent_2_prompt" in module_names
+    assert "persona_context" in module_names
+    assert "conversation_history" in module_names
     assert "請說明這個事件的重要性。" in payload["prompt"]
     assert "[event_context]" in payload["prompt"]
 
@@ -48,7 +52,7 @@ def test_admin_prompt_preview_generic_condition_does_not_require_persona(client)
     assert response.status_code == 200
     payload = response.json()
     assert payload["persona"] is None
-    assert "generic AI tutor" in payload["prompt"]
+    assert "generic assistant" in payload["prompt"]
 
 
 def test_admin_prompt_preview_requires_valid_admin_key(client):

@@ -260,3 +260,18 @@ class ParticipantUpdateRequest(BaseModel):
     status: Literal["active", "completed", "excluded", "archived"] | None = None
     notes: str | None = None
     metadata: dict[str, Any] | None = None
+
+
+class SessionTimerStartRequest(BaseModel):
+    """Admin-only opt-in timer configuration for one experiment session."""
+
+    duration_minutes: int = Field(default=30, ge=1, le=240)
+
+
+class AdminPromptDryRunRequest(BaseModel):
+    """Admin-only non-persistent persona completion test."""
+
+    event_id: str = Field(..., min_length=1)
+    condition_key: ConditionKey
+    persona_id: str | None = None
+    sample_user_message: str = Field(default="請說明這個事件的重要性。", min_length=1)

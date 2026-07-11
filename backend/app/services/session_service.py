@@ -5,11 +5,14 @@
 已存在的正式資料來源。
 """
 
+from datetime import timedelta
+
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import EventTask
+from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
 from app.schemas.responses import SessionStateResponse, UserProgressItem, UserProgressResponse
+from app.services.session_runtime import expire_session_if_due
 
 
 class SessionService:
@@ -24,6 +27,7 @@ class SessionService:
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
 
+        session = expire_session_if_due(self.repository, session)
         event = self.repository.get_event(session.event_id)
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -70,6 +74,59 @@ class SessionService:
                 )
             )
         return UserProgressResponse(progress=progress)
+
+    def start_timer(self, session_id: str, duration_minutes: int) -> ExperimentSession:
+        """Enable a timer for one session; timers are disabled until this is called."""
+        session = self.repository.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
+        if session.status in {"completed", "archived"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
+        now = utc_now()
+        session.timer_started_at = now
+        session.timer_ends_at = now + timedelta(minutes=duration_minutes)
+        session.completed_at = None
+        session.completion_reason = None
+        saved = self.repository.save_session(session)
+        self.repository.log_research(
+            ResearchLog(
+                user_id=saved.user_id,
+                session_id=saved.id,
+                event_id=saved.event_id,
+                action_type="session_timer_started",
+                payload={"duration_minutes": duration_minutes, "timer_ends_at": saved.timer_ends_at.isoformat()},
+            )
+        )
+        return saved
+
+    def cancel_timer(self, session_id: str) -> ExperimentSession:
+        """Disable a running timer without changing experiment progress."""
+        session = self.repository.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
+        session.timer_started_at = None
+        session.timer_ends_at = None
+        saved = self.repository.save_session(session)
+        self.repository.log_research(
+            ResearchLog(
+                user_id=saved.user_id,
+                session_id=saved.id,
+                event_id=saved.event_id,
+                action_type="session_timer_cancelled",
+                payload={},
+            )
+        )
+        return saved
+
+    def expire_due_sessions(self) -> int:
+        """Complete all due opt-in timers; used by the background worker."""
+        completed = 0
+        for session in self.repository.list_sessions():
+            previous_status = session.status
+            updated = expire_session_if_due(self.repository, session)
+            if previous_status != "completed" and updated.status == "completed":
+                completed += 1
+        return completed
 
     @staticmethod
     def _public_status(session_status: str, attempt_status: str | None, has_conversation: bool) -> str:

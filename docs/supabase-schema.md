@@ -1,6 +1,6 @@
 # Supabase Public Schema Export
 
-最後更新：2026-07-04
+最後更新：2026-07-11
 
 來源：local Supabase Postgres container `supabase_db_histosphere2`，資料庫 `postgres`，schema `public`。
 
@@ -37,6 +37,10 @@
 - `participants.auth_user_id` 對應 Supabase Auth 使用者。正式實驗 runtime 的 `experiment_sessions.user_id`、`task_attempts.user_id`、`conversations.user_id`、`research_logs.user_id` 仍保存 Auth user id，不保存 `participants.id`。
 - `participants.condition_list` 以 learner-visible condition code 保存分派條件，例如 `{01,03}`。目前不另建 condition assignment table，除非未來需要 per-event/per-condition audit 狀態。
 - 所有 listed public tables 目前 RLS 都是 disabled；後端正式 runtime 使用 Supabase service role 透過 `SupabaseRepository` 讀寫。
+- `events.archived_at` 是可逆封存旗標。一般 event management 不刪除 event 或其關聯研究資料。
+- `experiment_sessions` timer 欄位預設皆為 `NULL`；只有 Admin 主動啟用 timer 才開始倒數。
+- `task_attempts.status` 支援 `in_progress`、`processing`、`submitted`、`failed`，供非同步 task submit 與 polling 使用。
+- 本次 runtime safety schema 來自 `supabase/migrations/202607110001_runtime_safety_and_async.sql`，migration 不刪除既有資料。
 
 ## Tables And Columns
 
@@ -84,6 +88,7 @@
 | 9 | `created_by` | `uuid` | YES |  |
 | 10 | `created_at` | `timestamp with time zone` | YES | `now()` |
 | 11 | `updated_at` | `timestamp with time zone` | YES | `now()` |
+| 12 | `archived_at` | `timestamp with time zone` | YES |  |
 
 ### `experiment_conditions`
 
@@ -113,6 +118,10 @@
 | 6 | `status` | `text` | YES | `'initialized'::text` |
 | 7 | `created_at` | `timestamp with time zone` | YES | `now()` |
 | 8 | `updated_at` | `timestamp with time zone` | YES | `now()` |
+| 9 | `timer_started_at` | `timestamp with time zone` | YES |  |
+| 10 | `timer_ends_at` | `timestamp with time zone` | YES |  |
+| 11 | `completed_at` | `timestamp with time zone` | YES |  |
+| 12 | `completion_reason` | `text` | YES |  |
 
 ### `knowledge_chunks`
 
@@ -282,6 +291,12 @@ All public tables use `id uuid` as primary key:
 | `task_blanks` | `(task_id, blank_index)` |
 | `wiki_sources` | `(event_id, provider, language, fetch_mode)` |
 
+### Runtime Check Constraints
+
+| Table | Constraint |
+| --- | --- |
+| `task_attempts` | `status IN ('in_progress', 'processing', 'submitted', 'failed')` |
+
 ### Foreign Keys
 
 | Table | Column | References | Delete behavior |
@@ -322,12 +337,14 @@ All public tables use `id uuid` as primary key:
 | `events` | `events_canonical_name_unique(canonical_name)` |
 | `events` | `idx_events_canonical_name(canonical_name)` |
 | `events` | `idx_events_created_by(created_by)` |
+| `events` | `idx_events_archived_at(archived_at)` |
 | `experiment_conditions` | `idx_experiment_conditions_active(active)` |
 | `experiment_conditions` | `idx_experiment_conditions_key(condition_key)` |
 | `experiment_sessions` | `idx_experiment_sessions_condition(condition_id)` |
 | `experiment_sessions` | `idx_experiment_sessions_event(event_id)` |
 | `experiment_sessions` | `idx_experiment_sessions_status(status)` |
 | `experiment_sessions` | `idx_experiment_sessions_user(user_id)` |
+| `experiment_sessions` | `idx_experiment_sessions_timer_ends_at(timer_ends_at)` partial index for active timed sessions |
 | `knowledge_chunks` | `idx_knowledge_chunks_event(event_id)` |
 | `knowledge_chunks` | `idx_knowledge_chunks_language(language)` |
 | `knowledge_chunks` | `idx_knowledge_chunks_source(source)` |

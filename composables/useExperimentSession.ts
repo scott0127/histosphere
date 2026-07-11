@@ -32,6 +32,7 @@ export type ExperimentStartOptions = {
   userId?: string;
   participantId?: string;
   reuseProgress?: boolean;
+  adminKey?: string;
 };
 
 const progressItemsToLocalMap = (items: UserProgressItem[]) => {
@@ -200,6 +201,7 @@ export const useExperimentSession = (
       participantId: routeParticipantId,
       userId: requestUserId,
       reloadProgress: !options.userId,
+      adminKey: options.adminKey,
     });
   };
 
@@ -212,6 +214,7 @@ export const useExperimentSession = (
       participantId?: string;
       userId?: string;
       reloadProgress?: boolean;
+      adminKey?: string;
     } = {},
   ) => {
     isInitializing.value = true;
@@ -222,6 +225,7 @@ export const useExperimentSession = (
         conditionKey,
         rebuild,
         userId: runtime.userId || authUserId.value,
+        adminKey: runtime.adminKey,
       });
 
       if (navigateToTask) {

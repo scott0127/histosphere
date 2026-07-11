@@ -5,6 +5,7 @@ import type { ComputedRef, Ref } from 'vue';
 import { taskControlQuestions } from '~/composables/useTaskControl';
 import type {
   AdminPromptPreviewResponse,
+  AdminPromptDryRunResponse,
   AdminSnapshotResponse,
   AdminAuthUserSummary,
   EventTask,
@@ -20,9 +21,14 @@ import {
   sortPromptConditions,
 } from '~/utils/adminWorkspaceState';
 import {
+  archiveAdminEvent,
+  cancelAdminSessionTimer,
   fetchAdminAuthUsers,
   fetchAdminSnapshot,
   fetchAdminPromptPreview,
+  restoreAdminEvent,
+  runAdminPromptDryRun,
+  startAdminSessionTimer,
   updateAdminCondition,
   updateAdminEvent,
   updateAdminParticipant,
@@ -44,7 +50,10 @@ export const useAdminWorkspace = (
   const selectedConditionId = ref<string | null>(null);
   const selectedEventId = ref<string | null>(null);
   const savingParticipantId = ref<string | null>(null);
+  const updatingTimerSessionId = ref<string | null>(null);
   const promptPreview = ref<AdminPromptPreviewResponse | null>(null);
+  const promptDryRun = ref<AdminPromptDryRunResponse | null>(null);
+  const promptDryRunLoading = ref(false);
   const promptPreviewLoading = ref(false);
   const promptPreviewMessage = ref('請說明這個事件的重要性。');
 
@@ -58,11 +67,12 @@ export const useAdminWorkspace = (
   const selectedCondition = computed<ExperimentCondition | null>(() => {
     const conditions = promptConditions.value;
     if (!conditions.length) return null;
-    return conditions.find((condition) => condition.id === selectedConditionId.value) || conditions[0];
+    return conditions.find((condition) => condition.id === selectedConditionId.value) || conditions[0] || null;
   });
 
   watch([selectedEventId, selectedConditionId, promptPreviewMessage], () => {
     promptPreview.value = null;
+    promptDryRun.value = null;
   });
 
   const resetWorkspace = (clearStoredKey = true) => {
@@ -74,6 +84,7 @@ export const useAdminWorkspace = (
     taskJson.value = {};
     personaJson.value = {};
     promptPreview.value = null;
+    promptDryRun.value = null;
     selectedConditionId.value = null;
     selectedEventId.value = null;
     if (clearStoredKey && import.meta.client) {
@@ -191,6 +202,19 @@ export const useAdminWorkspace = (
     }
   };
 
+  const setEventArchived = async (event: EventWithPersonas, archived: boolean) => {
+    try {
+      if (archived) {
+        await archiveAdminEvent(adminKey.value, event.id);
+      } else {
+        await restoreAdminEvent(adminKey.value, event.id);
+      }
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, archived ? '事件封存失敗。' : '事件恢復失敗。');
+    }
+  };
+
   const savePersona = async (persona: Persona) => {
     let promptProfile = {};
     try {
@@ -227,6 +251,30 @@ export const useAdminWorkspace = (
     }
   };
 
+  const startSessionTimer = async (sessionId: string, durationMinutes: number) => {
+    updatingTimerSessionId.value = sessionId;
+    try {
+      await startAdminSessionTimer(adminKey.value, sessionId, durationMinutes);
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, 'Session 計時器啟動失敗。');
+    } finally {
+      updatingTimerSessionId.value = null;
+    }
+  };
+
+  const cancelSessionTimer = async (sessionId: string) => {
+    updatingTimerSessionId.value = sessionId;
+    try {
+      await cancelAdminSessionTimer(adminKey.value, sessionId);
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, 'Session 計時器停止失敗。');
+    } finally {
+      updatingTimerSessionId.value = null;
+    }
+  };
+
   const loadPromptPreview = async (event: EventWithPersonas, condition: ExperimentCondition) => {
     promptPreviewLoading.value = true;
     error.value = null;
@@ -248,10 +296,32 @@ export const useAdminWorkspace = (
     }
   };
 
+  const runPromptDryRun = async (event: EventWithPersonas, condition: ExperimentCondition) => {
+    promptDryRunLoading.value = true;
+    error.value = null;
+    try {
+      const personaId = condition.roleplay_enabled
+        ? event.personas.find((persona) => persona.active)?.id || null
+        : null;
+      promptDryRun.value = await runAdminPromptDryRun(adminKey.value, {
+        eventId: event.id,
+        conditionKey: condition.condition_key,
+        personaId,
+        sampleUserMessage: promptPreviewMessage.value,
+      });
+    } catch (e: any) {
+      promptDryRun.value = null;
+      error.value = formatAdminApiError(e, 'Prompt dry-run 失敗。');
+    } finally {
+      promptDryRunLoading.value = false;
+    }
+  };
+
   return {
     adminKey,
     authUsers,
     authUsersError,
+    cancelSessionTimer,
     conditionModeLabel,
     conditionOrdinal,
     error,
@@ -261,16 +331,22 @@ export const useAdminWorkspace = (
     loadPromptPreview,
     personaJson,
     promptPreview,
+    promptDryRun,
+    promptDryRunLoading,
     promptPreviewLoading,
     promptPreviewMessage,
     promptConditions,
     resetWorkspace,
     restoreStoredAdminKey,
+    runPromptDryRun,
     saveCondition,
     saveEvent,
+    setEventArchived,
     savePersona,
     saveParticipant,
     saveTask,
+    startSessionTimer,
+    updatingTimerSessionId,
     savingParticipantId,
     selectedCondition,
     selectedConditionId,

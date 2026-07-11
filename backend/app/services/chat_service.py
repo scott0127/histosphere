@@ -5,6 +5,9 @@
 最後把 learner 與 AI 回覆都寫入 messages 與 research_logs。
 """
 
+import hashlib
+import json
+
 from fastapi import HTTPException, status
 
 from app.models.domain import ChatMessage, ResearchLog
@@ -14,6 +17,7 @@ from app.providers.llm.base import LLMProvider
 from app.crud.protocols import RepositoryProtocol
 from app.services.prompt_service import PromptService
 from app.services.rag_pipeline_service import RagPipelineService
+from app.services.session_runtime import expire_session_if_due
 
 
 class ChatService:
@@ -41,6 +45,10 @@ class ChatService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
         session = self.repository.get_session(conversation.session_id) if conversation.session_id else None
+        if session:
+            session = expire_session_if_due(self.repository, session)
+            if session.status in {"completed", "archived"}:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
         condition = self.repository.get_condition_by_key(session.condition_key_snapshot) if session else None
         if not condition:
             condition = self.repository.get_condition_by_key("ebl_roleplay")
@@ -60,6 +68,7 @@ class ChatService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active personas found")
             selected = self._select_persona(event.id, personas, request.target_persona_id, conversation.id)
 
+        prior_messages = self.repository.list_messages(conversation.id)
         # learner message 與 AI message 都用 sequence_index，方便前端穩定回放。
         user_message = ChatMessage(
             conversation_id=conversation.id,
@@ -86,14 +95,16 @@ class ChatService:
 
         # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
         rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
-        prompt = self.prompt_service.assemble_chat_prompt(
+        modules = self.prompt_service.assemble_chat_modules(
             event=event,
             persona=selected,
             condition=condition,
             task_attempt=task_attempt,
             user_message=request.user_message,
             rag_sources=rag_sources,
+            conversation_history=prior_messages,
         )
+        prompt = self.prompt_service.render_modules(modules)
         response_text, annotations, related_events, dynamic_context = await self.llm_provider.generate_chat_response(
             event=event,
             persona=selected,
@@ -106,6 +117,11 @@ class ChatService:
 
         assistant_name = self._assistant_name(condition, selected)
         # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
+        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        profile_payload = selected.prompt_profile if selected else {}
+        profile_hash = hashlib.sha256(
+            json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         model_message = ChatMessage(
             conversation_id=conversation.id,
             speaker_type="persona" if selected else "assistant",
@@ -119,6 +135,13 @@ class ChatService:
                 "condition_key": condition.condition_key,
                 "response_policy": condition.response_policy,
                 "prompt_preview": prompt[:500],
+                "prompt_hash": prompt_hash,
+                "prompt_modules": [module.name for module in modules],
+                "history_message_ids": [message.id for message in prior_messages[-12:]],
+                "history_message_count": len(prior_messages),
+                "persona_profile_contract": profile_payload.get("contract_version") if selected else None,
+                "persona_profile_hash": profile_hash if selected else None,
+                **self._llm_metadata(),
             },
         )
         model_message = self.repository.add_message(model_message)
@@ -166,3 +189,11 @@ class ChatService:
         if selected:
             return selected.name
         return "AI Tutor" if condition.ebl_enabled else "AI Assistant"
+
+    def _llm_metadata(self) -> dict[str, str]:
+        """Read provider metadata without coupling the service to LiteLLMProvider."""
+        runner = getattr(self.llm_provider, "runner", None)
+        return {
+            "provider": str(getattr(runner, "last_provider", "unknown")),
+            "model": str(getattr(runner, "last_model", "unknown")),
+        }

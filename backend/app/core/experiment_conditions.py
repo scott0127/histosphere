@@ -82,6 +82,10 @@ EXPERIMENT_CONDITION_KEY_BY_CODE: Final = {
     definition.code: definition.condition_key
     for definition in EXPERIMENT_CONDITION_DEFINITIONS
 }
+EXPERIMENT_CONDITION_CODE_BY_KEY: Final = {
+    definition.condition_key: definition.code
+    for definition in EXPERIMENT_CONDITION_DEFINITIONS
+}
 EXPERIMENT_CONDITION_ORDER_BY_KEY: Final = {
     definition.condition_key: index
     for index, definition in enumerate(EXPERIMENT_CONDITION_DEFINITIONS)
@@ -94,6 +98,14 @@ def condition_sort_index(condition_key: str) -> int:
         condition_key,
         len(EXPERIMENT_CONDITION_DEFINITIONS),
     )
+
+
+def condition_code_for_key(condition_key: str) -> ConditionCode:
+    """Return the learner-facing code for a canonical condition key."""
+    code = EXPERIMENT_CONDITION_CODE_BY_KEY.get(condition_key)
+    if code is None:
+        raise ValueError(f"Unsupported experiment condition key: {condition_key}")
+    return code
 
 
 def sort_condition_codes(codes: list[ConditionCode]) -> list[ConditionCode]:

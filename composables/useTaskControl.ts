@@ -148,7 +148,8 @@ export const insertQuestionToken = (
 export const blankIdsInDisplayText = (displayText: string) => {
   const ids: string[] = [];
   for (const match of displayText.matchAll(blankPattern)) {
-    ids.push(match[1]);
+    const blankId = match[1];
+    if (blankId) ids.push(blankId);
   }
   return ids;
 };

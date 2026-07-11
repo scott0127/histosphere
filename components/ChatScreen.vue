@@ -28,6 +28,7 @@
 
     <main class="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <section class="flex min-h-0 flex-col rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-soft)]">
+        <SessionTimerBanner :session="session" class="m-4 mb-0" />
         <TaskAttemptReview
           v-if="task && taskAttempt"
           :task="task"
@@ -108,11 +109,11 @@
               rows="1"
               :placeholder="inputPlaceholder"
               class="max-h-36 min-h-12 flex-1 resize-y rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-3 text-sm leading-6 text-[var(--admin-text)] outline-none transition focus:border-[var(--admin-coffee-muted)] focus:ring-4 focus:ring-[var(--admin-focus)]"
-              :disabled="isReplying"
+              :disabled="isReplying || sessionClosed"
             />
             <button
               type="submit"
-              :disabled="isReplying || !userInput.trim()"
+              :disabled="isReplying || sessionClosed || !userInput.trim()"
               class="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--admin-coffee)] text-[var(--admin-surface)] transition hover:bg-[var(--admin-coffee-hover)] disabled:cursor-not-allowed disabled:bg-[var(--admin-border)]"
             >
               <Icon name="mdi:send" class="h-5 w-5" />
@@ -160,12 +161,13 @@
 <script setup lang="ts">
 // ChatScreen 只管理本地輸入框、persona selector 與畫面捲動。
 // 對話 state、API error handling、history 替換都在 useConversationSession 處理。
-import { computed, nextTick, ref, watch } from 'vue';
-import type { ChatMessage, EventTask, ExperimentCondition, HistoricalEvent, Persona, TaskAttempt } from '~/types';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { ChatMessage, EventTask, ExperimentCondition, ExperimentSession, HistoricalEvent, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';
 import AnnotatedText from './AnnotatedText.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import TaskAttemptReview from '~/components/task-student/TaskAttemptReview.vue';
+import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
 import { studentActivityTitle } from '~/composables/useStudentTask';
 
 const props = defineProps<{
@@ -177,6 +179,7 @@ const props = defineProps<{
   task?: EventTask | null;
   taskAttempt?: TaskAttempt | null;
   dynamicContext: string;
+  session?: ExperimentSession | null;
 }>();
 
 const emit = defineEmits<{
@@ -189,6 +192,16 @@ const selectedPersonaId = ref<string | null>(null);
 const chatEndRef = ref<HTMLDivElement | null>(null);
 const chatContainerRef = ref<HTMLDivElement | null>(null);
 const showExitConfirmDialog = ref(false);
+const now = ref(Date.now());
+let sessionTimerId: ReturnType<typeof setInterval> | null = null;
+const sessionClosed = computed(() => {
+  return props.session?.status === 'completed'
+    || props.session?.status === 'archived'
+    || Boolean(props.session?.timer_ends_at && Date.parse(props.session.timer_ends_at) <= now.value);
+});
+
+onMounted(() => { sessionTimerId = setInterval(() => { now.value = Date.now(); }, 1000); });
+onBeforeUnmount(() => { if (sessionTimerId) clearInterval(sessionTimerId); });
 
 // 最後一則內容為 "..." 時代表後端正在生成回覆，避免連續送出造成 history index 混亂。
 const isReplying = computed(() => {

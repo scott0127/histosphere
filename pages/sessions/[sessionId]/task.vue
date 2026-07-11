@@ -8,6 +8,7 @@
     :is-loading="isLoading"
     :is-submitting="isSubmitting"
     :judgement="judgement"
+    :session="session"
     @submit="submitTask"
   />
 </template>
@@ -38,6 +39,7 @@ const {
   isLoading,
   isSubmitting,
   judgement,
+  session,
   submitError,
   submitTask,
   taskData,

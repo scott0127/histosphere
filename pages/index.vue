@@ -37,6 +37,7 @@
         :loading-events="loadingEvents"
         :creating-event="isInitializing"
         :create-error="initializeError"
+        :can-create-event="canManageEvents"
         @create="handleCreateEvent"
         @open="openEventDetail"
       />
@@ -54,14 +55,14 @@
       :participant-loading="isParticipantLoading"
       :assigned-condition-codes="assignedConditionCodes"
       @close="closeEventDetail"
-      @delete="handleDeleteEvent"
+      @archive="handleArchiveEvent"
       @start-condition="startCondition"
     />
 
-    <DeleteConfirmationModal
-      :show="showDeleteConfirmDialog"
-      @confirm="confirmDelete"
-      @cancel="showDeleteConfirmDialog = false"
+    <ArchiveConfirmationModal
+      :show="showArchiveConfirmDialog"
+      @confirm="confirmArchive"
+      @cancel="showArchiveConfirmDialog = false"
     />
 
     <ConfirmActionModal
@@ -88,8 +89,8 @@ import EventCreatePanel from '~/components/event-library/EventCreatePanel.vue';
 import EventDetailModal from '~/components/event-library/EventDetailModal.vue';
 import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vue';
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
+import ArchiveConfirmationModal from '~/components/modals/ArchiveConfirmationModal.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
-import DeleteConfirmationModal from '~/components/modals/DeleteConfirmationModal.vue';
 import { participantUuid, studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import { shouldExitAdminModeForAuthTransition } from '~/utils/adminMode';
@@ -101,9 +102,9 @@ definePageMeta({
 });
 
 const eventName = ref('');
-const showDeleteConfirmDialog = ref(false);
+const showArchiveConfirmDialog = ref(false);
 const showStartConfirmDialog = ref(false);
-const pendingDeleteEventId = ref<string | null>(null);
+const pendingArchiveEventId = ref<string | null>(null);
 const pendingStartCondition = ref<ExperimentCondition | null>(null);
 const detailEvent = ref<EventWithPersonas | null>(null);
 const adminModePending = ref(false);
@@ -120,7 +121,7 @@ const {
 } = useAdminMode();
 const {
   conditions,
-  deleteEvent,
+  archiveEvent,
   events,
   fetchEvents,
   findEvent,
@@ -135,6 +136,12 @@ const defaultParticipantId = computed(() => {
   return emailPrefix || 'scott-test';
 });
 const adminTestUserId = computed(() => participantUuid(`admin-test:${user.value?.id || 'local'}`));
+const canManageEvents = computed(() => isAdminMode.value && activityMode.value === 'admin');
+
+const storedAdminKey = () => {
+  if (!import.meta.client) return '';
+  return localStorage.getItem('histosphere_admin_key')?.trim() || '';
+};
 const {
   initializeError,
   initializeEvent,
@@ -262,9 +269,13 @@ const refreshEventLibrary = async () => {
 
 // 建立或重用歷史事件素材；首頁建立時不直接跳 task。
 const handleCreateEvent = async () => {
+  if (!canManageEvents.value) return;
   const trimmed = eventName.value.trim();
   if (!trimmed) return;
-  const response = await initializeEvent(trimmed, 'ebl_roleplay', false, false);
+  const response = await initializeEvent(trimmed, 'ebl_roleplay', false, false, {
+    adminKey: storedAdminKey(),
+    userId: adminTestUserId.value,
+  });
   if (response) {
     await fetchEvents();
     detailEvent.value = findEvent(response.event_id);
@@ -302,6 +313,7 @@ const confirmStartCondition = async () => {
           participantId: 'ADMIN',
           userId: adminTestUserId.value,
           reuseProgress: false,
+          adminKey: storedAdminKey(),
         }
       : undefined,
   );
@@ -317,24 +329,25 @@ const closeEventDetail = () => {
   detailEvent.value = null;
 };
 
-// 開啟刪除確認。
-const handleDeleteEvent = (eventId: string) => {
-  pendingDeleteEventId.value = eventId;
-  showDeleteConfirmDialog.value = true;
+// 開啟封存確認；只有 Admin mode 會顯示入口。
+const handleArchiveEvent = (eventId: string) => {
+  if (!canManageEvents.value) return;
+  pendingArchiveEventId.value = eventId;
+  showArchiveConfirmDialog.value = true;
 };
 
-// 確認刪除事件素材。
-const confirmDelete = async () => {
-  if (!pendingDeleteEventId.value) return;
+// 封存只隱藏素材，不會刪除任何研究資料。
+const confirmArchive = async () => {
+  if (!pendingArchiveEventId.value) return;
   try {
-    await deleteEvent(pendingDeleteEventId.value);
-    if (detailEvent.value?.id === pendingDeleteEventId.value) detailEvent.value = null;
+    await archiveEvent(storedAdminKey(), pendingArchiveEventId.value);
+    if (detailEvent.value?.id === pendingArchiveEventId.value) detailEvent.value = null;
   } catch (e) {
-    console.error('Failed to delete event:', e);
-    alert('刪除失敗，請稍後再試');
+    console.error('Failed to archive event:', e);
+    alert('封存失敗，請稍後再試');
   } finally {
-    showDeleteConfirmDialog.value = false;
-    pendingDeleteEventId.value = null;
+    showArchiveConfirmDialog.value = false;
+    pendingArchiveEventId.value = null;
   }
 };
 </script>

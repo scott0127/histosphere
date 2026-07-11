@@ -2,6 +2,7 @@ def initialize_event(client, event_name="法國大革命") -> dict:
     response = client.post(
         "/api/event/initialize",
         json={"event_name": event_name, "condition_key": "ebl_roleplay", "rebuild": False},
+        headers={"x-admin-key": "test-admin"},
     )
     assert response.status_code == 200
     return response.json()

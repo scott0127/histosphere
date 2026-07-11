@@ -94,6 +94,22 @@ class TaskSubmitResponse(BaseModel):
     history: list[ChatMessage] = Field(default_factory=list)
 
 
+class TaskSubmissionAcceptedResponse(BaseModel):
+    """Immediate acknowledgement for queued task judgement/greeting work."""
+
+    attempt_id: str
+    status: str
+    poll_url: str
+
+
+class TaskSubmissionStatusResponse(BaseModel):
+    """Persistent task submission job state used by frontend polling/recovery."""
+
+    attempt: TaskAttempt
+    result: TaskSubmitResponse | None = None
+    error: str | None = None
+
+
 class TaskDraftResponse(BaseModel):
     """Task 草稿儲存回應。
 
@@ -141,6 +157,7 @@ class ConversationLoadResponse(BaseModel):
     """
 
     conversation_id: str
+    session: ExperimentSession | None = None
     event: Event
     personas: list[Persona]
     messages: list[ChatMessage]
@@ -243,6 +260,16 @@ class AdminPromptPreviewResponse(BaseModel):
     sample_user_message: str
     modules: list[PromptPreviewModule] = Field(default_factory=list)
     prompt: str
+
+
+class AdminPromptDryRunResponse(AdminPromptPreviewResponse):
+    """Prompt preview plus an LLM response that is never stored as a message."""
+
+    response: str
+    annotations: list[Annotation] = Field(default_factory=list)
+    related_events: list[RelatedEvent] = Field(default_factory=list)
+    dynamic_context: str = ""
+    rag_sources: list[RagSource] = Field(default_factory=list)
 
 
 class SessionStateResponse(BaseModel):
