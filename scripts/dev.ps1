@@ -133,11 +133,28 @@ function Test-WindowsExcludedPort {
 function Get-SupabaseStatus {
   Push-Location $Root
   try {
-    $StatusJson = (& pnpm exec supabase status --output json 2>$null) -join "`n"
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($StatusJson)) {
+    # Supabase reports intentionally stopped optional services on stderr. Under
+    # ErrorActionPreference=Stop, Windows PowerShell turns that into an exception
+    # even when the JSON command itself succeeds.
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+      $StatusLines = & pnpm exec supabase status --output json 2>$null
+      $StatusExitCode = $LASTEXITCODE
+    }
+    finally {
+      $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+
+    $StatusJson = $StatusLines -join "`n"
+    if ($StatusExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($StatusJson)) {
       return $null
     }
-    return $StatusJson | ConvertFrom-Json
+    $Status = $StatusJson | ConvertFrom-Json
+    if (-not $Status.API_URL -or -not $Status.SERVICE_ROLE_KEY -or -not $Status.ANON_KEY) {
+      return $null
+    }
+    return $Status
   }
   catch {
     return $null
@@ -452,9 +469,18 @@ Write-Status "Repository" $true $env:BACKEND_REPOSITORY
 if ($env:BACKEND_REPOSITORY -eq "supabase") {
   Write-Status "Supabase URL" $true $env:SUPABASE_URL
 }
-Wait-HttpOk "Backend" "$BackendUrl/health" 30 | Out-Null
-Wait-HttpOk "Frontend" $FrontendUrl 45 | Out-Null
-Test-SupabaseRunning -ApiPort $SupabaseApiPort | Out-Null
+$BackendReady = Wait-HttpOk "Backend" "$BackendUrl/health" 30
+if (-not $BackendReady) {
+  throw "FastAPI backend did not become ready. Check $BackendLog and $BackendErrLog."
+}
+$FrontendReady = Wait-HttpOk "Frontend" $FrontendUrl 90
+if (-not $FrontendReady) {
+  throw "Nuxt frontend did not become ready. Check $FrontendLog and $FrontendErrLog."
+}
+$SupabaseReady = Test-SupabaseRunning -ApiPort $SupabaseApiPort
+if (-not $SupabaseReady) {
+  throw "Supabase became unavailable during startup."
+}
 
 $StartupStopwatch.Stop()
 Write-DevLog "Frontend: $FrontendUrl"

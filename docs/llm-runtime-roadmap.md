@@ -76,7 +76,7 @@ in_progress -> processing -> submitted
 
 ### Phase 1: Stabilize Current Runtime
 
-Status: implemented in current working tree; merge前仍需整合測試。
+Status: implemented and locally verified on 2026-07-11 with backend/frontend tests, Nuxt typecheck/build, real local Supabase smoke checks, and browser prompt-preview verification.
 
 - 固定 persona prompt contract 與 module order。
 - DB-backed bounded history。

@@ -2,7 +2,7 @@
 
 Updated: 2026-07-11
 
-This document separates behavior implemented in the current working tree from remaining or explicitly deferred work. A working-tree item still requires the repository's full integration checks before release.
+This document separates locally verified behavior from remaining or explicitly deferred work. The current runtime was verified on 2026-07-11 with backend tests, frontend contract tests, Nuxt typecheck/build, real local Supabase reads, and browser smoke tests.
 
 ## Current Working Tree
 
@@ -94,8 +94,7 @@ This document separates behavior implemented in the current working tree from re
 
 ## Suggested Order
 
-1. Complete integration verification for the current working tree.
-2. Implement provider reliability, idempotency and observability.
-3. Audit endpoint ownership and add missing integration/DOM tests.
-4. Design material publish/version semantics with the researcher before writing schema.
-5. Keep RAG out of scope until source and citation policy are finalized.
+1. Implement provider reliability, idempotency and observability.
+2. Audit endpoint ownership and add missing automated Supabase/DOM tests.
+3. Design material publish/version semantics with the researcher before writing schema.
+4. Keep RAG out of scope until source and citation policy are finalized.
