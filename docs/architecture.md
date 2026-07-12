@@ -371,6 +371,13 @@ Frontend caller: `pages/conversations/[conversationId].vue` through `useConversa
 
 Purpose: append learner message and generate assistant/persona response.
 
+Transport semantics:
+
+- This endpoint is currently a single non-streaming HTTP request.
+- The backend uses Python `async/await` for the provider call, but the browser request remains open until the complete JSON response is ready.
+- It does not use SSE, WebSocket, Redis Streams, a background job, or frontend polling.
+- This differs from task submission, which returns `202 Accepted` and is completed through a background task plus status polling.
+
 Request body:
 
 ```json

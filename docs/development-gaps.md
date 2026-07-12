@@ -40,22 +40,23 @@ This document separates locally verified behavior from remaining or explicitly d
 | Area | Current State | Remaining |
 | --- | --- | --- |
 | Task authoring | Story-first UI, token/question validation, whole-payload save, draft autosave | Structured CRUD API, durable operation history, publish/readiness state |
-| Task answers | Full answer bundle and async judgement state in `task_attempts` | Per-question normalized scoring, accepted-answer policy, answer-key audit trail |
+| Task answers | Full answer bundle and async judgement state in `task_attempts` | Detailed design discussion: per-question normalized scoring, accepted-answer policy, answer-key audit trail |
 | Event materials | Edit, archive and restore are available | Version history, before/after audit diff, publish snapshot/readiness |
 | Prompt runtime | Versioned persona contract, canonical modules, DB history, preview/dry-run and hashes | Retry/fallback contract, stable provider errors, usage/latency metrics, content version registry |
-| Participant/session | Auth mapping and condition assignment enforced; progress recovery and opt-in timer exist | Cross-device/re-login policy, stronger endpoint ownership checks, formal session close/debrief flow |
+| Participant/session | Auth mapping and condition assignment enforced; progress recovery and opt-in timer exist | Detailed design discussion: formal session close/debrief flow; stronger ownership checks are not a near-term priority in the supervised experiment setting |
 | RAG/source | Source/chunk schema exists; runtime reports RAG disabled | Deferred ingestion, chunking, embedding, retrieval and citation UI |
-| Admin auth/audit | `x-admin-key` protects `/api/admin/*`; key plus Supabase Auth used by frontend | Key rotation, multi-admin roles, per-field audit diff, secret-management policy |
+| Admin auth/audit | `x-admin-key` protects `/api/admin/*`; key plus Supabase Auth used by frontend | Shared-key hygiene and per-field audit diff; multi-admin roles are not required for the current researcher-supervised deployment |
 | Tests | Backend API tests and frontend contract/pure-function tests exist | Supabase integration tests, migration smoke test, DOM-level Vue tests, provider failure/concurrency tests |
 
 ## Required Next Work
 
 ### Provider Reliability And Observability
 
-- Define primary/fallback provider and model allowlist.
-- Classify timeout, rate limit, authentication, content-filter and provider 5xx errors.
-- Use bounded retry only for retryable failures.
-- Guarantee one learner turn creates at most one formal model message, even after retry or duplicate request.
+- Move chat generation off the long-lived request path and prevent duplicate submission for the same conversation turn.
+- Add a minimal retry action for failed task/chat generation. Preserve the learner message and reuse the same operation id instead of creating duplicate formal messages.
+- Keep automatic retry conservative: at most one bounded retry for clearly transient timeout/rate-limit/provider-5xx failures; authentication and invalid-request errors must fail immediately.
+- Return a stable failed state that the frontend can present with an explicit retry button.
+- Guarantee one learner turn creates at most one formal model message, even after retry or duplicate clicks.
 - Optional production hardening: replace client-driven orphan recovery with startup reconciliation or a durable queue if the experiment is ever deployed with multiple backend instances.
 - Persist correlation id, latency, token usage, fallback reason and provider attempt count.
 - Add a per-conversation concurrency guard.
@@ -71,8 +72,8 @@ This document separates locally verified behavior from remaining or explicitly d
 
 ### Authorization And Ownership
 
-- Audit all non-Admin write endpoints, including legacy persona endpoints, for learner-access semantics.
-- Confirm task/chat/session reads and writes enforce the authenticated user's session ownership where required.
+- The experiment is performed under researcher supervision, so hostile participant behavior and cross-session guessing are accepted low-priority risks.
+- Keep the existing participant mapping and condition-assignment enforcement; do not add a large authorization framework without a concrete deployment need.
 - Replace generic errors with stable field/error codes where the frontend needs actionable states.
 - Add before/after payload diff to Admin write logs.
 
@@ -91,10 +92,13 @@ This document separates locally verified behavior from remaining or explicitly d
 - **Requirement item 6:** deferred because no concrete behavior or acceptance criteria were specified.
 - **Requirement item 8:** deferred; if it refers to RAG, the RAG decision above applies. If it means another feature, requirements must be supplied first.
 - **Controlled deliberate historical errors:** disabled until a reviewed error contract, exposure log and debrief policy exist.
+- **Multi-admin roles:** not required while the researcher and advisor intentionally share one Admin key. Revisit only if separate revocation, permission levels, or per-admin attribution becomes necessary.
+
+Detailed discussion items and accepted research-context decisions are maintained in `docs/research-experiment-backlog.md`.
 
 ## Suggested Order
 
-1. Implement provider reliability, idempotency and observability.
-2. Audit endpoint ownership and add missing automated Supabase/DOM tests.
-3. Design material publish/version semantics with the researcher before writing schema.
-4. Keep RAG out of scope until source and citation policy are finalized.
+1. Implement minimal asynchronous chat operation, duplicate protection, and explicit retry.
+2. Add missing automated Supabase/DOM/provider-failure tests.
+3. Discuss task scoring and formal session completion semantics before implementing them.
+4. Keep RAG, controlled historical errors, and material-version schema in the discussion backlog.

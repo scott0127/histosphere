@@ -41,6 +41,13 @@ general_prompt
 
 這已解決重新整理後失去對話 context 的問題，但仍是 bounded short-term memory，不是摘要或長期記憶。
 
+### Current Transport Boundary
+
+- Task judgement/greeting: `202 Accepted` + persisted attempt + FastAPI BackgroundTask + HTTP polling.
+- Chat completion: one non-streaming `POST /api/chat`; the request remains open until the provider returns the complete JSON payload.
+- No current path uses SSE, WebSocket, Redis, or Redis Streams.
+- Python `async/await` prevents blocking the event loop during provider I/O, but it does not by itself make the browser request resumable or streamed.
+
 ### Async Task Submission
 
 `POST /api/tasks/{task_id}/submit` 回傳 `202 Accepted` 與 persistent `attempt_id`。後端以 FastAPI in-process background task 執行 judgement、conversation 建立與 greeting；前端輪詢 `GET /api/tasks/attempts/{attempt_id}`。若頁面重新整理或 backend 在處理中重啟，下一次 poll 會以 process-local attempt guard 重新掛回 orphaned `processing` 工作。
@@ -97,9 +104,10 @@ Acceptance criteria：
 
 Status: next recommended LLM milestone.
 
-- 定義主 provider、fallback provider 與 model allowlist。
-- 將 timeout、rate limit、authentication、content filter 與 provider 5xx 分類成穩定 error codes。
-- 僅對可重試錯誤使用 bounded retry；避免同一 learner turn 產生重複 message。
+- 將 chat 改為可持久化 operation，避免瀏覽器長時間保持單一 request，並加入同一 turn 的 duplicate guard。
+- 提供前端明確的失敗狀態與「重試」按鈕；重試沿用同一 operation/learner message。
+- 僅對 timeout、rate limit、provider 5xx 做最多一次自動 retry；authentication、content filter 與 invalid request 不自動重試。
+- 保留現有 provider candidate 基礎，但只實作研究環境必要的穩定錯誤分類，不建立大型 queue/orchestration framework。
 - 若未來需要無 client poll 也能恢復，增加 startup reconciliation worker 或 durable queue；多 instance 時使用資料庫 atomic claim。
 - 加入 request correlation id、latency、token usage、fallback reason 與 attempt count。
 - 對 task judgement、greeting、chat、persona generation 分別設定 temperature、token budget 與 timeout policy。
@@ -113,7 +121,7 @@ Acceptance criteria：
 
 ### Phase 3: Research Reproducibility
 
-Status: deferred until material version strategy is approved.
+Status: discussion backlog. The supervised experiment will freeze a final release before participant sessions, so runtime version locking is not a current implementation priority.
 
 - 建立 experiment material snapshot/version：event、task、answer key、persona profile、condition prompt modules。
 - Session 開始時鎖定 material version，而不是永遠讀最新 row。
@@ -121,7 +129,7 @@ Status: deferred until material version strategy is approved.
 - Prompt hash 必須可回查到實際 prompt content/version，而不只是不可逆 hash。
 - 建立 admin publish/readiness flow，區分 draft 與正式實驗 material。
 
-這一階段是 **material version lock**，目前明確 deferred，不應在沒有研究者確認 schema 與 publish semantics 前直接實作。
+這一階段是 **material version lock/schema**，目前只保留為待討論設計，不應在沒有研究者確認 schema 與 publish semantics 前直接實作。
 
 ### Phase 4: Evaluation And Safety
 
@@ -152,6 +160,11 @@ Status: deferred; this roadmap does not implement it.
 
 - Material version lock：deferred。
 - RAG：deferred。
+- Task per-question scoring / accepted-answer / answer-key audit：待詳細討論後實作。
+- Formal session completion / debrief：待詳細討論後實作。
+- Research data export：低優先度，待討論後實作。
+- Controlled deliberate historical errors：待討論，維持 disabled。
+- Multi-admin roles：目前不需要；共用 Admin key 符合研究部署方式。
 - 原需求中未提供具體定義與驗收條件的第 6 項：deferred，等待產品/研究語意確認。
 - 原需求第 8 項：若指 RAG，依本文件 deferred；若另有所指，需先補需求與驗收條件。
 
