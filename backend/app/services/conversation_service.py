@@ -11,7 +11,7 @@ from app.models.domain import ChatMessage, Conversation
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.providers.llm.base import LLMProvider
 from app.crud.protocols import RepositoryProtocol
-from app.core.interaction_contract import initial_greeting_metadata
+from app.core.interaction_contract import enforce_initial_greeting
 from app.services.session_runtime import expire_session_if_due
 
 
@@ -48,8 +48,12 @@ class ConversationService:
             )
         )
         greeting = "對話已建立。"
+        greeting_metadata = {}
         if condition and attempt:
-            greeting = await self.llm_provider.generate_greeting(event, personas, condition, attempt)
+            generated_greeting = await self.llm_provider.generate_greeting(event, personas, condition, attempt)
+            enforced_greeting = enforce_initial_greeting(condition, attempt, generated_greeting)
+            greeting = enforced_greeting.response
+            greeting_metadata = enforced_greeting.metadata
 
         greeting_message = ChatMessage(
             conversation_id=conversation.id,
@@ -62,11 +66,7 @@ class ConversationService:
             ),
             sequence_index=self.repository.next_message_sequence(conversation.id),
             content=greeting,
-            metadata=(
-                initial_greeting_metadata(condition, attempt, greeting)
-                if condition and attempt
-                else {}
-            ),
+            metadata=greeting_metadata,
         )
         self.repository.add_message(greeting_message)
         return ConversationCreateResponse(

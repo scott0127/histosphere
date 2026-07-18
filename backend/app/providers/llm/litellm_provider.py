@@ -51,6 +51,17 @@ BACKEND_INTERACTION_PROMPTS = {
         "and do not reveal the complete correction before resolution."
     ),
 }
+CHAT_OUTPUT_JSON_CONTRACT = (
+    'Return exactly one JSON object with every key in this shape: '
+    '{"response":"learner-facing Traditional Chinese text","annotations":[],'
+    '"related_events":[],"dynamic_context":"","dialogue_state":"STATE",'
+    '"dialogue_move":"MOVE","scaffold_level":null,'
+    '"learner_revision_status":"STATUS","completion_status":"STATUS",'
+    '"fidelity_flags":[]}. '
+    "Use the interaction_runtime values for STATE, MOVE, scaffold_level, and statuses. "
+    "fidelity_flags must contain only suspected rule violations; otherwise return an empty list. "
+    "Do not add keys outside this object or wrap it in markdown."
+)
 """Independent identity and interaction modules used by greeting generation."""
 
 
@@ -294,7 +305,7 @@ class LiteLLMProvider:
                 "Generate a concise opening message after the learner submitted the task.\n"
                 f"{identity_instruction}\n"
                 f"{interaction_instruction}\n"
-                "Return the full ChatOutputPayload JSON, including fidelity_flags.\n\n"
+                f"{CHAT_OUTPUT_JSON_CONTRACT}\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Condition:\n{condition.model_dump()}\n\n"
                 f"Persona:\n{persona.model_dump() if persona else None}\n\n"
@@ -338,7 +349,7 @@ class LiteLLMProvider:
                 "Respond to the learner according to the provided prompt modules.\n"
                 "Respect role-play boundaries and EBL/direct-answer policy.\n"
                 "Use Traditional Chinese unless the user asks otherwise. English terms are allowed only when useful.\n"
-                "Return the full ChatOutputPayload JSON. interaction fields must match the interaction_runtime module.\n\n"
+                f"{CHAT_OUTPUT_JSON_CONTRACT}\n\n"
                 f"Prompt modules:\n{prompt}\n\n"
                 f"User message:\n{user_message}"
             ),

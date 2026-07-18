@@ -12,7 +12,7 @@ from app.schemas.responses import (
     TaskSubmissionStatusResponse,
     TaskSubmitResponse,
 )
-from app.core.interaction_contract import initial_greeting_metadata
+from app.core.interaction_contract import enforce_initial_greeting
 from app.services.session_runtime import expire_session_if_due
 from app.services.task_judgement import enrich_task_judgement
 
@@ -263,18 +263,19 @@ class TaskService:
         attempt: TaskAttempt,
     ) -> ChatMessage:
         persona = personas[0] if condition.roleplay_enabled and personas else None
+        enforced_greeting = enforce_initial_greeting(condition, attempt, greeting)
         message = ChatMessage(
             conversation_id=conversation_id,
             persona_id=persona.id if persona else None,
             speaker_type="persona" if persona else "assistant",
             speaker_name=persona.name if persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant"),
             sequence_index=self.repository.next_message_sequence(conversation_id),
-            content=greeting,
+            content=enforced_greeting.response,
             metadata={
                 "condition_key": condition.condition_key,
                 "task_attempt_id": attempt.id,
                 "judgement": attempt.judgement_payload,
-                **initial_greeting_metadata(condition, attempt, greeting),
+                **enforced_greeting.metadata,
             },
         )
         return self.repository.add_message(message)

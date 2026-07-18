@@ -10,7 +10,7 @@ import json
 
 from fastapi import HTTPException, status
 
-from app.core.interaction_contract import build_interaction_runtime, resolve_interaction_metadata
+from app.core.interaction_contract import build_interaction_runtime, enforce_interaction_response
 from app.models.domain import ChatMessage, ResearchLog
 from app.schemas.requests import ChatRequest
 from app.schemas.responses import ChatResponse
@@ -117,11 +117,15 @@ class ChatService:
             prompt=prompt,
             rag_sources=rag_sources,
         )
-        interaction_metadata = resolve_interaction_metadata(
+        enforced_response = enforce_interaction_response(
             interaction_runtime,
             generation.interaction_metadata,
             generation.response,
         )
+        interaction_metadata = enforced_response.metadata
+        response_annotations = [] if enforced_response.fallback_applied else generation.annotations
+        response_related_events = [] if enforced_response.fallback_applied else generation.related_events
+        response_dynamic_context = "" if enforced_response.fallback_applied else generation.dynamic_context
 
         assistant_name = self._assistant_name(condition, selected)
         # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
@@ -136,8 +140,8 @@ class ChatService:
             speaker_name=assistant_name,
             persona_id=selected.id if selected else None,
             sequence_index=self.repository.next_message_sequence(conversation.id),
-            content=generation.response,
-            annotations=generation.annotations,
+            content=enforced_response.response,
+            annotations=response_annotations,
             rag_sources=rag_sources,
             metadata={
                 "condition_key": condition.condition_key,
@@ -173,18 +177,19 @@ class ChatService:
                     "dialogue_move": interaction_metadata.get("dialogue_move"),
                     "scaffold_level": interaction_metadata.get("scaffold_level"),
                     "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
+                    "fidelity_fallback_applied": interaction_metadata.get("fidelity_fallback_applied", False),
                 },
             )
         )
 
         return ChatResponse(
-            response=generation.response,
+            response=enforced_response.response,
             selected_persona=selected,
             assistant_name=assistant_name,
             message=model_message,
-            annotations=generation.annotations,
-            related_events=generation.related_events,
-            dynamic_context=generation.dynamic_context,
+            annotations=response_annotations,
+            related_events=response_related_events,
+            dynamic_context=response_dynamic_context,
             rag_sources=rag_sources,
         )
 

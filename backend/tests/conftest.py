@@ -101,8 +101,10 @@ class FakeLLMProvider:
     ) -> str:
         speaker = personas[0].name if condition.roleplay_enabled and personas else "AI Tutor"
         if condition.ebl_enabled:
-            return f"{speaker}：先回到你剛才的判斷。你當時是根據什麼理由作答？"
-        return f"{speaker}：正確答案是「原因」，因為這符合題目的核心史實。"
+            voice = "我想先回到" if condition.roleplay_enabled else "先回到"
+            return f"{speaker}：{voice}你剛才的判斷。你當時是根據什麼理由作答？"
+        voice = "我的判斷是：" if condition.roleplay_enabled else ""
+        return f"{speaker}：{voice}正確答案是「原因」，因為這符合題目的核心史實。"
 
     async def generate_chat_response(
         self,
@@ -117,8 +119,9 @@ class FakeLLMProvider:
         self.chat_prompts.append(prompt)
         speaker = persona.name if persona else "AI Tutor"
         if condition.ebl_enabled:
+            voice = "我請你" if persona else "請"
             response = (
-                f"{speaker}：請對照題目中的證據，你原本的答案支持哪一種因果解釋？"
+                f"{speaker}：{voice}對照題目中的證據，你原本的答案支持哪一種因果解釋？"
             )
             interaction_metadata = {
                 "dialogue_state": "INSPECT_EVIDENCE",
@@ -129,8 +132,9 @@ class FakeLLMProvider:
                 "fidelity_flags": [],
             }
         else:
+            voice = "我的直接回答" if persona else "直接回答"
             response = (
-                f"{speaker}：直接回答，{event.canonical_name} 的重要性在於它改變了制度與歷史發展。"
+                f"{speaker}：{voice}，{event.canonical_name} 的重要性在於它改變了制度與歷史發展。"
             )
             interaction_metadata = {
                 "dialogue_state": "DIRECT_RESPONSE",

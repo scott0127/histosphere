@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from app.api.deps import get_llm_provider, get_prompt_service, get_rag_pipeline, get_repository, get_session_service, require_admin_key
 from app.core.config import get_settings
 from app.core.experiment_conditions import sort_condition_codes
+from app.core.interaction_contract import build_interaction_runtime, enforce_interaction_response
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, Participant, Persona, ResearchLog
 from app.providers.llm.base import LLMProvider
@@ -255,6 +256,7 @@ async def prompt_dry_run(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active personas found")
 
     rag_sources = rag_pipeline.retrieve(event.id, request.sample_user_message)
+    interaction_runtime = build_interaction_runtime(condition, None, [])
     modules = prompt_service.assemble_chat_modules(
         event=event,
         persona=persona,
@@ -263,6 +265,7 @@ async def prompt_dry_run(
         user_message=request.sample_user_message,
         rag_sources=rag_sources,
         conversation_history=[],
+        interaction_runtime=interaction_runtime,
     )
     prompt = prompt_service.render_modules(modules)
     generation = await llm_provider.generate_chat_response(
@@ -274,6 +277,14 @@ async def prompt_dry_run(
         prompt=prompt,
         rag_sources=rag_sources,
     )
+    enforced_response = enforce_interaction_response(
+        interaction_runtime,
+        generation.interaction_metadata,
+        generation.response,
+    )
+    annotations = [] if enforced_response.fallback_applied else generation.annotations
+    related_events = [] if enforced_response.fallback_applied else generation.related_events
+    dynamic_context = "" if enforced_response.fallback_applied else generation.dynamic_context
     return AdminPromptDryRunResponse(
         event=event,
         condition=condition,
@@ -281,11 +292,11 @@ async def prompt_dry_run(
         sample_user_message=request.sample_user_message,
         modules=[PromptPreviewModule(name=module.name, content=module.content) for module in modules],
         prompt=prompt,
-        response=generation.response,
-        annotations=generation.annotations,
-        related_events=generation.related_events,
-        dynamic_context=generation.dynamic_context,
-        interaction_metadata=generation.interaction_metadata,
+        response=enforced_response.response,
+        annotations=annotations,
+        related_events=related_events,
+        dynamic_context=dynamic_context,
+        interaction_metadata=enforced_response.metadata,
         rag_sources=rag_sources,
     )
 

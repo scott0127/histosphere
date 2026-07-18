@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, Sequence
 
@@ -47,6 +49,20 @@ QUESTION_RESULT_PRIORITY = {
     "ungraded": 3,
     "correct": 4,
 }
+FALLBACK_TRIGGER_FLAGS = frozenset(
+    {
+        "direct_question_present",
+        "direct_correction_missing",
+        "direct_correction_delayed",
+        "invalid_state_transition",
+        "invalid_dialogue_move",
+        "missing_scaffold_question",
+        "multiple_scaffold_questions",
+        "overlong_scaffold_response",
+        "early_answer_exposure",
+        "roleplay_first_person_missing",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -140,6 +156,15 @@ class InteractionRuntime:
             "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
             "not invent a source ID or quotation."
         )
+
+
+@dataclass(frozen=True)
+class EnforcedInteractionResponse:
+    """Learner-facing response after backend-owned fidelity enforcement."""
+
+    response: str
+    metadata: dict[str, Any]
+    fallback_applied: bool
 
 
 def _message_metadata(message: Any) -> dict[str, Any]:
@@ -333,6 +358,57 @@ def _scaffold_level(runtime: InteractionRuntime, state: str, raw_level: Any) -> 
     return SCAFFOLD_LEVELS[min(4, max(suggested_index, previous_index - 1, 0))]
 
 
+def _answer_text(value: Any) -> str:
+    if value is True:
+        return "是"
+    if value is False:
+        return "否"
+    return str(value).strip() if value is not None else ""
+
+
+def _contains_expected_answer(response_text: str, expected_answer: Any) -> bool:
+    answer = _answer_text(expected_answer)
+    if not answer:
+        return False
+    compact = re.sub(r"\s+", "", response_text)
+    if expected_answer is True:
+        return any(
+            marker in compact
+            for marker in ("答案是「是」", "正確答案是「是」", "判斷為真", "這個判斷正確")
+        )
+    if expected_answer is False:
+        return any(
+            marker in compact
+            for marker in ("答案是「否」", "正確答案是「否」", "判斷為假", "這個判斷不正確", "說法不成立")
+        )
+    if len(answer) >= 4:
+        return answer in response_text
+    return any(
+        marker in compact
+        for marker in (
+            f"「{answer}」",
+            f"『{answer}』",
+            f"答案是{answer}",
+            f"正確答案是{answer}",
+            f"應以{answer}",
+            f"按{answer}",
+            f"選擇{answer}",
+            f"填入{answer}",
+        )
+    )
+
+
+def _first_substantive_sentence(response_text: str) -> str:
+    for sentence in re.split(r"[。！？?!\n]+", response_text):
+        if sentence.strip():
+            return sentence.strip()
+    return ""
+
+
+def _uses_first_person(response_text: str) -> bool:
+    return any(marker in response_text for marker in ("我", "我們", "本人", "本席", "吾"))
+
+
 def resolve_interaction_metadata(
     runtime: InteractionRuntime,
     provider_metadata: dict[str, Any] | None,
@@ -340,11 +416,14 @@ def resolve_interaction_metadata(
 ) -> dict[str, Any]:
     """Validate model-proposed metadata against the backend-owned condition contract."""
     raw = provider_metadata if isinstance(provider_metadata, dict) else {}
-    flags = {
-        str(item)
-        for item in raw.get("fidelity_flags", [])
-        if isinstance(item, str) and item
-    }
+    provider_flags = sorted(
+        {
+            str(item)
+            for item in raw.get("fidelity_flags", [])
+            if isinstance(item, str) and item
+        }
+    )
+    flags: set[str] = set()
     target_metadata = runtime.target.as_metadata() if runtime.target else {
         "target_question_id": None,
         "target_correctness": None,
@@ -356,15 +435,18 @@ def resolve_interaction_metadata(
     }
 
     if runtime.interaction_mode == "direct":
-        if "？" in response_text or "?" in response_text:
+        if runtime.target and ("？" in response_text or "?" in response_text):
             flags.add("direct_question_present")
-        expected_text = (
-            str(runtime.target.expected_answer).strip()
-            if runtime.target and runtime.target.expected_answer is not None
-            else ""
-        )
-        if expected_text and expected_text not in response_text:
+        expected_answer = runtime.target.expected_answer if runtime.target else None
+        if expected_answer is not None and not _contains_expected_answer(response_text, expected_answer):
             flags.add("direct_correction_missing")
+        first_sentence = _first_substantive_sentence(response_text)
+        if (
+            expected_answer is not None
+            and _contains_expected_answer(response_text, expected_answer)
+            and not _contains_expected_answer(first_sentence, expected_answer)
+        ):
+            flags.add("direct_correction_delayed")
         return {
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "condition_code": runtime.condition_code,
@@ -376,6 +458,7 @@ def resolve_interaction_metadata(
             "learner_revision_status": raw.get("learner_revision_status") or "not_applicable",
             "completion_status": "complete",
             "fidelity_flags": sorted(flags),
+            "provider_fidelity_flags": provider_flags,
             **target_metadata,
         }
 
@@ -394,12 +477,14 @@ def resolve_interaction_metadata(
         flags.add("multiple_scaffold_questions")
     if len(response_text) > 700:
         flags.add("overlong_scaffold_response")
-    expected_text = (
-        str(runtime.target.expected_answer).strip()
-        if runtime.target and runtime.target.expected_answer is not None
-        else ""
-    )
-    if proposed_state != "RESOLVED" and expected_text and expected_text in response_text:
+    resolved_scaffold_level = _scaffold_level(runtime, proposed_state, raw.get("scaffold_level"))
+    expected_answer = runtime.target.expected_answer if runtime.target else None
+    if (
+        proposed_state != "RESOLVED"
+        and resolved_scaffold_level != "L4"
+        and expected_answer is not None
+        and _contains_expected_answer(response_text, expected_answer)
+    ):
         flags.add("early_answer_exposure")
 
     same_state = proposed_state == runtime.previous_state
@@ -415,17 +500,113 @@ def resolve_interaction_metadata(
         "interaction_mode": "scaffold",
         "dialogue_state": proposed_state,
         "dialogue_move": expected_move,
-        "scaffold_level": _scaffold_level(runtime, proposed_state, raw.get("scaffold_level")),
+        "scaffold_level": resolved_scaffold_level,
         "attempts_in_state": attempts_in_state,
         "learner_revision_status": revision_status,
         "completion_status": completion_status,
         "fidelity_flags": sorted(flags),
+        "provider_fidelity_flags": provider_flags,
         **target_metadata,
     }
 
 
-def initial_greeting_metadata(condition: Any, task_attempt: Any, greeting: str) -> dict[str, Any]:
-    """Mark the greeting as the first direct correction or EBL reasoning probe."""
+def _fallback_response(
+    runtime: InteractionRuntime,
+    metadata: dict[str, Any],
+) -> str:
+    target = runtime.target
+    expected = _answer_text(target.expected_answer) if target else ""
+    learner_answer = _answer_text(target.learner_answer) if target else ""
+    roleplay_prefix = "我先不替你下結論。" if runtime.roleplay_enabled else ""
+
+    if runtime.interaction_mode == "direct":
+        if expected:
+            lead = (
+                f"我的判斷是：正確答案是「{expected}」。"
+                if runtime.roleplay_enabled
+                else f"正確答案是「{expected}」。"
+            )
+            return f"{lead}這項修正依據題目提供的史實與脈絡。"
+        return (
+            "我的判斷是：這項說法需要依題目中的史實重新檢查。"
+            if runtime.roleplay_enabled
+            else "這項說法需要依題目中的史實重新檢查。"
+        )
+
+    state = str(metadata.get("dialogue_state") or EBL_INITIAL_STATE)
+    if state == "RESOLVED":
+        if expected:
+            return (
+                f"我的判斷是：你已完成修正，正確答案是「{expected}」。"
+                if runtime.roleplay_enabled
+                else f"你已完成修正，正確答案是「{expected}」。"
+            )
+        return "我認為這一項討論已完成。" if runtime.roleplay_enabled else "這一項討論已完成。"
+
+    answer_reference = f"「{learner_answer}」" if learner_answer else "原先的判斷"
+    if state == "INSPECT_EVIDENCE":
+        question = f"請回到題目提供的史實線索，哪一部分支持或削弱你原先的答案{answer_reference}？"
+    elif state == "CONTEXTUALIZE_OR_COMPARE":
+        question = f"若比較不同群體在這項安排下的權力，你原先的答案{answer_reference}會造成什麼差異？"
+    elif state == "REVISE_CLAIM":
+        question = f"根據前面檢視的理由與證據，你會如何重新表述原先的判斷{answer_reference}？"
+    elif state == "REFLECT":
+        question = "完成修正後，哪一項證據或比較最改變你的判斷？"
+    else:
+        question = f"你是根據哪一項史實或推理得出{answer_reference}？"
+    return f"{roleplay_prefix}{question}"
+
+
+def enforce_interaction_response(
+    runtime: InteractionRuntime,
+    provider_metadata: dict[str, Any] | None,
+    response_text: str,
+) -> EnforcedInteractionResponse:
+    """Replace contract-breaking model output before it reaches the learner."""
+    metadata = resolve_interaction_metadata(runtime, provider_metadata, response_text)
+    flags = set(metadata["fidelity_flags"])
+    if runtime.roleplay_enabled and not _uses_first_person(response_text):
+        flags.add("roleplay_first_person_missing")
+    metadata["fidelity_flags"] = sorted(flags)
+
+    if not flags.intersection(FALLBACK_TRIGGER_FLAGS):
+        metadata["fidelity_fallback_applied"] = False
+        return EnforcedInteractionResponse(
+            response=response_text,
+            metadata=metadata,
+            fallback_applied=False,
+        )
+
+    fallback = _fallback_response(runtime, metadata)
+    corrected_metadata = resolve_interaction_metadata(
+        runtime,
+        {
+            "dialogue_state": metadata["dialogue_state"],
+            "dialogue_move": metadata["dialogue_move"],
+            "scaffold_level": metadata["scaffold_level"],
+            "learner_revision_status": metadata["learner_revision_status"],
+            "completion_status": metadata["completion_status"],
+        },
+        fallback,
+    )
+    corrected_metadata["fidelity_flags"] = sorted(flags)
+    corrected_metadata["provider_fidelity_flags"] = metadata["provider_fidelity_flags"]
+    corrected_metadata["fidelity_fallback_applied"] = True
+    corrected_metadata["raw_response_sha256"] = hashlib.sha256(response_text.encode("utf-8")).hexdigest()
+    corrected_metadata["raw_response_length"] = len(response_text)
+    return EnforcedInteractionResponse(
+        response=fallback,
+        metadata=corrected_metadata,
+        fallback_applied=True,
+    )
+
+
+def enforce_initial_greeting(
+    condition: Any,
+    task_attempt: Any,
+    greeting: str,
+) -> EnforcedInteractionResponse:
+    """Enforce the first AI turn with the same contract as later chat turns."""
     runtime = build_interaction_runtime(condition, task_attempt, [])
     raw: dict[str, Any]
     if runtime.interaction_mode == "direct":
@@ -437,4 +618,9 @@ def initial_greeting_metadata(condition: Any, task_attempt: Any, greeting: str) 
             "scaffold_level": "L0",
             "learner_revision_status": "not_yet" if runtime.target else "revised",
         }
-    return resolve_interaction_metadata(runtime, raw, greeting)
+    return enforce_interaction_response(runtime, raw, greeting)
+
+
+def initial_greeting_metadata(condition: Any, task_attempt: Any, greeting: str) -> dict[str, Any]:
+    """Return enforced first-turn metadata for compatibility callers."""
+    return enforce_initial_greeting(condition, task_attempt, greeting).metadata
