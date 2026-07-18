@@ -11,6 +11,7 @@ from app.models.domain import ChatMessage, Conversation
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.providers.llm.base import LLMProvider
 from app.crud.protocols import RepositoryProtocol
+from app.core.interaction_contract import initial_greeting_metadata
 from app.services.session_runtime import expire_session_if_due
 
 
@@ -54,9 +55,18 @@ class ConversationService:
             conversation_id=conversation.id,
             persona_id=personas[0].id if condition and condition.roleplay_enabled and personas else None,
             speaker_type="persona" if condition and condition.roleplay_enabled and personas else "assistant",
-            speaker_name=personas[0].name if condition and condition.roleplay_enabled and personas else "AI Assistant",
+            speaker_name=(
+                personas[0].name
+                if condition and condition.roleplay_enabled and personas
+                else ("AI Tutor" if condition and condition.ebl_enabled else "AI Assistant")
+            ),
             sequence_index=self.repository.next_message_sequence(conversation.id),
             content=greeting,
+            metadata=(
+                initial_greeting_metadata(condition, attempt, greeting)
+                if condition and attempt
+                else {}
+            ),
         )
         self.repository.add_message(greeting_message)
         return ConversationCreateResponse(

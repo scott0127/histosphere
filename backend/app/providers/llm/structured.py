@@ -7,7 +7,7 @@
 失敗時會自動觸發 repair prompt 重試。
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -88,6 +88,21 @@ class PersonaListPayload(BaseModel):
     personas: list[GeneratedPersonaPayload] = Field(default_factory=list, min_length=1)
 
 
+class QuestionJudgementPayload(BaseModel):
+    """Optional LLM classification for one task question."""
+
+    question_id: str
+    learner_answer: Any = None
+    correctness: Literal["correct", "partial", "incorrect", "unanswered", "ungraded"]
+    expected_answer: Any = None
+    error_code: str | None = None
+    historical_concept: str | None = None
+    reasoning_process: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    classifier_confidence: float | None = None
+    teacher_review_status: str = "unreviewed"
+
+
 class TaskJudgementPayload(BaseModel):
     """Task 作答的輕量判斷結果。
 
@@ -106,6 +121,7 @@ class TaskJudgementPayload(BaseModel):
     feedback: str
     score: float | None = None
     provider: str = "litellm"
+    question_results: list[QuestionJudgementPayload] = Field(default_factory=list)
 
 
 class ChatOutputPayload(BaseModel):
@@ -125,3 +141,17 @@ class ChatOutputPayload(BaseModel):
     annotations: list[dict] = Field(default_factory=list)
     related_events: list[dict] = Field(default_factory=list)
     dynamic_context: str = ""
+    dialogue_state: Literal[
+        "DIRECT_RESPONSE",
+        "ELICIT_REASONING",
+        "INSPECT_EVIDENCE",
+        "CONTEXTUALIZE_OR_COMPARE",
+        "REVISE_CLAIM",
+        "REFLECT",
+        "RESOLVED",
+    ] | None = None
+    dialogue_move: str | None = None
+    scaffold_level: Literal["L0", "L1", "L2", "L3", "L4"] | None = None
+    learner_revision_status: Literal["not_yet", "partial", "revised", "unresolved", "not_applicable"] | None = None
+    completion_status: Literal["continue", "resolved", "complete"] | None = None
+    fidelity_flags: list[str] = Field(default_factory=list)

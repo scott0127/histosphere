@@ -12,7 +12,9 @@ from app.schemas.responses import (
     TaskSubmissionStatusResponse,
     TaskSubmitResponse,
 )
+from app.core.interaction_contract import initial_greeting_metadata
 from app.services.session_runtime import expire_session_if_due
+from app.services.task_judgement import enrich_task_judgement
 
 
 class TaskService:
@@ -115,6 +117,7 @@ class TaskService:
                 raise RuntimeError("Experiment condition is missing")
 
             judgement = await self.llm_provider.judge_task_attempt(event, task, attempt.response_payload)
+            judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
             attempt.status = "submitted"
             attempt.judgement_payload = judgement
             attempt.submitted_at = utc_now()
@@ -271,6 +274,7 @@ class TaskService:
                 "condition_key": condition.condition_key,
                 "task_attempt_id": attempt.id,
                 "judgement": attempt.judgement_payload,
+                **initial_greeting_metadata(condition, attempt, greeting),
             },
         )
         return self.repository.add_message(message)

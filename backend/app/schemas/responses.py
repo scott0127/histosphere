@@ -269,6 +269,7 @@ class AdminPromptDryRunResponse(AdminPromptPreviewResponse):
     annotations: list[Annotation] = Field(default_factory=list)
     related_events: list[RelatedEvent] = Field(default_factory=list)
     dynamic_context: str = ""
+    interaction_metadata: dict = Field(default_factory=dict)
     rag_sources: list[RagSource] = Field(default_factory=list)
 
 

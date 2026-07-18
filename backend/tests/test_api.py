@@ -255,16 +255,53 @@ def test_chat_policy_matrix(client):
         assert chat.status_code == 200
         payload = chat.json()
         assert payload["response"]
+        greeting = submitted["greeting"]
         if initialized["condition"]["roleplay_enabled"]:
             assert payload["selected_persona"]
             assert payload["message"]["speaker_type"] == "persona"
+            assert initialized["personas"][0]["name"] in greeting
         else:
             assert payload["selected_persona"] is None
             assert payload["message"]["speaker_type"] == "assistant"
         if initialized["condition"]["response_policy"] == "scaffold":
             assert payload["message"]["metadata"]["response_policy"] == "scaffold"
+            assert "正確答案是" not in greeting
+            assert greeting.count("？") == 1
+            assert "正確答案是" not in payload["response"]
+            assert payload["response"].count("？") == 1
+            assert payload["message"]["metadata"]["interaction_mode"] == "scaffold"
+            assert payload["message"]["metadata"]["dialogue_state"] in {
+                "ELICIT_REASONING",
+                "INSPECT_EVIDENCE",
+            }
+            assert payload["message"]["metadata"]["dialogue_move"] in {
+                "reasoning_probe",
+                "evidence_probe",
+            }
+            assert payload["message"]["metadata"]["scaffold_level"] in {
+                "L0",
+                "L1",
+                "L2",
+                "L3",
+                "L4",
+            }
         else:
             assert payload["message"]["metadata"]["response_policy"] == "direct"
+            assert "正確答案是" in greeting
+            assert "？" not in greeting
+            assert "直接回答" in payload["response"]
+            assert "？" not in payload["response"]
+            assert payload["message"]["metadata"]["interaction_mode"] == "direct"
+            assert payload["message"]["metadata"]["dialogue_state"] == "DIRECT_RESPONSE"
+            assert payload["message"]["metadata"]["dialogue_move"] == "direct_correction"
+            assert payload["message"]["metadata"]["scaffold_level"] is None
+            assert payload["message"]["metadata"]["target_question_id"] is None
+
+        assert payload["message"]["metadata"]["interaction_policy_version"] == "2x2-interaction-v1"
+        if initialized["condition"]["response_policy"] == "scaffold":
+            assert payload["message"]["metadata"]["target_question_id"] == "q01"
+        assert "interaction_runtime" in payload["message"]["metadata"]["prompt_modules"]
+        assert payload["message"]["metadata"]["fidelity_flags"] == []
 
         loaded = client.get(f"/api/conversations/{submitted['conversation_id']}")
         messages = loaded.json()["messages"]

@@ -24,6 +24,7 @@ from app.models.domain import (
     WikiSource,
 )
 from app.providers.llm.json_runner import LLMJsonRunner
+from app.providers.llm.base import ChatGenerationResult
 from app.providers.llm.structured import (
     ChatOutputPayload,
     EventProfilePayload,
@@ -33,21 +34,24 @@ from app.providers.llm.structured import (
 )
 
 
-BACKEND_SYSTEM_PROMPTS = {
-    "no_ebl_no_roleplay": (
-        "Do not role-play as a historical figure. Keep answers concise, historically grounded, and transparent about uncertainty."
+BACKEND_IDENTITY_PROMPTS = {
+    "generic": (
+        "Use a neutral generic AI tutor identity. Do not impersonate a historical figure or claim first-person participation."
     ),
-    "ebl_no_roleplay": (
-        "Use Error-Based Learning scaffolding. Treat mistakes as productive entry points for reflection and historical reasoning."
-    ),
-    "no_ebl_roleplay": (
-        "Speak from the selected persona perspective while preserving historical boundaries. Do not invent facts beyond available context."
-    ),
-    "ebl_roleplay": (
-        "Combine persona role-play with Error-Based Learning scaffolding. Maintain persona voice, historical accuracy, and reflective guidance."
+    "persona": (
+        "Use the selected historical persona identity in first person while preserving temporal, geographic, social, and knowledge boundaries."
     ),
 }
-"""各 2x2 實驗條件對應的 LLM system prompt 補充指令。"""
+BACKEND_INTERACTION_PROMPTS = {
+    "direct": (
+        "Give the correction or answer immediately, then a concise historical explanation. Do not delay with Socratic scaffolding."
+    ),
+    "scaffold": (
+        "Use the backend-selected EBL move. Treat the learner error as a productive starting point, ask at most one focused question, "
+        "and do not reveal the complete correction before resolution."
+    ),
+}
+"""Independent identity and interaction modules used by greeting generation."""
 
 
 class LiteLLMProvider:
@@ -175,7 +179,10 @@ class LiteLLMProvider:
                 "Judge the learner response for this historical thinking task.\n"
                 "Use result = correct, partial, or incorrect. Do not over-grade vague answers.\n"
                 "Focus on historical accuracy, evidence use, causal reasoning, and learner misconceptions.\n"
-                "Return JSON with keys: result, misconception_summary, feedback, score, provider.\n\n"
+                "Return JSON with keys: result, misconception_summary, feedback, score, provider, and question_results. "
+                "question_results must contain one object per task question with question_id, learner_answer, correctness, "
+                "expected_answer, error_code, historical_concept, reasoning_process, evidence_ids, classifier_confidence, "
+                "and teacher_review_status. Use unclassified when an error type is uncertain.\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Task:\n{task.model_dump()}\n\n"
                 f"Learner response payload:\n{response_payload}"
@@ -259,15 +266,35 @@ class LiteLLMProvider:
         Returns:
             str: 開場白文字。
         """
-        persona = personas[0] if personas else None
+        persona = personas[0] if condition.roleplay_enabled and personas else None
+        if condition.ebl_enabled:
+            interaction_instruction = (
+                "Select one incorrect, partial, or unanswered task item. Do not reveal its complete expected answer. "
+                "Ask exactly one focused question that elicits the learner's original reasoning. "
+                "Set dialogue_state=ELICIT_REASONING, dialogue_move=reasoning_probe, scaffold_level=L0, "
+                "learner_revision_status=not_yet, and completion_status=continue."
+            )
+        else:
+            interaction_instruction = (
+                "Select one incorrect, partial, or unanswered task item and state its correction immediately, followed "
+                "by a concise explanation. Do not delay with a Socratic question. Set dialogue_state=DIRECT_RESPONSE, "
+                "dialogue_move=direct_correction, scaffold_level=null, learner_revision_status=not_applicable, "
+                "and completion_status=complete."
+            )
+        identity_instruction = (
+            "Speak in first person as the selected historical persona, within the supplied knowledge boundary."
+            if condition.roleplay_enabled
+            else "Use a neutral generic AI tutor voice and never impersonate a historical person."
+        )
         payload = await self.runner.run_json(
             schema=ChatOutputPayload,
             task_name="generate_greeting",
             system_prompt=self._system_prompt(condition),
             user_prompt=(
                 "Generate a concise opening message after the learner submitted the task.\n"
-                "If roleplay is enabled, speak as the historical persona. If EBL is enabled, guide reflection without giving answers too quickly.\n"
-                "Return JSON with keys: response, annotations, related_events, dynamic_context.\n\n"
+                f"{identity_instruction}\n"
+                f"{interaction_instruction}\n"
+                "Return the full ChatOutputPayload JSON, including fidelity_flags.\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Condition:\n{condition.model_dump()}\n\n"
                 f"Persona:\n{persona.model_dump() if persona else None}\n\n"
@@ -285,7 +312,7 @@ class LiteLLMProvider:
         user_message: str,
         prompt: str,
         rag_sources: list[RagSource],
-    ) -> tuple[str, list[Annotation], list[RelatedEvent], str]:
+    ) -> ChatGenerationResult:
         """依組裝好的 prompt 產生聊天回覆。
 
         尊重 role-play 邊界與 EBL/direct-answer 策略，
@@ -301,7 +328,7 @@ class LiteLLMProvider:
             rag_sources: RAG 檢索結果。
 
         Returns:
-            tuple: (response, annotations, related_events, dynamic_context)。
+            ChatGenerationResult: Visible response plus hidden interaction metadata。
         """
         payload = await self.runner.run_json(
             schema=ChatOutputPayload,
@@ -311,7 +338,7 @@ class LiteLLMProvider:
                 "Respond to the learner according to the provided prompt modules.\n"
                 "Respect role-play boundaries and EBL/direct-answer policy.\n"
                 "Use Traditional Chinese unless the user asks otherwise. English terms are allowed only when useful.\n"
-                "Return JSON with keys: response, annotations, related_events, dynamic_context.\n\n"
+                "Return the full ChatOutputPayload JSON. interaction fields must match the interaction_runtime module.\n\n"
                 f"Prompt modules:\n{prompt}\n\n"
                 f"User message:\n{user_message}"
             ),
@@ -335,7 +362,20 @@ class LiteLLMProvider:
             for item in payload.related_events
             if isinstance(item, dict) and item.get("event_name")
         ]
-        return payload.response, annotations, related_events, payload.dynamic_context
+        return ChatGenerationResult(
+            response=payload.response,
+            annotations=annotations,
+            related_events=related_events,
+            dynamic_context=payload.dynamic_context,
+            interaction_metadata={
+                "dialogue_state": payload.dialogue_state,
+                "dialogue_move": payload.dialogue_move,
+                "scaffold_level": payload.scaffold_level,
+                "learner_revision_status": payload.learner_revision_status,
+                "completion_status": payload.completion_status,
+                "fidelity_flags": payload.fidelity_flags,
+            },
+        )
 
     # ── Internal helpers ───────────────────────────────────────
 
@@ -361,10 +401,13 @@ class LiteLLMProvider:
         )
         if not condition:
             return base_prompt
-        condition_system_prompt = BACKEND_SYSTEM_PROMPTS.get(condition.condition_key, "").strip()
-        if not condition_system_prompt:
-            return base_prompt
-        return f"{base_prompt}\n\n[backend_condition_system_prompt]\n{condition_system_prompt}"
+        identity_prompt = BACKEND_IDENTITY_PROMPTS[condition.agent_mode]
+        interaction_prompt = BACKEND_INTERACTION_PROMPTS[condition.response_policy]
+        return (
+            f"{base_prompt}\n\n"
+            f"[independent_1_prompt]\n{identity_prompt}\n\n"
+            f"[independent_2_prompt]\n{interaction_prompt}"
+        )
 
     def _provider_metadata(self) -> dict[str, str]:
         """取得最近一次成功呼叫的 provider/model metadata。

@@ -265,7 +265,7 @@ async def prompt_dry_run(
         conversation_history=[],
     )
     prompt = prompt_service.render_modules(modules)
-    response, annotations, related_events, dynamic_context = await llm_provider.generate_chat_response(
+    generation = await llm_provider.generate_chat_response(
         event=event,
         persona=persona,
         condition=condition,
@@ -281,10 +281,11 @@ async def prompt_dry_run(
         sample_user_message=request.sample_user_message,
         modules=[PromptPreviewModule(name=module.name, content=module.content) for module in modules],
         prompt=prompt,
-        response=response,
-        annotations=annotations,
-        related_events=related_events,
-        dynamic_context=dynamic_context,
+        response=generation.response,
+        annotations=generation.annotations,
+        related_events=generation.related_events,
+        dynamic_context=generation.dynamic_context,
+        interaction_metadata=generation.interaction_metadata,
         rag_sources=rag_sources,
     )
 

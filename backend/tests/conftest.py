@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.main import create_app
 from app.models.domain import Event, EventTask, ExperimentCondition, Participant, Persona, RagSource, TaskAttempt, WikiSource
+from app.providers.llm.base import ChatGenerationResult
 
 
 class FakeWikipediaProvider:
@@ -99,7 +100,9 @@ class FakeLLMProvider:
         attempt: TaskAttempt,
     ) -> str:
         speaker = personas[0].name if condition.roleplay_enabled and personas else "AI Tutor"
-        return f"{speaker}：我們來討論 {event.canonical_name}。"
+        if condition.ebl_enabled:
+            return f"{speaker}：先回到你剛才的判斷。你當時是根據什麼理由作答？"
+        return f"{speaker}：正確答案是「原因」，因為這符合題目的核心史實。"
 
     async def generate_chat_response(
         self,
@@ -110,14 +113,38 @@ class FakeLLMProvider:
         user_message: str,
         prompt: str,
         rag_sources: list[RagSource],
-    ) -> tuple[str, list, list, str]:
+    ) -> ChatGenerationResult:
         self.chat_prompts.append(prompt)
         speaker = persona.name if persona else "AI Tutor"
-        return (
-            f"{speaker} 回覆：{event.canonical_name} 的測試回答。",
-            [],
-            [],
-            "fake dynamic context",
+        if condition.ebl_enabled:
+            response = (
+                f"{speaker}：請對照題目中的證據，你原本的答案支持哪一種因果解釋？"
+            )
+            interaction_metadata = {
+                "dialogue_state": "INSPECT_EVIDENCE",
+                "dialogue_move": "evidence_probe",
+                "scaffold_level": "L1",
+                "learner_revision_status": "not_yet",
+                "completion_status": "continue",
+                "fidelity_flags": [],
+            }
+        else:
+            response = (
+                f"{speaker}：直接回答，{event.canonical_name} 的重要性在於它改變了制度與歷史發展。"
+            )
+            interaction_metadata = {
+                "dialogue_state": "DIRECT_RESPONSE",
+                "dialogue_move": "direct_correction",
+                "learner_revision_status": "not_applicable",
+                "completion_status": "complete",
+                "fidelity_flags": [],
+            }
+        return ChatGenerationResult(
+            response=response,
+            annotations=[],
+            related_events=[],
+            dynamic_context="fake dynamic context",
+            interaction_metadata=interaction_metadata,
         )
 
 

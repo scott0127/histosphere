@@ -5,6 +5,7 @@
 使得測試可替換為 mock，production 則使用 LiteLLMProvider。
 """
 
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.models.domain import (
@@ -18,6 +19,17 @@ from app.models.domain import (
     TaskAttempt,
     WikiSource,
 )
+
+
+@dataclass
+class ChatGenerationResult:
+    """Validated chat completion plus non-visible interaction metadata."""
+
+    response: str
+    annotations: list[Annotation] = field(default_factory=list)
+    related_events: list[RelatedEvent] = field(default_factory=list)
+    dynamic_context: str = ""
+    interaction_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class LLMProvider(Protocol):
@@ -112,7 +124,7 @@ class LLMProvider(Protocol):
         user_message: str,
         prompt: str,
         rag_sources: list[RagSource],
-    ) -> tuple[str, list[Annotation], list[RelatedEvent], str]:
+    ) -> ChatGenerationResult:
         """依組裝好的 prompt 產生聊天回覆。
 
         Args:
@@ -125,6 +137,6 @@ class LLMProvider(Protocol):
             rag_sources: RAG 檢索結果。
 
         Returns:
-            tuple: (response, annotations, related_events, dynamic_context)。
+            ChatGenerationResult: Learner-facing response and validated metadata。
         """
         ...

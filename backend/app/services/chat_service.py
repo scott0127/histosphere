@@ -10,6 +10,7 @@ import json
 
 from fastapi import HTTPException, status
 
+from app.core.interaction_contract import build_interaction_runtime, resolve_interaction_metadata
 from app.models.domain import ChatMessage, ResearchLog
 from app.schemas.requests import ChatRequest
 from app.schemas.responses import ChatResponse
@@ -95,6 +96,7 @@ class ChatService:
 
         # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
         rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
+        interaction_runtime = build_interaction_runtime(condition, task_attempt, prior_messages)
         modules = self.prompt_service.assemble_chat_modules(
             event=event,
             persona=selected,
@@ -103,9 +105,10 @@ class ChatService:
             user_message=request.user_message,
             rag_sources=rag_sources,
             conversation_history=prior_messages,
+            interaction_runtime=interaction_runtime,
         )
         prompt = self.prompt_service.render_modules(modules)
-        response_text, annotations, related_events, dynamic_context = await self.llm_provider.generate_chat_response(
+        generation = await self.llm_provider.generate_chat_response(
             event=event,
             persona=selected,
             condition=condition,
@@ -113,6 +116,11 @@ class ChatService:
             user_message=request.user_message,
             prompt=prompt,
             rag_sources=rag_sources,
+        )
+        interaction_metadata = resolve_interaction_metadata(
+            interaction_runtime,
+            generation.interaction_metadata,
+            generation.response,
         )
 
         assistant_name = self._assistant_name(condition, selected)
@@ -128,8 +136,8 @@ class ChatService:
             speaker_name=assistant_name,
             persona_id=selected.id if selected else None,
             sequence_index=self.repository.next_message_sequence(conversation.id),
-            content=response_text,
-            annotations=annotations,
+            content=generation.response,
+            annotations=generation.annotations,
             rag_sources=rag_sources,
             metadata={
                 "condition_key": condition.condition_key,
@@ -141,6 +149,7 @@ class ChatService:
                 "history_message_count": len(prior_messages),
                 "persona_profile_contract": profile_payload.get("contract_version") if selected else None,
                 "persona_profile_hash": profile_hash if selected else None,
+                **interaction_metadata,
                 **self._llm_metadata(),
             },
         )
@@ -159,18 +168,23 @@ class ChatService:
                     "condition_key": condition.condition_key,
                     "speaker_name": assistant_name,
                     "response_policy": condition.response_policy,
+                    "target_question_id": interaction_metadata.get("target_question_id"),
+                    "dialogue_state": interaction_metadata.get("dialogue_state"),
+                    "dialogue_move": interaction_metadata.get("dialogue_move"),
+                    "scaffold_level": interaction_metadata.get("scaffold_level"),
+                    "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
                 },
             )
         )
 
         return ChatResponse(
-            response=response_text,
+            response=generation.response,
             selected_persona=selected,
             assistant_name=assistant_name,
             message=model_message,
-            annotations=annotations,
-            related_events=related_events,
-            dynamic_context=dynamic_context,
+            annotations=generation.annotations,
+            related_events=generation.related_events,
+            dynamic_context=generation.dynamic_context,
             rag_sources=rag_sources,
         )
 
