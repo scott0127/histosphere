@@ -65,7 +65,7 @@ class PromptService:
             self._module("independent_1_prompt", self._independent_1_prompt(persona, condition)),
             self._module("independent_2_prompt", self._independent_2_prompt(condition)),
             self._module("event_context", self._event_context(event)),
-            self._module("learner_task", self._learner_task_context(task_attempt)),
+            self._module("learner_task", self._learner_task_context(task_attempt, runtime)),
             self._module("interaction_runtime", runtime.prompt_block()),
             self._module("conversation_history", self._conversation_history(history)),
             self._module("persona_context", self._persona_context(persona, condition)),
@@ -108,8 +108,10 @@ class PromptService:
             return (
                 "Interaction mode: EBL historical-thinking scaffold. The backend runtime selects one task item and the "
                 "only allowed dialogue states. Treat that learner response as the productive starting point. Execute one "
-                "runtime-selected move, ask at most one focused question, and do not discuss another error in the same reply. "
-                "Do not reveal the complete correction before RESOLVED unless the runtime has escalated support to L4."
+                "primary runtime-selected historical-reasoning move. Express it through a cue, evidence pointer, contrast, "
+                "sentence stem, or zero to two tightly related questions as appropriate; do not turn every turn into an "
+                "interview. Keep one error in focus until it is resolved, then bridge to the next unresolved error. Do not "
+                "reveal the complete correction before RESOLVED unless the runtime has escalated support to L4."
             )
         return (
             "Interaction mode: direct. State the correction or answer in the first substantive sentence, then provide "
@@ -129,20 +131,28 @@ class PromptService:
         )
 
     @staticmethod
-    def _learner_task_context(task_attempt: TaskAttempt | None) -> str:
+    def _learner_task_context(
+        task_attempt: TaskAttempt | None,
+        runtime: InteractionRuntime,
+    ) -> str:
         if not task_attempt:
             return "No task attempt is attached."
         judgement = task_attempt.judgement_payload if isinstance(task_attempt.judgement_payload, dict) else {}
         question_results = judgement.get("question_results")
+        target_id = runtime.target.question_id if runtime.target else None
+        selected_results = [
+            result
+            for result in question_results or []
+            if isinstance(result, dict) and result.get("question_id") == target_id
+        ]
         compact_judgement = {
             "result": judgement.get("result"),
-            "misconception_summary": judgement.get("misconception_summary"),
-            "question_results": question_results if isinstance(question_results, list) else [],
+            "selected_question_results": selected_results,
         }
         return (
-            "The learner has already seen an inline right/wrong review. Use the per-question facts only as discussion "
-            "context. Do not repeat the full task summary and do not present more than the runtime-selected item.\n"
-            f"Response payload: {json.dumps(task_attempt.response_payload, ensure_ascii=False)}\n"
+            "The learner has already seen an inline right/wrong review. This module intentionally contains only the "
+            "runtime-selected item so the completion cannot drift into another task error. Do not repeat the full task "
+            "summary. The interaction_runtime module is authoritative for the current and next target.\n"
             f"Judgement: {json.dumps(compact_judgement, ensure_ascii=False)}"
         )
 

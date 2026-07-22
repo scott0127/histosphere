@@ -6,6 +6,7 @@ from app.core.interaction_contract import (
     initial_greeting_metadata,
     resolve_interaction_metadata,
 )
+from app.core.historical_ebl_policy import HISTORICAL_EBL_POLICY_VERSION
 from app.models.domain import ChatMessage, ExperimentCondition, TaskAttempt
 
 
@@ -46,6 +47,34 @@ def _attempt() -> TaskAttempt:
     )
 
 
+def _multi_error_attempt() -> TaskAttempt:
+    attempt = _attempt()
+    attempt.judgement_payload["question_results"].extend(
+        [
+            {
+                "question_id": "q02",
+                "prompt": "財政危機如何影響革命爆發？",
+                "source_text": "王室債務與稅制不平等削弱政府財政。",
+                "learner_answer": "完全沒有影響",
+                "expected_answer": "加劇政治與社會危機",
+                "correctness": "partial",
+                "error_code": "causal_oversimplification",
+                "historical_concept": "cause_and_consequence",
+                "reasoning_process": "argumentation",
+                "evidence_ids": ["E05"],
+            },
+            {
+                "question_id": "q03",
+                "prompt": "巴士底監獄位於巴黎。",
+                "learner_answer": True,
+                "expected_answer": True,
+                "correctness": "correct",
+            },
+        ]
+    )
+    return attempt
+
+
 def test_direct_cells_force_immediate_response_metadata():
     for code in ("01", "03"):
         condition = _condition(code)
@@ -63,6 +92,7 @@ def test_direct_cells_force_immediate_response_metadata():
         assert metadata["dialogue_move"] == "direct_correction"
         assert metadata["scaffold_level"] is None
         assert metadata["target_question_id"] == "q01"
+        assert metadata["historical_ebl_policy_version"] == HISTORICAL_EBL_POLICY_VERSION
 
 
 def test_ebl_cells_share_the_same_state_contract():
@@ -98,6 +128,11 @@ def test_ebl_cells_share_the_same_state_contract():
     assert metadata_by_code["02"]["dialogue_move"] == metadata_by_code["04"]["dialogue_move"]
     assert metadata_by_code["02"]["target_question_id"] == metadata_by_code["04"]["target_question_id"]
     assert metadata_by_code["02"]["scaffold_level"] == metadata_by_code["04"]["scaffold_level"]
+    assert (
+        metadata_by_code["02"]["primary_historical_thinking_move"]
+        == metadata_by_code["04"]["primary_historical_thinking_move"]
+        == "inspect_source_or_task_evidence"
+    )
 
 
 def test_invalid_ebl_transition_is_blocked_and_flagged():
@@ -158,6 +193,105 @@ def test_resolved_error_does_not_open_correct_items_as_new_targets():
 
     assert runtime.target is None
     assert runtime.allowed_states == ("RESOLVED",)
+
+
+def test_ebl_advances_to_the_next_error_and_resets_the_scaffold():
+    condition = _condition("02")
+    attempt = _multi_error_attempt()
+    first_runtime = build_interaction_runtime(condition, attempt, [])
+
+    assert first_runtime.target.question_id == "q01"
+    assert first_runtime.next_target.question_id == "q02"
+    assert first_runtime.target_sequence_number == 1
+    assert first_runtime.target_count == 2
+
+    resolved_first = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="你已完成第一項修正。接著看下一項，先說明你原先的因果判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "next_target_question_id": "q02",
+            "next_target_started": True,
+            "dialogue_state": "RESOLVED",
+            "scaffold_level": "L4",
+            "attempts_in_state": 3,
+            "completion_status": "resolved",
+        },
+    )
+    second_runtime = build_interaction_runtime(condition, attempt, [resolved_first])
+
+    assert second_runtime.target.question_id == "q02"
+    assert second_runtime.next_target is None
+    assert second_runtime.target_sequence_number == 2
+    assert second_runtime.target_count == 2
+    assert second_runtime.previous_state == "ELICIT_REASONING"
+    assert second_runtime.allowed_states == ("ELICIT_REASONING", "INSPECT_EVIDENCE")
+    assert second_runtime.previous_scaffold_level == "L0"
+    assert second_runtime.previous_attempts_in_state == 0
+
+    resolved_second = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="第二項也已完成修正。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q02",
+            "dialogue_state": "RESOLVED",
+            "completion_status": "resolved",
+        },
+    )
+    completed_runtime = build_interaction_runtime(
+        condition,
+        attempt,
+        [resolved_first, resolved_second],
+    )
+
+    assert completed_runtime.target is None
+    assert completed_runtime.allowed_states == ("RESOLVED",)
+
+
+def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
+    condition = _condition("02")
+    attempt = _multi_error_attempt()
+    reflected = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="比較修正前後的理由，指出哪項證據改變了你的判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "reflection_prompt",
+            "scaffold_level": "L3",
+            "attempts_in_state": 0,
+            "completion_status": "continue",
+        },
+    )
+    runtime = build_interaction_runtime(condition, attempt, [reflected])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "RESOLVED",
+            "dialogue_move": "resolution",
+            "scaffold_level": "L4",
+            "learner_revision_status": "revised",
+        },
+        "你已完成這一項修正，正確答案是「按人數」。",
+    )
+
+    assert enforced.fallback_applied is True
+    assert "next_target_transition_missing" in enforced.metadata["fidelity_flags"]
+    assert enforced.metadata["next_target_question_id"] == "q02"
+    assert enforced.metadata["next_target_started"] is True
+    assert "接著" in enforced.response
+    assert "財政危機如何影響革命爆發" in enforced.response
+    assert "加劇政治與社會危機" not in enforced.response
 
 
 def test_direct_follow_up_no_longer_repeats_task_correction():
@@ -273,13 +407,13 @@ def test_ebl_answer_leak_is_replaced_before_reaching_the_learner():
 
     assert enforced.fallback_applied is True
     assert "按人數" not in enforced.response
-    assert enforced.response.count("？") == 1
+    assert enforced.response.count("？") == 0
     assert "early_answer_exposure" in enforced.metadata["fidelity_flags"]
     assert enforced.metadata["raw_response_length"] == len(raw_response)
     assert len(enforced.metadata["raw_response_sha256"]) == 64
 
 
-def test_ebl_multiple_questions_are_replaced_with_one_question():
+def test_ebl_accepts_an_implicit_scaffold_without_a_question():
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
 
     enforced = enforce_interaction_response(
@@ -289,12 +423,47 @@ def test_ebl_multiple_questions_are_replaced_with_one_question():
             "dialogue_move": "reasoning_probe",
             "scaffold_level": "L0",
         },
-        "你為什麼這樣想？你能提出證據嗎？",
+        "先把你原先的判斷與作答理由說成一句完整的話。",
+    )
+
+    assert enforced.fallback_applied is False
+    assert enforced.response.count("？") == 0
+    assert enforced.metadata["primary_historical_thinking_move"] == "make_initial_claim_and_reasoning_visible"
+
+
+def test_ebl_accepts_two_tightly_related_questions_for_one_reasoning_move():
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "scaffold_level": "L0",
+        },
+        "你原先主張按等級表決的理由是什麼？這個理由依據題目中的哪項線索？",
+    )
+
+    assert enforced.fallback_applied is False
+    assert enforced.response.count("？") == 2
+
+
+def test_ebl_replaces_an_unfocused_question_checklist():
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "scaffold_level": "L0",
+        },
+        "你為什麼這樣想？有什麼證據？當時背景是什麼？還有誰的觀點？",
     )
 
     assert enforced.fallback_applied is True
-    assert enforced.response.count("？") == 1
-    assert "multiple_scaffold_questions" in enforced.metadata["fidelity_flags"]
+    assert enforced.response.count("？") == 0
+    assert "excessive_scaffold_questions" in enforced.metadata["fidelity_flags"]
 
 
 def test_direct_missing_correction_is_replaced_with_the_answer():

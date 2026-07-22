@@ -9,6 +9,13 @@ from dataclasses import dataclass
 from typing import Any, Literal, Sequence
 
 from app.core.experiment_conditions import condition_code_for_key
+from app.core.historical_ebl_policy import (
+    HISTORICAL_EBL_MOVES,
+    HISTORICAL_EBL_POLICY_VERSION,
+    MAX_FOCUSED_QUESTIONS_PER_TURN,
+    historical_thinking_focus,
+    primary_reasoning_move,
+)
 
 
 InteractionMode = Literal["direct", "scaffold"]
@@ -22,7 +29,7 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v1"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v2"
 EBL_INITIAL_STATE: DialogueState = "ELICIT_REASONING"
 EBL_STATE_TRANSITIONS: dict[str, tuple[DialogueState, ...]] = {
     "ELICIT_REASONING": ("ELICIT_REASONING", "INSPECT_EVIDENCE"),
@@ -34,21 +41,12 @@ EBL_STATE_TRANSITIONS: dict[str, tuple[DialogueState, ...]] = {
 }
 DIALOGUE_MOVE_BY_STATE: dict[str, str] = {
     "DIRECT_RESPONSE": "direct_correction",
-    "ELICIT_REASONING": "reasoning_probe",
-    "INSPECT_EVIDENCE": "evidence_probe",
-    "CONTEXTUALIZE_OR_COMPARE": "context_or_comparison_probe",
-    "REVISE_CLAIM": "revision_prompt",
-    "REFLECT": "reflection_prompt",
-    "RESOLVED": "resolution",
+    **{
+        state: policy.dialogue_move
+        for state, policy in HISTORICAL_EBL_MOVES.items()
+    },
 }
 SCAFFOLD_LEVELS = ("L0", "L1", "L2", "L3", "L4")
-QUESTION_RESULT_PRIORITY = {
-    "incorrect": 0,
-    "partial": 1,
-    "unanswered": 2,
-    "ungraded": 3,
-    "correct": 4,
-}
 FALLBACK_TRIGGER_FLAGS = frozenset(
     {
         "direct_question_present",
@@ -56,10 +54,10 @@ FALLBACK_TRIGGER_FLAGS = frozenset(
         "direct_correction_delayed",
         "invalid_state_transition",
         "invalid_dialogue_move",
-        "missing_scaffold_question",
-        "multiple_scaffold_questions",
+        "excessive_scaffold_questions",
         "overlong_scaffold_response",
         "early_answer_exposure",
+        "next_target_transition_missing",
         "roleplay_first_person_missing",
     }
 )
@@ -102,6 +100,9 @@ class InteractionRuntime:
     interaction_mode: InteractionMode
     roleplay_enabled: bool
     target: InteractionTarget | None
+    next_target: InteractionTarget | None
+    target_sequence_number: int | None
+    target_count: int
     previous_state: DialogueState | None
     allowed_states: tuple[DialogueState, ...]
     previous_scaffold_level: str | None
@@ -124,7 +125,9 @@ class InteractionRuntime:
         }
         shared = (
             f"Policy version: {INTERACTION_POLICY_VERSION}\n"
+            f"Historical EBL policy version: {HISTORICAL_EBL_POLICY_VERSION}\n"
             f"Interaction mode: {self.interaction_mode}\n"
+            f"Current target position: {self.target_sequence_number or 0}/{self.target_count}\n"
             f"Current target: {json.dumps(target_payload, ensure_ascii=False)}"
         )
         if self.interaction_mode == "direct":
@@ -141,16 +144,43 @@ class InteractionRuntime:
             f"{state}={DIALOGUE_MOVE_BY_STATE[state]}"
             for state in self.allowed_states
         )
+        move_rules = {
+            state: {
+                "primary_reasoning_move": primary_reasoning_move(state),
+                "learner_action": HISTORICAL_EBL_MOVES[state].learner_action,
+                "allowed_support": list(HISTORICAL_EBL_MOVES[state].allowed_support),
+            }
+            for state in self.allowed_states
+        }
+        next_target_payload = (
+            {
+                "question_id": self.next_target.question_id,
+                "prompt": self.next_target.prompt,
+                "historical_thinking_focus": historical_thinking_focus(
+                    self.next_target.historical_concept,
+                    self.next_target.reasoning_process,
+                ),
+            }
+            if self.next_target
+            else None
+        )
         return (
             f"{shared}\n"
+            f"Target historical-thinking focus: "
+            f"{historical_thinking_focus(target.historical_concept, target.reasoning_process) if target else 'none'}\n"
             f"Previous dialogue state: {self.previous_state or 'NONE'}\n"
             f"Allowed response states: {', '.join(self.allowed_states)}\n"
             f"Allowed state-to-move mapping: {state_moves}\n"
+            f"Allowed move rules: {json.dumps(move_rules, ensure_ascii=False)}\n"
             f"Previous scaffold level: {self.previous_scaffold_level or 'NONE'}\n"
             f"Previous attempts in state: {self.previous_attempts_in_state}\n"
+            f"Next unresolved target for transition only: {json.dumps(next_target_payload, ensure_ascii=False)}\n"
             "Required behavior: choose exactly one allowed response state after assessing the learner's latest "
-            "message. Perform only that state's move and ask at most one explicit question. Do not discuss a "
-            "second task error. Before RESOLVED, do not reveal the complete expected answer unless L4 support is "
+            "message. Perform one primary historical-reasoning move for the current target. A move may be expressed "
+            "as a cue, evidence pointer, contrast, sentence stem, or zero to two tightly related questions; do not "
+            "turn every turn into an interview. Do not discuss a second task error before RESOLVED. When RESOLVED "
+            "and a next target exists, briefly confirm the current correction and bridge to that next target without "
+            "revealing its answer. Before RESOLVED, do not reveal the complete expected answer unless L4 support is "
             "needed after repeated failure. If the learner has not progressed, remain in the previous state and "
             "increase support by at most one level. If the learner has progressed, advance by at most one state. "
             "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
@@ -180,6 +210,20 @@ def _question_results(task_attempt: Any | None) -> list[dict[str, Any]]:
         return []
     results = judgement.get("question_results")
     return [item for item in results if isinstance(item, dict)] if isinstance(results, list) else []
+
+
+def _interaction_queue(task_attempt: Any | None) -> list[dict[str, Any]]:
+    """Return the stable task-order queue used by this conversation."""
+
+    results = _question_results(task_attempt)
+    error_results = [
+        result
+        for result in results
+        if str(result.get("correctness") or "ungraded") != "correct"
+    ]
+    if error_results:
+        return error_results
+    return results[:1]
 
 
 def _resolved_question_ids(messages: Sequence[Any]) -> set[str]:
@@ -230,7 +274,7 @@ def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
 
 
 def select_interaction_target(task_attempt: Any | None, messages: Sequence[Any]) -> InteractionTarget | None:
-    """Keep one unresolved task item stable across the conversation."""
+    """Keep one task error stable, then advance through the queue in task order."""
     results = _question_results(task_attempt)
     if not results:
         judgement = getattr(task_attempt, "judgement_payload", {}) if task_attempt else {}
@@ -257,36 +301,49 @@ def select_interaction_target(task_attempt: Any | None, messages: Sequence[Any])
             probe_kind="error_correction",
         )
 
+    queue = _interaction_queue(task_attempt)
     resolved_ids = _resolved_question_ids(messages)
     last_metadata = _last_interaction_metadata(messages)
     last_target_id = last_metadata.get("target_question_id")
     if isinstance(last_target_id, str) and last_target_id not in resolved_ids:
-        for result in results:
+        for result in queue:
             if result.get("question_id") == last_target_id:
                 return _target_from_result(result)
 
-    unresolved_results = [
-        result
-        for result in results
-        if result.get("question_id") not in resolved_ids
-        and str(result.get("correctness")) != "correct"
-    ]
-    if unresolved_results:
-        unresolved_results.sort(
-            key=lambda item: QUESTION_RESULT_PRIORITY.get(str(item.get("correctness")), 99)
-        )
-        return _target_from_result(unresolved_results[0])
+    for result in queue:
+        if result.get("question_id") not in resolved_ids:
+            return _target_from_result(result)
+    return None
 
-    had_error = any(str(result.get("correctness")) != "correct" for result in results)
-    if had_error:
-        return None
 
-    correct_candidates = [
-        result
-        for result in results
-        if result.get("question_id") not in resolved_ids
-    ]
-    return _target_from_result(correct_candidates[0]) if correct_candidates else None
+def _target_queue_context(
+    task_attempt: Any | None,
+    messages: Sequence[Any],
+    target: InteractionTarget | None,
+) -> tuple[InteractionTarget | None, int | None, int]:
+    queue = _interaction_queue(task_attempt)
+    if not queue or not target:
+        return None, None, len(queue)
+
+    resolved_ids = _resolved_question_ids(messages)
+    current_index = next(
+        (
+            index
+            for index, result in enumerate(queue)
+            if result.get("question_id") == target.question_id
+        ),
+        None,
+    )
+    next_target = next(
+        (
+            _target_from_result(result)
+            for result in queue
+            if result.get("question_id") != target.question_id
+            and result.get("question_id") not in resolved_ids
+        ),
+        None,
+    )
+    return next_target, (current_index + 1 if current_index is not None else None), len(queue)
 
 
 def build_interaction_runtime(
@@ -297,16 +354,25 @@ def build_interaction_runtime(
     """Build the backend-owned policy input for one completion."""
     interaction_mode: InteractionMode = "scaffold" if condition.ebl_enabled else "direct"
     target = select_interaction_target(task_attempt, messages)
+    next_target, target_sequence_number, target_count = _target_queue_context(
+        task_attempt,
+        messages,
+        target,
+    )
     if interaction_mode == "direct":
         previous_metadata = _last_interaction_metadata(messages)
         if previous_metadata.get("completion_status") == "complete":
             target = None
+            target_sequence_number = None
         return InteractionRuntime(
             condition_code=condition_code_for_key(condition.condition_key),
             condition_key=condition.condition_key,
             interaction_mode=interaction_mode,
             roleplay_enabled=condition.roleplay_enabled,
             target=target,
+            next_target=None,
+            target_sequence_number=target_sequence_number,
+            target_count=target_count,
             previous_state=None,
             allowed_states=("DIRECT_RESPONSE",),
             previous_scaffold_level=None,
@@ -314,12 +380,38 @@ def build_interaction_runtime(
         )
 
     previous_metadata = _last_interaction_metadata(messages)
-    raw_previous_state = previous_metadata.get("dialogue_state")
-    previous_state = (
-        raw_previous_state
-        if raw_previous_state in EBL_STATE_TRANSITIONS
-        else None
+    last_target_id = previous_metadata.get("target_question_id")
+    target_changed = bool(
+        target
+        and last_target_id is not None
+        and target.question_id != last_target_id
     )
+    transition_started = bool(
+        target_changed
+        and previous_metadata.get("next_target_started")
+        and previous_metadata.get("next_target_question_id") == target.question_id
+    )
+    raw_previous_state = previous_metadata.get("dialogue_state")
+    if transition_started:
+        previous_state: DialogueState | None = EBL_INITIAL_STATE
+        previous_scaffold_level = "L0"
+        previous_attempts_in_state = 0
+    elif target_changed:
+        previous_state = None
+        previous_scaffold_level = None
+        previous_attempts_in_state = 0
+    else:
+        previous_state = (
+            raw_previous_state
+            if raw_previous_state in EBL_STATE_TRANSITIONS
+            else None
+        )
+        previous_scaffold_level = (
+            str(previous_metadata.get("scaffold_level"))
+            if previous_metadata.get("scaffold_level") in SCAFFOLD_LEVELS
+            else None
+        )
+        previous_attempts_in_state = int(previous_metadata.get("attempts_in_state") or 0)
     if target is None:
         allowed_states: tuple[DialogueState, ...] = ("RESOLVED",)
     elif previous_state:
@@ -332,14 +424,13 @@ def build_interaction_runtime(
         interaction_mode=interaction_mode,
         roleplay_enabled=condition.roleplay_enabled,
         target=target,
+        next_target=next_target,
+        target_sequence_number=target_sequence_number,
+        target_count=target_count,
         previous_state=previous_state,
         allowed_states=allowed_states,
-        previous_scaffold_level=(
-            str(previous_metadata.get("scaffold_level"))
-            if previous_metadata.get("scaffold_level") in SCAFFOLD_LEVELS
-            else None
-        ),
-        previous_attempts_in_state=int(previous_metadata.get("attempts_in_state") or 0),
+        previous_scaffold_level=previous_scaffold_level,
+        previous_attempts_in_state=previous_attempts_in_state,
     )
 
 
@@ -433,6 +524,22 @@ def resolve_interaction_metadata(
         "evidence_ids": [],
         "probe_kind": "general_question",
     }
+    target_metadata.update(
+        {
+            "historical_ebl_policy_version": HISTORICAL_EBL_POLICY_VERSION,
+            "historical_thinking_focus": (
+                historical_thinking_focus(
+                    runtime.target.historical_concept,
+                    runtime.target.reasoning_process,
+                )
+                if runtime.target
+                else None
+            ),
+            "target_sequence_number": runtime.target_sequence_number,
+            "target_count": runtime.target_count,
+            "next_target_question_id": runtime.next_target.question_id if runtime.next_target else None,
+        }
+    )
 
     if runtime.interaction_mode == "direct":
         if runtime.target and ("？" in response_text or "?" in response_text):
@@ -471,10 +578,8 @@ def resolve_interaction_metadata(
         flags.add("invalid_dialogue_move")
 
     question_count = response_text.count("？") + response_text.count("?")
-    if proposed_state != "RESOLVED" and question_count == 0:
-        flags.add("missing_scaffold_question")
-    if question_count > 1:
-        flags.add("multiple_scaffold_questions")
+    if question_count > MAX_FOCUSED_QUESTIONS_PER_TURN:
+        flags.add("excessive_scaffold_questions")
     if len(response_text) > 700:
         flags.add("overlong_scaffold_response")
     resolved_scaffold_level = _scaffold_level(runtime, proposed_state, raw.get("scaffold_level"))
@@ -490,6 +595,12 @@ def resolve_interaction_metadata(
     same_state = proposed_state == runtime.previous_state
     attempts_in_state = runtime.previous_attempts_in_state + 1 if same_state else 0
     completion_status = "resolved" if proposed_state == "RESOLVED" else "continue"
+    next_target_started = bool(proposed_state == "RESOLVED" and runtime.next_target)
+    if (
+        next_target_started
+        and not any(marker in response_text for marker in ("下一", "接著", "再看", "換到"))
+    ):
+        flags.add("next_target_transition_missing")
     revision_status = raw.get("learner_revision_status")
     if revision_status not in {"not_yet", "partial", "revised", "unresolved"}:
         revision_status = "revised" if proposed_state == "RESOLVED" else "not_yet"
@@ -500,10 +611,12 @@ def resolve_interaction_metadata(
         "interaction_mode": "scaffold",
         "dialogue_state": proposed_state,
         "dialogue_move": expected_move,
+        "primary_historical_thinking_move": primary_reasoning_move(proposed_state),
         "scaffold_level": resolved_scaffold_level,
         "attempts_in_state": attempts_in_state,
         "learner_revision_status": revision_status,
         "completion_status": completion_status,
+        "next_target_started": next_target_started,
         "fidelity_flags": sorted(flags),
         "provider_fidelity_flags": provider_flags,
         **target_metadata,
@@ -535,26 +648,36 @@ def _fallback_response(
 
     state = str(metadata.get("dialogue_state") or EBL_INITIAL_STATE)
     if state == "RESOLVED":
+        next_target = runtime.next_target
+        transition = (
+            f"接著看下一項：「{next_target.prompt}」先說明你當時作答的依據。"
+            if next_target
+            else ""
+        )
         if expected:
             return (
-                f"我的判斷是：你已完成修正，正確答案是「{expected}」。"
+                f"我的判斷是：你已完成修正，正確答案是「{expected}」。{transition}"
                 if runtime.roleplay_enabled
-                else f"你已完成修正，正確答案是「{expected}」。"
+                else f"你已完成修正，正確答案是「{expected}」。{transition}"
             )
-        return "我認為這一項討論已完成。" if runtime.roleplay_enabled else "這一項討論已完成。"
+        return (
+            f"我認為這一項討論已完成。{transition}"
+            if runtime.roleplay_enabled
+            else f"這一項討論已完成。{transition}"
+        )
 
     answer_reference = f"「{learner_answer}」" if learner_answer else "原先的判斷"
     if state == "INSPECT_EVIDENCE":
-        question = f"請回到題目提供的史實線索，哪一部分支持或削弱你原先的答案{answer_reference}？"
+        guidance = f"回到題目提供的史實線索，指出一項支持或削弱你原先答案{answer_reference}的證據。"
     elif state == "CONTEXTUALIZE_OR_COMPARE":
-        question = f"若比較不同群體在這項安排下的權力，你原先的答案{answer_reference}會造成什麼差異？"
+        guidance = f"把相關時代脈絡或不同群體的位置並列，說明原先答案{answer_reference}忽略了哪項差異。"
     elif state == "REVISE_CLAIM":
-        question = f"根據前面檢視的理由與證據，你會如何重新表述原先的判斷{answer_reference}？"
+        guidance = f"用「主張－證據－理由」重新表述原先的判斷{answer_reference}。"
     elif state == "REFLECT":
-        question = "完成修正後，哪一項證據或比較最改變你的判斷？"
+        guidance = "比較修正前後的想法，指出最改變你判斷的一項證據或脈絡。"
     else:
-        question = f"你是根據哪一項史實或推理得出{answer_reference}？"
-    return f"{roleplay_prefix}{question}"
+        guidance = f"先把得出{answer_reference}時所使用的史實與推理說成一句完整判斷。"
+    return f"{roleplay_prefix}{guidance}"
 
 
 def enforce_interaction_response(

@@ -12,6 +12,7 @@ OAuth proxy；service 層不應直接依賴任何特定模型 SDK。
 """
 
 from app.core.config import Settings
+from app.core.interaction_contract import build_interaction_runtime
 from app.models.domain import (
     Annotation,
     Event,
@@ -47,8 +48,9 @@ BACKEND_INTERACTION_PROMPTS = {
         "Give the correction or answer immediately, then a concise historical explanation. Do not delay with Socratic scaffolding."
     ),
     "scaffold": (
-        "Use the backend-selected EBL move. Treat the learner error as a productive starting point, ask at most one focused question, "
-        "and do not reveal the complete correction before resolution."
+        "Use the backend-selected EBL historical-reasoning move. Keep one learner error in focus until resolved, "
+        "then continue to the next unresolved error. Use a cue, evidence pointer, contrast, sentence stem, or zero "
+        "to two tightly related questions; do not reveal the complete correction before resolution."
     ),
 }
 CHAT_OUTPUT_JSON_CONTRACT = (
@@ -278,10 +280,12 @@ class LiteLLMProvider:
             str: 開場白文字。
         """
         persona = personas[0] if condition.roleplay_enabled and personas else None
+        interaction_runtime = build_interaction_runtime(condition, attempt, [])
         if condition.ebl_enabled:
             interaction_instruction = (
-                "Select one incorrect, partial, or unanswered task item. Do not reveal its complete expected answer. "
-                "Ask exactly one focused question that elicits the learner's original reasoning. "
+                "Use the target selected by interaction_runtime. Do not reveal its complete expected answer. "
+                "Make the learner's original claim and reasoning visible through one concise cue, sentence stem, "
+                "or up to two tightly related questions. "
                 "Set dialogue_state=ELICIT_REASONING, dialogue_move=reasoning_probe, scaffold_level=L0, "
                 "learner_revision_status=not_yet, and completion_status=continue."
             )
@@ -305,6 +309,7 @@ class LiteLLMProvider:
                 "Generate a concise opening message after the learner submitted the task.\n"
                 f"{identity_instruction}\n"
                 f"{interaction_instruction}\n"
+                f"Interaction runtime:\n{interaction_runtime.prompt_block()}\n"
                 f"{CHAT_OUTPUT_JSON_CONTRACT}\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Condition:\n{condition.model_dump()}\n\n"

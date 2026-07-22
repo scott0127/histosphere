@@ -75,3 +75,36 @@ def test_prompt_modules_change_only_on_their_assigned_factor():
 
     assert matrix["01"]["interaction_runtime"] == matrix["03"]["interaction_runtime"]
     assert matrix["02"]["interaction_runtime"] == matrix["04"]["interaction_runtime"]
+    assert "zero to two tightly related questions" in matrix["02"]["independent_2_prompt"]
+    assert "Keep one error in focus until it is resolved" in matrix["04"]["independent_2_prompt"]
+    assert "zero to two tightly related questions" not in matrix["01"]["independent_2_prompt"]
+
+
+def test_prompt_exposes_only_the_runtime_selected_task_error():
+    condition = _condition("02")
+    attempt = _attempt()
+    attempt.judgement_payload["question_results"].append(
+        {
+            "question_id": "q02",
+            "prompt": "第二個不應提前出現的錯誤",
+            "learner_answer": "錯誤答案二",
+            "expected_answer": "正確答案二",
+            "correctness": "incorrect",
+        }
+    )
+    modules = PromptService().assemble_chat_modules(
+        event=Event(canonical_name="法國大革命"),
+        persona=None,
+        condition=condition,
+        task_attempt=attempt,
+        user_message="固定訊息",
+        rag_sources=[],
+        conversation_history=[],
+    )
+    learner_task = next(module.content for module in modules if module.name == "learner_task")
+    runtime = next(module.content for module in modules if module.name == "interaction_runtime")
+
+    assert "第三等級要求如何表決" in learner_task
+    assert "第二個不應提前出現的錯誤" not in learner_task
+    assert "第二個不應提前出現的錯誤" in runtime
+    assert "正確答案二" not in runtime

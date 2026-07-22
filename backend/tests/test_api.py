@@ -266,9 +266,9 @@ def test_chat_policy_matrix(client):
         if initialized["condition"]["response_policy"] == "scaffold":
             assert payload["message"]["metadata"]["response_policy"] == "scaffold"
             assert "正確答案是" not in greeting
-            assert greeting.count("？") == 1
+            assert greeting.count("？") <= 2
             assert "正確答案是" not in payload["response"]
-            assert payload["response"].count("？") == 1
+            assert payload["response"].count("？") <= 2
             assert payload["message"]["metadata"]["interaction_mode"] == "scaffold"
             assert payload["message"]["metadata"]["dialogue_state"] in {
                 "ELICIT_REASONING",
@@ -297,7 +297,7 @@ def test_chat_policy_matrix(client):
             assert payload["message"]["metadata"]["scaffold_level"] is None
             assert payload["message"]["metadata"]["target_question_id"] is None
 
-        assert payload["message"]["metadata"]["interaction_policy_version"] == "2x2-interaction-v1"
+        assert payload["message"]["metadata"]["interaction_policy_version"] == "2x2-interaction-v2"
         if initialized["condition"]["response_policy"] == "scaffold":
             assert payload["message"]["metadata"]["target_question_id"] == "q01"
         assert "interaction_runtime" in payload["message"]["metadata"]["prompt_modules"]
