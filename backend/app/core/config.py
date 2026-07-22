@@ -160,7 +160,7 @@ class Settings(BaseModel):
         llm_max_output_tokens: LLM 最大輸出 token 數。
         llm_timeout_seconds: LLM 請求逾時秒數。
         gemini_api_key: Gemini API key（可選）。
-        gemini_reasoning_effort: Gemini thinking 強度；即時對話預設 ``low``。
+        gemini_reasoning_effort: Gemini thinking 強度；即時對話預設 ``minimal``。
         nvidia_api_key: NVIDIA NIM API key（可選）。
         nvidia_api_base: NVIDIA NIM API base URL。
         nvidia_llm_model: NVIDIA 專用的模型名稱。
