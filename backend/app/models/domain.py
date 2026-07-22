@@ -7,7 +7,7 @@
 Type aliases:
     - ``ConditionKey``: 2x2 實驗條件鍵值的合法字串。
     - ``SpeakerType``: 聊天訊息發言者角色。
-    - ``ResponsePolicy``: AI 回覆策略（direct / scaffold）。
+    - ``ResponsePolicy``: AI 回覆策略（standard / scaffold）。
 
 Utility functions:
     - ``utc_now()``: 取得 UTC 時間戳。
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.experiment_conditions import validate_condition_behavior
 from app.core.persona_prompt_contract import normalize_persona_prompt_profile
@@ -35,7 +35,7 @@ ConditionKey = Literal[
 SpeakerType = Literal["learner", "assistant", "persona"]
 """聊天訊息發言者角色：learner / assistant（generic）/ persona（role-play）。"""
 
-ResponsePolicy = Literal["direct", "scaffold"]
+ResponsePolicy = Literal["standard", "scaffold"]
 """AI 回覆策略：direct（可直接給答案）/ scaffold（引導式教學）。"""
 
 
@@ -173,7 +173,7 @@ class ExperimentCondition(BaseModel):
         ebl_enabled: 是否啟用 Error-Based Learning。
         roleplay_enabled: 是否啟用 AI historical persona role-play。
         agent_mode: AI 代理模式（``"generic"`` / ``"persona"``）。
-        response_policy: 回覆策略（``"direct"`` / ``"scaffold"``）。
+        response_policy: 回覆策略（``"standard"`` / ``"scaffold"``）。
         description: 條件描述（中文）。
         active: 是否啟用此條件。
         created_at: 建立時間。
@@ -186,11 +186,19 @@ class ExperimentCondition(BaseModel):
     ebl_enabled: bool = False
     roleplay_enabled: bool = False
     agent_mode: Literal["generic", "persona"] = "generic"
-    response_policy: ResponsePolicy = "direct"
+    response_policy: ResponsePolicy = "standard"
     description: str | None = None
     active: bool = True
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_legacy_response_policy(cls, value: Any) -> Any:
+        """Read existing ``direct`` rows as the approved Standard Chat policy."""
+        if isinstance(value, dict) and value.get("response_policy") == "direct":
+            return {**value, "response_policy": "standard"}
+        return value
 
     @model_validator(mode="after")
     def validate_fixed_factor_matrix(self) -> "ExperimentCondition":
@@ -362,6 +370,8 @@ class Persona(BaseModel):
         updated_at: 最後更新時間。
     """
 
+    model_config = ConfigDict(validate_assignment=True)
+
     id: str = Field(default_factory=new_id)
     event_id: str
     name: str
@@ -381,7 +391,7 @@ class Persona(BaseModel):
     @field_validator("prompt_profile", mode="before")
     @classmethod
     def validate_prompt_contract(cls, value: Any) -> dict[str, Any]:
-        """Normalize legacy profiles into persona_prompt_v1 on read and write."""
+        """Normalize legacy profiles into the current persona prompt contract."""
         return normalize_persona_prompt_profile(value)
 
 

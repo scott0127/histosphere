@@ -12,7 +12,6 @@ OAuth proxy；service 層不應直接依賴任何特定模型 SDK。
 """
 
 from app.core.config import Settings
-from app.core.interaction_contract import build_interaction_runtime
 from app.models.domain import (
     Annotation,
     Event,
@@ -35,36 +34,18 @@ from app.providers.llm.structured import (
 )
 
 
-BACKEND_IDENTITY_PROMPTS = {
-    "generic": (
-        "Use a neutral generic AI tutor identity. Do not impersonate a historical figure or claim first-person participation."
-    ),
-    "persona": (
-        "Use the selected historical persona identity in first person while preserving temporal, geographic, social, and knowledge boundaries."
-    ),
-}
-BACKEND_INTERACTION_PROMPTS = {
-    "direct": (
-        "Give the correction or answer immediately, then a concise historical explanation. Do not delay with Socratic scaffolding."
-    ),
-    "scaffold": (
-        "Use the backend-selected EBL historical-reasoning move. Keep one learner error in focus until resolved, "
-        "then continue to the next unresolved error. Use a cue, evidence pointer, contrast, sentence stem, or zero "
-        "to two tightly related questions; do not reveal the complete correction before resolution."
-    ),
-}
 CHAT_OUTPUT_JSON_CONTRACT = (
     'Return exactly one JSON object with every key in this shape: '
     '{"response":"learner-facing Traditional Chinese text","annotations":[],'
     '"related_events":[],"dynamic_context":"","dialogue_state":"STATE",'
-    '"dialogue_move":"MOVE","scaffold_level":null,'
+    '"dialogue_move":"MOVE","disclosure_level":null,'
     '"learner_revision_status":"STATUS","completion_status":"STATUS",'
     '"fidelity_flags":[]}. '
-    "Use the interaction_runtime values for STATE, MOVE, scaffold_level, and statuses. "
+    "Use the interaction_runtime values for STATE, MOVE, disclosure_level, and statuses. "
     "fidelity_flags must contain only suspected rule violations; otherwise return an empty list. "
     "Do not add keys outside this object or wrap it in markdown."
 )
-"""Independent identity and interaction modules used by greeting generation."""
+"""Structured completion contract shared by opening and later chat turns."""
 
 
 class LiteLLMProvider:
@@ -226,8 +207,13 @@ class LiteLLMProvider:
                 "Select exactly one primary historical persona for this event.\n"
                 "If the teacher has not specified a persona, choose the figure most central or representative to the event.\n"
                 "The persona must be historically defensible. Do not invent fictional people unless the event lacks identifiable figures.\n"
-                "prompt_profile must include speaking_style, knowledge_boundary, selection_policy, selection_reason, "
-                "and deliberate_error_enabled=false.\n"
+                "prompt_profile must contain structured data rather than a prewritten greeting. Include speaking_style, "
+                "forms_of_address, social_position, relationship_to_event, event_timepoint, event_timepoint_year, "
+                "event_location, event_vantage_point, current_stakes, event_anchor_terms, knowledge_cutoff_year, "
+                "firsthand_experience_allowed, firsthand_experience_scope, temporal_boundary, geographic_boundary, "
+                "knowledge_boundary, stance, selection_policy, selection_reason, and deliberate_error_enabled=false. "
+                "The selected timepoint and knowledge cutoff must not extend beyond the person's life or the chosen "
+                "in-event scene. Do not provide a prewritten greeting.\n"
                 "Return JSON with key personas, containing exactly one object.\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Wikipedia sources:\n{self._format_sources(sources)}"
@@ -264,60 +250,20 @@ class LiteLLMProvider:
         personas: list[Persona],
         condition: ExperimentCondition,
         attempt: TaskAttempt,
-    ) -> str:
-        """依 condition 與 learner task judgement 產生 conversation 開場白。
-
-        若 roleplay 啟用，以歷史人物口吻開場；若 EBL 啟用，
-        引導反思而非直接給答案。
-
-        Args:
-            event: 關聯事件。
-            personas: 可用的 persona 清單。
-            condition: 當前實驗條件。
-            attempt: Learner 的 task attempt（含 judgement）。
-
-        Returns:
-            str: 開場白文字。
-        """
-        persona = personas[0] if condition.roleplay_enabled and personas else None
-        interaction_runtime = build_interaction_runtime(condition, attempt, [])
-        if condition.ebl_enabled:
-            interaction_instruction = (
-                "Use the target selected by interaction_runtime. Do not reveal its complete expected answer. "
-                "Make the learner's original claim and reasoning visible through one concise cue, sentence stem, "
-                "or up to two tightly related questions. "
-                "Set dialogue_state=ELICIT_REASONING, dialogue_move=reasoning_probe, scaffold_level=L0, "
-                "learner_revision_status=not_yet, and completion_status=continue."
-            )
-        else:
-            interaction_instruction = (
-                "Select one incorrect, partial, or unanswered task item and state its correction immediately, followed "
-                "by a concise explanation. Do not delay with a Socratic question. Set dialogue_state=DIRECT_RESPONSE, "
-                "dialogue_move=direct_correction, scaffold_level=null, learner_revision_status=not_applicable, "
-                "and completion_status=complete."
-            )
-        identity_instruction = (
-            "Speak in first person as the selected historical persona, within the supplied knowledge boundary."
-            if condition.roleplay_enabled
-            else "Use a neutral generic AI tutor voice and never impersonate a historical person."
-        )
+        prompt: str,
+    ) -> ChatGenerationResult:
+        """Generate the first turn from the canonical modules also used by later chat."""
         payload = await self.runner.run_json(
             schema=ChatOutputPayload,
             task_name="generate_greeting",
-            system_prompt=self._system_prompt(condition),
+            system_prompt=self._system_prompt(),
             user_prompt=(
-                "Generate a concise opening message after the learner submitted the task.\n"
-                f"{identity_instruction}\n"
-                f"{interaction_instruction}\n"
-                f"Interaction runtime:\n{interaction_runtime.prompt_block()}\n"
+                "Generate the first learner-facing conversation turn from the canonical prompt modules below.\n"
                 f"{CHAT_OUTPUT_JSON_CONTRACT}\n\n"
-                f"Event:\n{event.model_dump()}\n\n"
-                f"Condition:\n{condition.model_dump()}\n\n"
-                f"Persona:\n{persona.model_dump() if persona else None}\n\n"
-                f"Task attempt:\n{attempt.model_dump()}"
+                f"Prompt modules:\n{prompt}"
             ),
         )
-        return payload.response
+        return self._chat_generation_result(payload, event)
 
     async def generate_chat_response(
         self,
@@ -331,7 +277,7 @@ class LiteLLMProvider:
     ) -> ChatGenerationResult:
         """依組裝好的 prompt 產生聊天回覆。
 
-        尊重 role-play 邊界與 EBL/direct-answer 策略，
+        尊重 role-play 邊界與 EBL/Standard Chat 策略，
         使用繁體中文回覆（除非使用者要求其他語言）。
 
         Args:
@@ -352,13 +298,25 @@ class LiteLLMProvider:
             system_prompt=self._system_prompt(),
             user_prompt=(
                 "Respond to the learner according to the provided prompt modules.\n"
-                "Respect role-play boundaries and EBL/direct-answer policy.\n"
+                "Respect role-play boundaries and the EBL/Standard Chat policy.\n"
                 "Use Traditional Chinese unless the user asks otherwise. English terms are allowed only when useful.\n"
                 f"{CHAT_OUTPUT_JSON_CONTRACT}\n\n"
                 f"Prompt modules:\n{prompt}\n\n"
                 f"User message:\n{user_message}"
             ),
         )
+        return self._chat_generation_result(payload, event)
+
+    @staticmethod
+    def _chat_generation_result(payload: ChatOutputPayload, event: Event) -> ChatGenerationResult:
+        """Map the one structured completion schema used by opening and chat."""
+        legacy_disclosure = {
+            "L0": "D0",
+            "L1": "D1",
+            "L2": "D2",
+            "L3": "D3",
+            "L4": "D4",
+        }.get(payload.scaffold_level)
         annotations = [
             Annotation(
                 text=str(item.get("text", event.canonical_name)),
@@ -386,7 +344,7 @@ class LiteLLMProvider:
             interaction_metadata={
                 "dialogue_state": payload.dialogue_state,
                 "dialogue_move": payload.dialogue_move,
-                "scaffold_level": payload.scaffold_level,
+                "disclosure_level": payload.disclosure_level or legacy_disclosure,
                 "learner_revision_status": payload.learner_revision_status,
                 "completion_status": payload.completion_status,
                 "fidelity_flags": payload.fidelity_flags,
@@ -396,15 +354,10 @@ class LiteLLMProvider:
     # ── Internal helpers ───────────────────────────────────────
 
     @staticmethod
-    def _system_prompt(condition: ExperimentCondition | None = None) -> str:
+    def _system_prompt() -> str:
         """組裝 LLM system prompt。
 
         基礎 prompt 規定語言（繁體中文）、史實邊界與 JSON 輸出格式。
-        若指定 condition，附加對應的 2x2 條件指令。
-
-        Args:
-            condition: 實驗條件（可選）。
-
         Returns:
             str: 完整的 system prompt。
         """
@@ -415,15 +368,7 @@ class LiteLLMProvider:
             "Chinese output must use Traditional Chinese. Do not use Simplified Chinese. "
             "Return only valid JSON matching the requested schema. Do not include markdown fences."
         )
-        if not condition:
-            return base_prompt
-        identity_prompt = BACKEND_IDENTITY_PROMPTS[condition.agent_mode]
-        interaction_prompt = BACKEND_INTERACTION_PROMPTS[condition.response_policy]
-        return (
-            f"{base_prompt}\n\n"
-            f"[independent_1_prompt]\n{identity_prompt}\n\n"
-            f"[independent_2_prompt]\n{interaction_prompt}"
-        )
+        return base_prompt
 
     def _provider_metadata(self) -> dict[str, str]:
         """取得最近一次成功呼叫的 provider/model metadata。

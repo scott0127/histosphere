@@ -1,0 +1,224 @@
+import asyncio
+
+import pytest
+
+from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS
+from app.core.persona_prompt_contract import (
+    PERSONA_PROMPT_CONTRACT_VERSION,
+    audit_persona_response,
+    build_persona_runtime_context,
+)
+from app.models.domain import Event, ExperimentCondition, Persona, TaskAttempt
+from app.providers.llm.base import ChatGenerationResult
+from app.services.conversation_opening_service import ConversationOpeningService
+from app.services.prompt_service import PromptService
+
+
+def _condition(code: str) -> ExperimentCondition:
+    definition = next(item for item in EXPERIMENT_CONDITION_DEFINITIONS if item.code == code)
+    return ExperimentCondition(
+        condition_key=definition.condition_key,
+        label=definition.default_label,
+        ebl_enabled=definition.ebl_enabled,
+        roleplay_enabled=definition.roleplay_enabled,
+        agent_mode=definition.agent_mode,
+        response_policy=definition.response_policy,
+    )
+
+
+def _event(name: str = "法國大革命") -> Event:
+    return Event(
+        id="event-1",
+        canonical_name=name,
+        description=f"{name}的事件描述",
+        start_year=1789,
+        end_year=1794,
+        context=f"{name}的制度與政治脈絡",
+    )
+
+
+def _persona() -> Persona:
+    return Persona(
+        id="persona-1",
+        event_id="event-1",
+        name="馬克西米連·羅伯斯比爾",
+        role="國民公會代表",
+        biography="法國大革命時期的政治人物。",
+        expertise_areas=["法國大革命", "國民公會"],
+        prompt_profile={
+            "voice": "嚴肅、論辯性強",
+            "event_timepoint": "1793 年國民公會統治期間",
+            "event_timepoint_year": 1793,
+            "event_location": "巴黎",
+            "event_vantage_point": "國民公會代表的政治位置",
+            "current_stakes": ["共和政體的存續", "戰爭與政治暴力"],
+            "event_anchor_terms": ["國民公會", "共和國"],
+            "knowledge_cutoff_year": 1793,
+        },
+    )
+
+
+def _attempt() -> TaskAttempt:
+    return TaskAttempt(
+        task_id="task-1",
+        event_id="event-1",
+        status="submitted",
+        judgement_payload={"result": "partial", "question_results": []},
+    )
+
+
+def _standard_metadata() -> dict:
+    return {
+        "dialogue_state": "STANDARD_CHAT",
+        "dialogue_move": "natural_response",
+        "learner_revision_status": "not_applicable",
+        "completion_status": "continue",
+        "fidelity_flags": [],
+    }
+
+
+def test_legacy_voice_is_normalized_and_used_as_speaking_style():
+    persona = _persona()
+    context = build_persona_runtime_context(_event(), persona)
+
+    assert persona.prompt_profile["contract_version"] == PERSONA_PROMPT_CONTRACT_VERSION
+    assert persona.prompt_profile["speaking_style"] == "嚴肅、論辯性強"
+    assert context.speaking_style == "嚴肅、論辯性強"
+    assert context.event_timepoint == "1793 年國民公會統治期間"
+    assert context.event_location == "巴黎"
+
+
+def test_runtime_context_changes_with_the_persisted_event():
+    persona = _persona()
+    french = build_persona_runtime_context(_event("法國大革命"), persona).prompt_block(turn_kind="opening")
+    restoration = build_persona_runtime_context(_event("波旁復辟"), persona).prompt_block(turn_kind="opening")
+
+    assert "Historical event: 法國大革命" in french
+    assert "Historical event: 波旁復辟" in restoration
+    assert french != restoration
+
+
+def test_opening_audit_requires_identity_event_anchor_and_in_event_situation():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    generic = audit_persona_response(
+        "我是羅伯斯比爾。法國大革命具有深遠的歷史影響。",
+        context,
+        is_opening=True,
+    )
+    immersive = audit_persona_response(
+        "我是羅伯斯比爾。此刻國民公會的爭論正在巴黎升高，我必須面對共和國能否存續的抉擇。",
+        context,
+        is_opening=True,
+    )
+
+    assert "persona_event_situation_missing_on_opening" in generic
+    assert immersive == ()
+
+
+def test_persona_audit_rejects_ai_meta_voice():
+    context = build_persona_runtime_context(_event(), _persona())
+    flags = audit_persona_response(
+        "作為 AI，我將扮演羅伯斯比爾；此刻法國大革命正在發生。",
+        context,
+        is_opening=True,
+    )
+
+    assert "persona_out_of_character_meta_voice" in flags
+
+
+def test_persona_audit_rejects_explicit_knowledge_after_the_scene_cutoff():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    violation = audit_persona_response(
+        "我知道 1799 年拿破崙將發動霧月政變。",
+        context,
+        is_opening=False,
+    )
+    uncertainty = audit_persona_response(
+        "1799 年仍是未來，我無從得知那時將發生什麼。",
+        context,
+        is_opening=False,
+    )
+
+    assert "persona_temporal_boundary_violation" in violation
+    assert "persona_temporal_boundary_violation" not in uncertainty
+
+
+class _SequenceOpeningProvider:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = responses
+        self.prompts: list[str] = []
+
+    async def generate_greeting(self, **kwargs) -> ChatGenerationResult:
+        self.prompts.append(kwargs["prompt"])
+        response = self.responses[min(len(self.prompts) - 1, len(self.responses) - 1)]
+        return ChatGenerationResult(response=response, interaction_metadata=_standard_metadata())
+
+
+def test_opening_service_regenerates_a_generic_persona_candidate():
+    provider = _SequenceOpeningProvider(
+        [
+            "羅伯斯比爾是法國大革命的重要人物。",
+            "我是羅伯斯比爾。此刻國民公會的局勢正在巴黎收緊，你想先談眼前哪一項衝突？",
+        ]
+    )
+    service = ConversationOpeningService(provider, PromptService())
+
+    opening = asyncio.run(
+        service.generate(
+            event=_event(),
+            personas=[_persona()],
+            condition=_condition("03"),
+            attempt=_attempt(),
+        )
+    )
+
+    assert len(provider.prompts) == 2
+    assert "[validation_retry]" in provider.prompts[1]
+    assert "configured persona's first-person voice" in provider.prompts[1]
+    assert "selected in-event moment" in provider.prompts[1]
+    assert opening.metadata["generation_retry_count"] == 1
+    assert len(opening.metadata["rejected_candidates"]) == 1
+    assert opening.generation.response.startswith("我是羅伯斯比爾")
+    assert "羅伯斯比爾是法國大革命的重要人物" not in opening.generation.response
+
+
+def test_opening_service_rejects_internal_condition_leakage():
+    provider = _SequenceOpeningProvider(
+        [
+            "我是羅伯斯比爾。此刻國民公會的局勢正在巴黎升高，這是 03模式，你想談什麼？",
+            "我是羅伯斯比爾。此刻國民公會的局勢正在巴黎升高，你想先談哪項衝突？",
+        ]
+    )
+    service = ConversationOpeningService(provider, PromptService())
+
+    opening = asyncio.run(
+        service.generate(
+            event=_event(),
+            personas=[_persona()],
+            condition=_condition("03"),
+            attempt=_attempt(),
+        )
+    )
+
+    assert opening.metadata["generation_retry_count"] == 1
+    assert opening.metadata["rejected_candidates"][0]["flags"] == ["internal_condition_leak"]
+    assert "03模式" not in opening.generation.response
+
+
+def test_opening_service_never_returns_a_repeatedly_invalid_candidate():
+    provider = _SequenceOpeningProvider(["羅伯斯比爾是法國大革命的重要人物。"])
+    service = ConversationOpeningService(provider, PromptService())
+
+    with pytest.raises(RuntimeError, match="failed interaction/persona validation"):
+        asyncio.run(
+            service.generate(
+                event=_event(),
+                personas=[_persona()],
+                condition=_condition("03"),
+                attempt=_attempt(),
+            )
+        )
+
+    assert len(provider.prompts) == 3

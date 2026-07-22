@@ -120,4 +120,4 @@ def primary_reasoning_move(state: str) -> str:
     """Return the backend-owned reasoning move for a dialogue state."""
 
     policy = HISTORICAL_EBL_MOVES.get(state)
-    return policy.primary_reasoning_move if policy else "direct_historical_explanation"
+    return policy.primary_reasoning_move if policy else "standard_historical_conversation"

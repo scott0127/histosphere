@@ -1,3 +1,6 @@
+from app.providers.llm.base import ChatGenerationResult
+
+
 CONDITIONS = [
     "no_ebl_no_roleplay",
     "ebl_no_roleplay",
@@ -31,6 +34,70 @@ def submit_task(client, initialized: dict, answer_text: str = "1944 年盟軍在
     assert polled.json()["attempt"]["status"] == "submitted"
     assert polled.json()["result"]
     return polled.json()["result"]
+
+
+def test_task_attempt_stays_processing_until_opening_is_durable(client):
+    initialized = initialize_event(client, "提交狀態語意測試", "no_ebl_roleplay")
+    repository = client.app.state.repository
+    provider = client.app.state.opening_service.llm_provider
+    original_generate_greeting = provider.generate_greeting
+    observed: dict[str, object] = {}
+
+    async def capture_state_before_opening(**kwargs):
+        attempt = repository.get_task_attempt(kwargs["attempt"].id)
+        observed["attempt_status"] = attempt.status
+        observed["conversation_exists"] = bool(
+            repository.get_conversation_by_session(initialized["session_id"])
+        )
+        return await original_generate_greeting(**kwargs)
+
+    provider.generate_greeting = capture_state_before_opening
+    accepted = client.post(
+        f"/api/tasks/{initialized['task']['id']}/submit",
+        json={
+            "session_id": initialized["session_id"],
+            "response_payload": {"answer_text": "測試答案"},
+        },
+    )
+
+    assert accepted.status_code == 202
+    assert observed == {"attempt_status": "processing", "conversation_exists": False}
+    polled = client.get(accepted.json()["poll_url"])
+    assert polled.status_code == 200
+    assert polled.json()["attempt"]["status"] == "submitted"
+    assert polled.json()["result"]["conversation_id"]
+
+
+def test_compatibility_conversation_creation_is_idempotent_and_workflow_bound(client):
+    initialized = initialize_event(client, "相容對話建立測試", "no_ebl_roleplay")
+    submitted = submit_task(client, initialized, "測試答案")
+    provider = client.app.state.opening_service.llm_provider
+    greeting_count = len(provider.greeting_prompts)
+
+    repeated = client.post(
+        "/api/conversations",
+        json={
+            "event_id": initialized["event_id"],
+            "task_attempt_id": submitted["attempt_id"],
+            "session_id": initialized["session_id"],
+        },
+    )
+
+    assert repeated.status_code == 200
+    assert repeated.json()["conversation_id"] == submitted["conversation_id"]
+    assert len(repeated.json()["history"]) == 1
+    assert len(provider.greeting_prompts) == greeting_count
+
+    other = initialize_event(client, "另一條相容對話流程", "no_ebl_roleplay")
+    mismatched = client.post(
+        "/api/conversations",
+        json={
+            "event_id": other["event_id"],
+            "task_attempt_id": submitted["attempt_id"],
+            "session_id": initialized["session_id"],
+        },
+    )
+    assert mismatched.status_code == 400
 
 
 def test_health(client):
@@ -238,8 +305,8 @@ def test_task_draft_and_session_progress_are_recoverable(client):
 
 
 def test_chat_policy_matrix(client):
-    for condition_key in CONDITIONS:
-        initialized = initialize_event(client, f"測試事件 {condition_key}", condition_key)
+    for index, condition_key in enumerate(CONDITIONS, start=1):
+        initialized = initialize_event(client, f"矩陣測試事件 {index}", condition_key)
         submitted = submit_task(client, initialized)
         target_persona_id = initialized["personas"][0]["id"] if "roleplay" in condition_key and not condition_key.startswith("no_ebl_no") else None
 
@@ -278,26 +345,24 @@ def test_chat_policy_matrix(client):
                 "reasoning_probe",
                 "evidence_probe",
             }
-            assert payload["message"]["metadata"]["scaffold_level"] in {
-                "L0",
-                "L1",
-                "L2",
-                "L3",
-                "L4",
+            assert payload["message"]["metadata"]["disclosure_level"] in {
+                "D0",
+                "D1",
+                "D2",
+                "D3",
+                "D4",
             }
         else:
-            assert payload["message"]["metadata"]["response_policy"] == "direct"
-            assert "正確答案是" in greeting
-            assert "？" not in greeting
-            assert "直接回答" in payload["response"]
-            assert "？" not in payload["response"]
-            assert payload["message"]["metadata"]["interaction_mode"] == "direct"
-            assert payload["message"]["metadata"]["dialogue_state"] == "DIRECT_RESPONSE"
-            assert payload["message"]["metadata"]["dialogue_move"] == "direct_correction"
-            assert payload["message"]["metadata"]["scaffold_level"] is None
+            assert payload["message"]["metadata"]["response_policy"] == "standard"
+            assert "正確答案是" not in greeting
+            assert "？" in greeting
+            assert payload["message"]["metadata"]["interaction_mode"] == "standard_chat"
+            assert payload["message"]["metadata"]["dialogue_state"] == "STANDARD_CHAT"
+            assert payload["message"]["metadata"]["dialogue_move"] == "natural_response"
+            assert payload["message"]["metadata"]["disclosure_level"] is None
             assert payload["message"]["metadata"]["target_question_id"] is None
 
-        assert payload["message"]["metadata"]["interaction_policy_version"] == "2x2-interaction-v2"
+        assert payload["message"]["metadata"]["interaction_policy_version"] == "2x2-interaction-v3"
         if initialized["condition"]["response_policy"] == "scaffold":
             assert payload["message"]["metadata"]["target_question_id"] == "q01"
         assert "interaction_runtime" in payload["message"]["metadata"]["prompt_modules"]
@@ -308,12 +373,68 @@ def test_chat_policy_matrix(client):
         assert [message["sequence_index"] for message in messages] == list(range(len(messages)))
 
 
+def test_invalid_persona_candidate_is_retried_and_never_persisted(client):
+    initialized = initialize_event(client, "候選重試事件", "no_ebl_roleplay")
+    submitted = submit_task(client, initialized)
+    provider = client.app.state.llm_provider
+    event_name = initialized["event"]["canonical_name"]
+    persona_name = initialized["personas"][0]["name"]
+    invalid_response = f"{persona_name}是{event_name}的重要人物。"
+    calls = 0
+
+    async def scripted_chat_response(**kwargs):
+        nonlocal calls
+        calls += 1
+        response = (
+            invalid_response
+            if calls == 1
+            else f"我是{persona_name}。此刻{event_name}的局勢正在我眼前變化，你想先談哪一項衝突？"
+        )
+        return ChatGenerationResult(
+            response=response,
+            interaction_metadata={
+                "dialogue_state": "STANDARD_CHAT",
+                "dialogue_move": "natural_response",
+                "learner_revision_status": "not_applicable",
+                "completion_status": "continue",
+                "fidelity_flags": [],
+            },
+        )
+
+    provider.generate_chat_response = scripted_chat_response
+    chat = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": submitted["conversation_id"],
+            "user_message": "請說明你眼前的處境。",
+            "history": [],
+        },
+    )
+
+    assert chat.status_code == 200
+    payload = chat.json()
+    assert calls == 2
+    assert payload["message"]["metadata"]["generation_retry_count"] == 1
+    assert len(payload["message"]["metadata"]["rejected_candidates"]) == 1
+    loaded = client.get(f"/api/conversations/{submitted['conversation_id']}").json()
+    contents = [message["content"] for message in loaded["messages"]]
+    assert invalid_response not in contents
+    assert contents.count("請說明你眼前的處境。") == 1
+
+
 def test_persona_crud(client):
     initialized = initialize_event(client, "明治維新")
     event_id = initialized["event_id"]
 
+    unauthorized = client.post(
+        "/api/personas",
+        json={"event_id": event_id, "name": "未授權人物"},
+    )
+    assert unauthorized.status_code == 401
+
     created = client.post(
         "/api/personas",
+        headers={"x-admin-key": "test-admin"},
         json={
             "event_id": event_id,
             "name": "測試人物",
@@ -329,6 +450,7 @@ def test_persona_crud(client):
 
     updated = client.patch(
         f"/api/personas/{persona['id']}",
+        headers={"x-admin-key": "test-admin"},
         json={"role": "更新後角色", "active": True},
     )
     assert updated.status_code == 200
@@ -338,7 +460,10 @@ def test_persona_crud(client):
     assert listed.status_code == 200
     assert any(item["id"] == persona["id"] for item in listed.json())
 
-    deleted = client.delete(f"/api/personas/{persona['id']}")
+    deleted = client.delete(
+        f"/api/personas/{persona['id']}",
+        headers={"x-admin-key": "test-admin"},
+    )
     assert deleted.status_code == 200
     assert deleted.json()["success"] is True
 
@@ -422,7 +547,10 @@ def test_compatibility_endpoints(client):
     assert background.status_code == 200
     assert "background_url" in background.json()
 
-    avatar = client.post(f"/api/personas/{persona_id}/regenerate_avatar")
+    avatar = client.post(
+        f"/api/personas/{persona_id}/regenerate_avatar",
+        headers={"x-admin-key": "test-admin"},
+    )
     assert avatar.status_code == 200
     assert avatar.json()["success"] is True
 

@@ -74,7 +74,7 @@ export interface ExperimentCondition {
   ebl_enabled: boolean;
   roleplay_enabled: boolean;
   agent_mode: 'generic' | 'persona';
-  response_policy: 'direct' | 'scaffold';
+  response_policy: 'standard' | 'scaffold';
   description?: string | null;
   active: boolean;
   created_at: string;

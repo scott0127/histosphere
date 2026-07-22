@@ -13,7 +13,7 @@ Routes:
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_persona_service
+from app.api.deps import get_persona_service, require_admin_key
 from app.models.domain import Persona
 from app.schemas.requests import PersonaCreateRequest, PersonaUpdateRequest
 from app.services import PersonaService
@@ -44,6 +44,7 @@ def list_personas(
 @router.post("", response_model=Persona)
 def create_persona(
     request: PersonaCreateRequest,
+    _admin: None = Depends(require_admin_key),
     service: PersonaService = Depends(get_persona_service),
 ) -> Persona:
     """新增 persona，可手動調整事件角色。
@@ -65,6 +66,7 @@ def create_persona(
 def update_persona(
     persona_id: str,
     request: PersonaUpdateRequest,
+    _admin: None = Depends(require_admin_key),
     service: PersonaService = Depends(get_persona_service),
 ) -> Persona:
     """更新 persona profile 或 prompt_profile。
@@ -86,6 +88,7 @@ def update_persona(
 @router.delete("/{persona_id}")
 def delete_persona(
     persona_id: str,
+    _admin: None = Depends(require_admin_key),
     service: PersonaService = Depends(get_persona_service),
 ) -> dict[str, bool]:
     """停用或刪除 persona；研究資料固定後需謹慎使用。
@@ -106,6 +109,7 @@ def delete_persona(
 @router.post("/{persona_id}/regenerate_avatar")
 def regenerate_avatar(
     persona_id: str,
+    _admin: None = Depends(require_admin_key),
     service: PersonaService = Depends(get_persona_service),
 ) -> dict[str, str | bool | None]:
     """保留 avatar 擴充入口；V1 不重新生成影片或 persona card。

@@ -1,5 +1,5 @@
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS
-from app.models.domain import Event, ExperimentCondition, Persona, TaskAttempt
+from app.models.domain import ChatMessage, Event, ExperimentCondition, Persona, TaskAttempt
 from app.services.prompt_service import PromptService
 
 
@@ -75,6 +75,9 @@ def test_prompt_modules_change_only_on_their_assigned_factor():
 
     assert matrix["01"]["interaction_runtime"] == matrix["03"]["interaction_runtime"]
     assert matrix["02"]["interaction_runtime"] == matrix["04"]["interaction_runtime"]
+    assert matrix["03"]["persona_event_context"] == matrix["04"]["persona_event_context"]
+    assert "Frame mode: event-situated first-person historical persona" in matrix["03"]["persona_event_context"]
+    assert "No persona context applies" in matrix["01"]["persona_event_context"]
     assert "zero to two tightly related questions" in matrix["02"]["independent_2_prompt"]
     assert "Keep one error in focus until it is resolved" in matrix["04"]["independent_2_prompt"]
     assert "zero to two tightly related questions" not in matrix["01"]["independent_2_prompt"]
@@ -108,3 +111,66 @@ def test_prompt_exposes_only_the_runtime_selected_task_error():
     assert "第二個不應提前出現的錯誤" not in learner_task
     assert "第二個不應提前出現的錯誤" in runtime
     assert "正確答案二" not in runtime
+
+
+def test_opening_uses_the_same_dynamic_modules_without_a_prewritten_greeting():
+    condition = _condition("03")
+    persona = Persona(
+        event_id="event-1",
+        name="馬克西米連·羅伯斯比爾",
+        role="國民公會代表",
+        prompt_profile={
+            "speaking_style": "嚴肅、論辯性強",
+            "event_timepoint": "1793 年國民公會期間",
+            "event_timepoint_year": 1793,
+            "event_location": "巴黎",
+            "event_anchor_terms": ["國民公會"],
+            "knowledge_cutoff_year": 1793,
+        },
+    )
+    modules = PromptService().assemble_opening_modules(
+        event=Event(
+            canonical_name="法國大革命",
+            description="革命政府面臨內外危機。",
+            start_year=1789,
+            end_year=1799,
+        ),
+        persona=persona,
+        condition=condition,
+        task_attempt=_attempt(),
+    )
+    by_name = {module.name: module.content for module in modules}
+
+    assert "Turn kind: opening" in by_name["persona_event_context"]
+    assert "Selected in-event timepoint: 1793 年國民公會期間" in by_name["persona_event_context"]
+    assert "Selected in-event location: 巴黎" in by_name["persona_event_context"]
+    assert "Generate the first substantive AI turn" in by_name["turn_intent"]
+    assert "user_message" not in by_name
+    assert "我是羅伯斯比爾" not in by_name["persona_event_context"]
+
+
+def test_conversation_history_keeps_more_than_twelve_database_messages():
+    history = [
+        ChatMessage(
+            conversation_id="conversation-1",
+            speaker_type="learner" if index % 2 else "assistant",
+            speaker_name="learner" if index % 2 else "AI Assistant",
+            sequence_index=index,
+            content=f"歷史訊息 {index:02d}",
+        )
+        for index in range(1, 21)
+    ]
+    modules = PromptService().assemble_chat_modules(
+        event=Event(canonical_name="法國大革命"),
+        persona=None,
+        condition=_condition("01"),
+        task_attempt=_attempt(),
+        user_message="請延續前面的討論",
+        rag_sources=[],
+        conversation_history=history,
+    )
+    rendered_history = next(module.content for module in modules if module.name == "conversation_history")
+
+    assert "歷史訊息 01" in rendered_history
+    assert "歷史訊息 20" in rendered_history
+    assert rendered_history.count("歷史訊息") == 20

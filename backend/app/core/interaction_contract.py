@@ -18,9 +18,9 @@ from app.core.historical_ebl_policy import (
 )
 
 
-InteractionMode = Literal["direct", "scaffold"]
+InteractionMode = Literal["standard_chat", "scaffold"]
 DialogueState = Literal[
-    "DIRECT_RESPONSE",
+    "STANDARD_CHAT",
     "ELICIT_REASONING",
     "INSPECT_EVIDENCE",
     "CONTEXTUALIZE_OR_COMPARE",
@@ -29,7 +29,7 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v2"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v3"
 EBL_INITIAL_STATE: DialogueState = "ELICIT_REASONING"
 EBL_STATE_TRANSITIONS: dict[str, tuple[DialogueState, ...]] = {
     "ELICIT_REASONING": ("ELICIT_REASONING", "INSPECT_EVIDENCE"),
@@ -40,25 +40,22 @@ EBL_STATE_TRANSITIONS: dict[str, tuple[DialogueState, ...]] = {
     "RESOLVED": ("RESOLVED",),
 }
 DIALOGUE_MOVE_BY_STATE: dict[str, str] = {
-    "DIRECT_RESPONSE": "direct_correction",
+    "STANDARD_CHAT": "natural_response",
     **{
         state: policy.dialogue_move
         for state, policy in HISTORICAL_EBL_MOVES.items()
     },
 }
-SCAFFOLD_LEVELS = ("L0", "L1", "L2", "L3", "L4")
-FALLBACK_TRIGGER_FLAGS = frozenset(
+DISCLOSURE_LEVELS = ("D0", "D1", "D2", "D3", "D4")
+LEGACY_DISCLOSURE_LEVELS = {f"L{index}": level for index, level in enumerate(DISCLOSURE_LEVELS)}
+INTERACTION_RETRY_FLAGS = frozenset(
     {
-        "direct_question_present",
-        "direct_correction_missing",
-        "direct_correction_delayed",
         "invalid_state_transition",
         "invalid_dialogue_move",
         "excessive_scaffold_questions",
         "overlong_scaffold_response",
         "early_answer_exposure",
         "next_target_transition_missing",
-        "roleplay_first_person_missing",
     }
 )
 
@@ -105,7 +102,7 @@ class InteractionRuntime:
     target_count: int
     previous_state: DialogueState | None
     allowed_states: tuple[DialogueState, ...]
-    previous_scaffold_level: str | None
+    previous_disclosure_level: str | None
     previous_attempts_in_state: int
 
     def prompt_block(self) -> str:
@@ -130,14 +127,14 @@ class InteractionRuntime:
             f"Current target position: {self.target_sequence_number or 0}/{self.target_count}\n"
             f"Current target: {json.dumps(target_payload, ensure_ascii=False)}"
         )
-        if self.interaction_mode == "direct":
+        if self.interaction_mode == "standard_chat":
             return (
                 f"{shared}\n"
-                "Required behavior: answer or correct the target immediately in the first substantive sentence. "
-                "Then give a concise historically grounded explanation. Do not delay the correction with a "
-                "Socratic question or require a reflection sequence.\n"
-                "Structured interaction fields must be dialogue_state=DIRECT_RESPONSE, "
-                "dialogue_move=direct_correction, completion_status=complete, and scaffold_level=null."
+                "Required behavior: conduct a natural historical conversation. Answer the learner's actual request and "
+                "ask a clarification or follow-up when useful. Do not force a correction, Socratic sequence, evidence "
+                "exercise, revision, or reflection.\n"
+                "Structured interaction fields must be dialogue_state=STANDARD_CHAT, "
+                "dialogue_move=natural_response, completion_status=continue, and disclosure_level=null."
             )
 
         state_moves = ", ".join(
@@ -172,7 +169,7 @@ class InteractionRuntime:
             f"Allowed response states: {', '.join(self.allowed_states)}\n"
             f"Allowed state-to-move mapping: {state_moves}\n"
             f"Allowed move rules: {json.dumps(move_rules, ensure_ascii=False)}\n"
-            f"Previous scaffold level: {self.previous_scaffold_level or 'NONE'}\n"
+            f"Previous disclosure level: {self.previous_disclosure_level or 'NONE'}\n"
             f"Previous attempts in state: {self.previous_attempts_in_state}\n"
             f"Next unresolved target for transition only: {json.dumps(next_target_payload, ensure_ascii=False)}\n"
             "Required behavior: choose exactly one allowed response state after assessing the learner's latest "
@@ -180,8 +177,8 @@ class InteractionRuntime:
             "as a cue, evidence pointer, contrast, sentence stem, or zero to two tightly related questions; do not "
             "turn every turn into an interview. Do not discuss a second task error before RESOLVED. When RESOLVED "
             "and a next target exists, briefly confirm the current correction and bridge to that next target without "
-            "revealing its answer. Before RESOLVED, do not reveal the complete expected answer unless L4 support is "
-            "needed after repeated failure. If the learner has not progressed, remain in the previous state and "
+            "revealing its answer. Before RESOLVED, do not reveal the complete expected answer at any disclosure "
+            "level. If the learner has not progressed, remain in the previous state and "
             "increase support by at most one level. If the learner has progressed, advance by at most one state. "
             "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
             "not invent a source ID or quotation."
@@ -190,11 +187,12 @@ class InteractionRuntime:
 
 @dataclass(frozen=True)
 class EnforcedInteractionResponse:
-    """Learner-facing response after backend-owned fidelity enforcement."""
+    """Validated candidate; callers must regenerate when ``retry_required`` is true."""
 
     response: str
     metadata: dict[str, Any]
     fallback_applied: bool
+    retry_required: bool = False
 
 
 def _message_metadata(message: Any) -> dict[str, Any]:
@@ -352,33 +350,29 @@ def build_interaction_runtime(
     messages: Sequence[Any],
 ) -> InteractionRuntime:
     """Build the backend-owned policy input for one completion."""
-    interaction_mode: InteractionMode = "scaffold" if condition.ebl_enabled else "direct"
+    interaction_mode: InteractionMode = "scaffold" if condition.ebl_enabled else "standard_chat"
+    if interaction_mode == "standard_chat":
+        return InteractionRuntime(
+            condition_code=condition_code_for_key(condition.condition_key),
+            condition_key=condition.condition_key,
+            interaction_mode=interaction_mode,
+            roleplay_enabled=condition.roleplay_enabled,
+            target=None,
+            next_target=None,
+            target_sequence_number=None,
+            target_count=0,
+            previous_state=None,
+            allowed_states=("STANDARD_CHAT",),
+            previous_disclosure_level=None,
+            previous_attempts_in_state=0,
+        )
+
     target = select_interaction_target(task_attempt, messages)
     next_target, target_sequence_number, target_count = _target_queue_context(
         task_attempt,
         messages,
         target,
     )
-    if interaction_mode == "direct":
-        previous_metadata = _last_interaction_metadata(messages)
-        if previous_metadata.get("completion_status") == "complete":
-            target = None
-            target_sequence_number = None
-        return InteractionRuntime(
-            condition_code=condition_code_for_key(condition.condition_key),
-            condition_key=condition.condition_key,
-            interaction_mode=interaction_mode,
-            roleplay_enabled=condition.roleplay_enabled,
-            target=target,
-            next_target=None,
-            target_sequence_number=target_sequence_number,
-            target_count=target_count,
-            previous_state=None,
-            allowed_states=("DIRECT_RESPONSE",),
-            previous_scaffold_level=None,
-            previous_attempts_in_state=0,
-        )
-
     previous_metadata = _last_interaction_metadata(messages)
     last_target_id = previous_metadata.get("target_question_id")
     target_changed = bool(
@@ -394,11 +388,11 @@ def build_interaction_runtime(
     raw_previous_state = previous_metadata.get("dialogue_state")
     if transition_started:
         previous_state: DialogueState | None = EBL_INITIAL_STATE
-        previous_scaffold_level = "L0"
+        previous_disclosure_level = "D0"
         previous_attempts_in_state = 0
     elif target_changed:
         previous_state = None
-        previous_scaffold_level = None
+        previous_disclosure_level = None
         previous_attempts_in_state = 0
     else:
         previous_state = (
@@ -406,10 +400,8 @@ def build_interaction_runtime(
             if raw_previous_state in EBL_STATE_TRANSITIONS
             else None
         )
-        previous_scaffold_level = (
-            str(previous_metadata.get("scaffold_level"))
-            if previous_metadata.get("scaffold_level") in SCAFFOLD_LEVELS
-            else None
+        previous_disclosure_level = _normalize_disclosure_level(
+            previous_metadata.get("disclosure_level") or previous_metadata.get("scaffold_level")
         )
         previous_attempts_in_state = int(previous_metadata.get("attempts_in_state") or 0)
     if target is None:
@@ -429,24 +421,31 @@ def build_interaction_runtime(
         target_count=target_count,
         previous_state=previous_state,
         allowed_states=allowed_states,
-        previous_scaffold_level=previous_scaffold_level,
+        previous_disclosure_level=previous_disclosure_level,
         previous_attempts_in_state=previous_attempts_in_state,
     )
 
 
-def _scaffold_level(runtime: InteractionRuntime, state: str, raw_level: Any) -> str:
-    if raw_level in SCAFFOLD_LEVELS:
-        suggested_index = SCAFFOLD_LEVELS.index(raw_level)
+def _normalize_disclosure_level(raw_level: Any) -> str | None:
+    if raw_level in DISCLOSURE_LEVELS:
+        return str(raw_level)
+    return LEGACY_DISCLOSURE_LEVELS.get(str(raw_level))
+
+
+def _disclosure_level(runtime: InteractionRuntime, state: str, raw_level: Any) -> str:
+    normalized_level = _normalize_disclosure_level(raw_level)
+    if normalized_level in DISCLOSURE_LEVELS:
+        suggested_index = DISCLOSURE_LEVELS.index(normalized_level)
     else:
         suggested_index = 0
     previous_index = (
-        SCAFFOLD_LEVELS.index(runtime.previous_scaffold_level)
-        if runtime.previous_scaffold_level in SCAFFOLD_LEVELS
+        DISCLOSURE_LEVELS.index(runtime.previous_disclosure_level)
+        if runtime.previous_disclosure_level in DISCLOSURE_LEVELS
         else 0
     )
     if state == runtime.previous_state:
-        return SCAFFOLD_LEVELS[min(4, max(suggested_index, previous_index + 1))]
-    return SCAFFOLD_LEVELS[min(4, max(suggested_index, previous_index - 1, 0))]
+        return DISCLOSURE_LEVELS[min(4, max(suggested_index, previous_index + 1))]
+    return DISCLOSURE_LEVELS[min(4, max(suggested_index, previous_index - 1, 0))]
 
 
 def _answer_text(value: Any) -> str:
@@ -487,17 +486,6 @@ def _contains_expected_answer(response_text: str, expected_answer: Any) -> bool:
             f"填入{answer}",
         )
     )
-
-
-def _first_substantive_sentence(response_text: str) -> str:
-    for sentence in re.split(r"[。！？?!\n]+", response_text):
-        if sentence.strip():
-            return sentence.strip()
-    return ""
-
-
-def _uses_first_person(response_text: str) -> bool:
-    return any(marker in response_text for marker in ("我", "我們", "本人", "本席", "吾"))
 
 
 def resolve_interaction_metadata(
@@ -541,29 +529,17 @@ def resolve_interaction_metadata(
         }
     )
 
-    if runtime.interaction_mode == "direct":
-        if runtime.target and ("？" in response_text or "?" in response_text):
-            flags.add("direct_question_present")
-        expected_answer = runtime.target.expected_answer if runtime.target else None
-        if expected_answer is not None and not _contains_expected_answer(response_text, expected_answer):
-            flags.add("direct_correction_missing")
-        first_sentence = _first_substantive_sentence(response_text)
-        if (
-            expected_answer is not None
-            and _contains_expected_answer(response_text, expected_answer)
-            and not _contains_expected_answer(first_sentence, expected_answer)
-        ):
-            flags.add("direct_correction_delayed")
+    if runtime.interaction_mode == "standard_chat":
         return {
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "condition_code": runtime.condition_code,
-            "interaction_mode": "direct",
-            "dialogue_state": "DIRECT_RESPONSE",
-            "dialogue_move": "direct_correction",
-            "scaffold_level": None,
+            "interaction_mode": "standard_chat",
+            "dialogue_state": "STANDARD_CHAT",
+            "dialogue_move": "natural_response",
+            "disclosure_level": None,
             "attempts_in_state": 0,
             "learner_revision_status": raw.get("learner_revision_status") or "not_applicable",
-            "completion_status": "complete",
+            "completion_status": "continue",
             "fidelity_flags": sorted(flags),
             "provider_fidelity_flags": provider_flags,
             **target_metadata,
@@ -582,11 +558,14 @@ def resolve_interaction_metadata(
         flags.add("excessive_scaffold_questions")
     if len(response_text) > 700:
         flags.add("overlong_scaffold_response")
-    resolved_scaffold_level = _scaffold_level(runtime, proposed_state, raw.get("scaffold_level"))
+    resolved_disclosure_level = _disclosure_level(
+        runtime,
+        proposed_state,
+        raw.get("disclosure_level") or raw.get("scaffold_level"),
+    )
     expected_answer = runtime.target.expected_answer if runtime.target else None
     if (
         proposed_state != "RESOLVED"
-        and resolved_scaffold_level != "L4"
         and expected_answer is not None
         and _contains_expected_answer(response_text, expected_answer)
     ):
@@ -612,7 +591,7 @@ def resolve_interaction_metadata(
         "dialogue_state": proposed_state,
         "dialogue_move": expected_move,
         "primary_historical_thinking_move": primary_reasoning_move(proposed_state),
-        "scaffold_level": resolved_scaffold_level,
+        "disclosure_level": resolved_disclosure_level,
         "attempts_in_state": attempts_in_state,
         "learner_revision_status": revision_status,
         "completion_status": completion_status,
@@ -623,104 +602,26 @@ def resolve_interaction_metadata(
     }
 
 
-def _fallback_response(
-    runtime: InteractionRuntime,
-    metadata: dict[str, Any],
-) -> str:
-    target = runtime.target
-    expected = _answer_text(target.expected_answer) if target else ""
-    learner_answer = _answer_text(target.learner_answer) if target else ""
-    roleplay_prefix = "我先不替你下結論。" if runtime.roleplay_enabled else ""
-
-    if runtime.interaction_mode == "direct":
-        if expected:
-            lead = (
-                f"我的判斷是：正確答案是「{expected}」。"
-                if runtime.roleplay_enabled
-                else f"正確答案是「{expected}」。"
-            )
-            return f"{lead}這項修正依據題目提供的史實與脈絡。"
-        return (
-            "我的判斷是：這項說法需要依題目中的史實重新檢查。"
-            if runtime.roleplay_enabled
-            else "這項說法需要依題目中的史實重新檢查。"
-        )
-
-    state = str(metadata.get("dialogue_state") or EBL_INITIAL_STATE)
-    if state == "RESOLVED":
-        next_target = runtime.next_target
-        transition = (
-            f"接著看下一項：「{next_target.prompt}」先說明你當時作答的依據。"
-            if next_target
-            else ""
-        )
-        if expected:
-            return (
-                f"我的判斷是：你已完成修正，正確答案是「{expected}」。{transition}"
-                if runtime.roleplay_enabled
-                else f"你已完成修正，正確答案是「{expected}」。{transition}"
-            )
-        return (
-            f"我認為這一項討論已完成。{transition}"
-            if runtime.roleplay_enabled
-            else f"這一項討論已完成。{transition}"
-        )
-
-    answer_reference = f"「{learner_answer}」" if learner_answer else "原先的判斷"
-    if state == "INSPECT_EVIDENCE":
-        guidance = f"回到題目提供的史實線索，指出一項支持或削弱你原先答案{answer_reference}的證據。"
-    elif state == "CONTEXTUALIZE_OR_COMPARE":
-        guidance = f"把相關時代脈絡或不同群體的位置並列，說明原先答案{answer_reference}忽略了哪項差異。"
-    elif state == "REVISE_CLAIM":
-        guidance = f"用「主張－證據－理由」重新表述原先的判斷{answer_reference}。"
-    elif state == "REFLECT":
-        guidance = "比較修正前後的想法，指出最改變你判斷的一項證據或脈絡。"
-    else:
-        guidance = f"先把得出{answer_reference}時所使用的史實與推理說成一句完整判斷。"
-    return f"{roleplay_prefix}{guidance}"
-
-
 def enforce_interaction_response(
     runtime: InteractionRuntime,
     provider_metadata: dict[str, Any] | None,
     response_text: str,
 ) -> EnforcedInteractionResponse:
-    """Replace contract-breaking model output before it reaches the learner."""
+    """Validate a candidate and require regeneration instead of writing visible fallback prose."""
     metadata = resolve_interaction_metadata(runtime, provider_metadata, response_text)
     flags = set(metadata["fidelity_flags"])
-    if runtime.roleplay_enabled and not _uses_first_person(response_text):
-        flags.add("roleplay_first_person_missing")
     metadata["fidelity_flags"] = sorted(flags)
-
-    if not flags.intersection(FALLBACK_TRIGGER_FLAGS):
-        metadata["fidelity_fallback_applied"] = False
-        return EnforcedInteractionResponse(
-            response=response_text,
-            metadata=metadata,
-            fallback_applied=False,
-        )
-
-    fallback = _fallback_response(runtime, metadata)
-    corrected_metadata = resolve_interaction_metadata(
-        runtime,
-        {
-            "dialogue_state": metadata["dialogue_state"],
-            "dialogue_move": metadata["dialogue_move"],
-            "scaffold_level": metadata["scaffold_level"],
-            "learner_revision_status": metadata["learner_revision_status"],
-            "completion_status": metadata["completion_status"],
-        },
-        fallback,
-    )
-    corrected_metadata["fidelity_flags"] = sorted(flags)
-    corrected_metadata["provider_fidelity_flags"] = metadata["provider_fidelity_flags"]
-    corrected_metadata["fidelity_fallback_applied"] = True
-    corrected_metadata["raw_response_sha256"] = hashlib.sha256(response_text.encode("utf-8")).hexdigest()
-    corrected_metadata["raw_response_length"] = len(response_text)
+    retry_required = bool(flags.intersection(INTERACTION_RETRY_FLAGS))
+    metadata["fidelity_fallback_applied"] = False
+    metadata["fidelity_retry_required"] = retry_required
+    if retry_required:
+        metadata["rejected_response_sha256"] = hashlib.sha256(response_text.encode("utf-8")).hexdigest()
+        metadata["rejected_response_length"] = len(response_text)
     return EnforcedInteractionResponse(
-        response=fallback,
-        metadata=corrected_metadata,
-        fallback_applied=True,
+        response=response_text,
+        metadata=metadata,
+        fallback_applied=False,
+        retry_required=retry_required,
     )
 
 
@@ -732,13 +633,17 @@ def enforce_initial_greeting(
     """Enforce the first AI turn with the same contract as later chat turns."""
     runtime = build_interaction_runtime(condition, task_attempt, [])
     raw: dict[str, Any]
-    if runtime.interaction_mode == "direct":
-        raw = {"learner_revision_status": "not_applicable"}
+    if runtime.interaction_mode == "standard_chat":
+        raw = {
+            "dialogue_state": "STANDARD_CHAT",
+            "dialogue_move": "natural_response",
+            "learner_revision_status": "not_applicable",
+        }
     else:
         raw = {
             "dialogue_state": EBL_INITIAL_STATE if runtime.target else "RESOLVED",
             "dialogue_move": "reasoning_probe" if runtime.target else "resolution",
-            "scaffold_level": "L0",
+            "disclosure_level": "D0",
             "learner_revision_status": "not_yet" if runtime.target else "revised",
         }
     return enforce_interaction_response(runtime, raw, greeting)

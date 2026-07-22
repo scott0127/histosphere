@@ -92,16 +92,19 @@ def _default_llm_model() -> str:
     """根據可用的 API key 決定預設 LLM 模型名稱。
 
     優先順序:
-        1. 若已設定 ``NVIDIA_API_KEY``，使用 ``NVIDIA_LLM_MODEL``
-           環境變數（預設 ``nvidia/nemotron-3-nano-omni-30b-a3b-reasoning``）。
-        2. 否則回傳 ``gemini/gemini-2.5-flash``。
+        1. 若已設定 ``GEMINI_API_KEY``，使用 ``GEMINI_LLM_MODEL``
+           環境變數（預設 ``gemini/gemini-3.6-flash``）。
+        2. 否則若已設定 ``NVIDIA_API_KEY``，使用 ``NVIDIA_LLM_MODEL``。
+        3. 兩者皆未設定時仍回傳 Gemini 預設值，讓啟動時的設定可預期。
 
     Returns:
         str: LiteLLM 格式的模型識別字串。
     """
+    if os.getenv("GEMINI_API_KEY"):
+        return os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.6-flash")
     if os.getenv("NVIDIA_API_KEY"):
         return os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
-    return "gemini/gemini-2.5-flash"
+    return "gemini/gemini-3.6-flash"
 
 
 def _default_fallback_models(primary_model: str) -> list[str]:
@@ -109,7 +112,7 @@ def _default_fallback_models(primary_model: str) -> list[str]:
 
     解析邏輯:
         1. 若已設定 ``LLM_FALLBACK_MODELS`` 環境變數，直接拆分使用。
-        2. 若主模型為 NVIDIA 系列，fallback 到 Gemini Flash Lite。
+        2. 若主模型為 NVIDIA 系列且 Gemini key 可用，fallback 到 Gemini Flash。
         3. 若有 ``NVIDIA_API_KEY`` 但主模型非 NVIDIA，fallback 到 NVIDIA 模型。
         4. 以上皆不符合則回傳空清單（無 fallback）。
 
@@ -121,8 +124,8 @@ def _default_fallback_models(primary_model: str) -> list[str]:
     """
     if os.getenv("LLM_FALLBACK_MODELS"):
         return _split_csv(os.getenv("LLM_FALLBACK_MODELS"))
-    if primary_model.startswith("nvidia/"):
-        return ["gemini/gemini-2.0-flash-lite", "gemini/gemini-flash-lite-latest"]
+    if primary_model.startswith("nvidia/") and os.getenv("GEMINI_API_KEY"):
+        return [os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.6-flash")]
     if os.getenv("NVIDIA_API_KEY"):
         return [os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")]
     return []
@@ -175,7 +178,7 @@ class Settings(BaseModel):
     allow_in_memory_repository: bool = False
     admin_key: str = "scott5497"
     llm_provider: str = "litellm"
-    llm_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    llm_model: str = "gemini/gemini-3.6-flash"
     llm_fallback_models: list[str] = Field(default_factory=list)
     llm_api_base: str | None = None
     llm_api_key: str | None = None

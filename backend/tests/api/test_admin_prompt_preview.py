@@ -31,7 +31,7 @@ def test_admin_prompt_preview_returns_runtime_prompt_modules(client):
     assert "general_prompt" in module_names
     assert "independent_1_prompt" in module_names
     assert "independent_2_prompt" in module_names
-    assert "persona_context" in module_names
+    assert "persona_event_context" in module_names
     assert "conversation_history" in module_names
     assert "請說明這個事件的重要性。" in payload["prompt"]
     assert "[event_context]" in payload["prompt"]

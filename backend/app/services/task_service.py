@@ -1,5 +1,9 @@
 """Persistent asynchronous task submission workflow."""
 
+import hashlib
+import json
+import logging
+
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
@@ -12,17 +16,30 @@ from app.schemas.responses import (
     TaskSubmissionStatusResponse,
     TaskSubmitResponse,
 )
-from app.core.interaction_contract import enforce_initial_greeting
+from app.services.conversation_opening_service import (
+    ConversationOpening,
+    ConversationOpeningService,
+    OpeningValidationError,
+)
 from app.services.session_runtime import expire_session_if_due
 from app.services.task_judgement import enrich_task_judgement
+
+
+logger = logging.getLogger(__name__)
 
 
 class TaskService:
     """Persist task work first, then perform slow LLM calls out of request path."""
 
-    def __init__(self, repository: RepositoryProtocol, llm_provider: LLMProvider) -> None:
+    def __init__(
+        self,
+        repository: RepositoryProtocol,
+        llm_provider: LLMProvider,
+        opening_service: ConversationOpeningService,
+    ) -> None:
         self.repository = repository
         self.llm_provider = llm_provider
+        self.opening_service = opening_service
 
     def save_draft(self, task_id: str, request: TaskDraftRequest) -> TaskDraftResponse:
         """Save a recoverable learner draft without invoking the LLM."""
@@ -118,12 +135,38 @@ class TaskService:
 
             judgement = await self.llm_provider.judge_task_attempt(event, task, attempt.response_payload)
             judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
-            attempt.status = "submitted"
+            # ``submitted`` is the polling terminal state. Keep the attempt processing
+            # until the validated opening and its conversation are both durable.
             attempt.judgement_payload = judgement
-            attempt.submitted_at = utc_now()
             attempt = self.repository.save_task_attempt(attempt)
 
-            session.status = "task_submitted"
+            conversation = self.repository.get_conversation_by_session(session.id)
+            personas = self.repository.list_personas(event.id)
+            messages = self.repository.list_messages(conversation.id) if conversation else []
+            if messages:
+                greeting_message = messages[0]
+            else:
+                opening = await self.opening_service.generate(
+                    event=event,
+                    personas=personas,
+                    condition=condition,
+                    attempt=attempt,
+                )
+                if not conversation:
+                    conversation = self.repository.save_conversation(
+                        Conversation(
+                            event_id=event.id,
+                            task_attempt_id=attempt.id,
+                            session_id=session.id,
+                            user_id=attempt.user_id,
+                        )
+                    )
+                greeting_message = self._store_greeting(conversation.id, condition, opening, attempt)
+
+            attempt.status = "submitted"
+            attempt.submitted_at = utc_now()
+            attempt = self.repository.save_task_attempt(attempt)
+            session.status = "conversation_started"
             self.repository.save_session(session)
             self.repository.log_research(
                 ResearchLog(
@@ -136,28 +179,6 @@ class TaskService:
                     payload={"judgement": judgement},
                 )
             )
-
-            conversation = self.repository.get_conversation_by_session(session.id)
-            if not conversation:
-                conversation = self.repository.save_conversation(
-                    Conversation(
-                        event_id=event.id,
-                        task_attempt_id=attempt.id,
-                        session_id=session.id,
-                        user_id=attempt.user_id,
-                    )
-                )
-
-            personas = self.repository.list_personas(event.id)
-            messages = self.repository.list_messages(conversation.id)
-            if messages:
-                greeting_message = messages[0]
-            else:
-                greeting = await self.llm_provider.generate_greeting(event, personas, condition, attempt)
-                greeting_message = self._store_greeting(conversation.id, personas, condition, greeting, attempt)
-
-            session.status = "conversation_started"
-            self.repository.save_session(session)
             self.repository.log_research(
                 ResearchLog(
                     user_id=attempt.user_id,
@@ -172,10 +193,19 @@ class TaskService:
                 )
             )
         except Exception as exc:
+            logger.exception("Task submission processing failed for attempt %s", attempt.id)
             attempt.status = "failed"
+            previous_judgement = dict(attempt.judgement_payload)
+            validation_failure = (
+                {"rejected_candidates": exc.rejected_candidates}
+                if isinstance(exc, OpeningValidationError)
+                else None
+            )
             attempt.judgement_payload = {
+                **previous_judgement,
                 "error": "Task processing failed. The submission can be retried.",
                 "error_type": type(exc).__name__,
+                **({"completion_validation": validation_failure} if validation_failure else {}),
             }
             self.repository.save_task_attempt(attempt)
             self.repository.log_research(
@@ -257,25 +287,40 @@ class TaskService:
     def _store_greeting(
         self,
         conversation_id: str,
-        personas,
         condition,
-        greeting: str,
+        opening: ConversationOpening,
         attempt: TaskAttempt,
     ) -> ChatMessage:
-        persona = personas[0] if condition.roleplay_enabled and personas else None
-        enforced_greeting = enforce_initial_greeting(condition, attempt, greeting)
+        persona = opening.persona
+        profile_payload = persona.prompt_profile if persona else {}
+        profile_hash = hashlib.sha256(
+            json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         message = ChatMessage(
             conversation_id=conversation_id,
             persona_id=persona.id if persona else None,
             speaker_type="persona" if persona else "assistant",
             speaker_name=persona.name if persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant"),
             sequence_index=self.repository.next_message_sequence(conversation_id),
-            content=enforced_greeting.response,
+            content=opening.generation.response,
+            annotations=opening.generation.annotations,
             metadata={
                 "condition_key": condition.condition_key,
                 "task_attempt_id": attempt.id,
                 "judgement": attempt.judgement_payload,
-                **enforced_greeting.metadata,
+                "prompt_hash": hashlib.sha256(opening.prompt.encode("utf-8")).hexdigest(),
+                "prompt_modules": [module.name for module in opening.modules],
+                "persona_profile_contract": profile_payload.get("contract_version") if persona else None,
+                "persona_profile_hash": profile_hash if persona else None,
+                **opening.metadata,
+                **self._llm_metadata(),
             },
         )
         return self.repository.add_message(message)
+
+    def _llm_metadata(self) -> dict[str, str]:
+        runner = getattr(self.llm_provider, "runner", None)
+        return {
+            "provider": str(getattr(runner, "last_provider", "unknown")),
+            "model": str(getattr(runner, "last_model", "unknown")),
+        }

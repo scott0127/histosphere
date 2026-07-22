@@ -32,6 +32,7 @@ class FakeWikipediaProvider:
 class FakeLLMProvider:
     def __init__(self) -> None:
         self.chat_prompts: list[str] = []
+        self.greeting_prompts: list[str] = []
 
     async def generate_event_profile(self, event_name: str, sources: list[WikiSource]) -> dict:
         return {
@@ -98,13 +99,48 @@ class FakeLLMProvider:
         personas: list[Persona],
         condition: ExperimentCondition,
         attempt: TaskAttempt,
-    ) -> str:
+        prompt: str,
+    ) -> ChatGenerationResult:
+        self.greeting_prompts.append(prompt)
         speaker = personas[0].name if condition.roleplay_enabled and personas else "AI Tutor"
         if condition.ebl_enabled:
-            voice = "我想先回到" if condition.roleplay_enabled else "先回到"
-            return f"{speaker}：{voice}你剛才的判斷。你當時是根據什麼理由作答？"
-        voice = "我的判斷是：" if condition.roleplay_enabled else ""
-        return f"{speaker}：{voice}正確答案是「原因」，因為這符合題目的核心史實。"
+            if condition.roleplay_enabled:
+                response = (
+                    f"我是{speaker}。{event.canonical_name}的局勢正在我眼前展開；"
+                    "我想先聽你說明，你剛才是根據什麼理由作答？"
+                )
+            else:
+                response = f"我們從{event.canonical_name}開始。你剛才是根據什麼理由作答？"
+            metadata = {
+                "dialogue_state": "ELICIT_REASONING",
+                "dialogue_move": "reasoning_probe",
+                "disclosure_level": "D0",
+                "learner_revision_status": "not_yet",
+                "completion_status": "continue",
+                "fidelity_flags": [],
+            }
+        elif condition.roleplay_enabled:
+            response = (
+                f"我是{speaker}。我正身處{event.canonical_name}的局勢之中；"
+                "你想先從人物、衝突，還是事件背景談起？"
+            )
+            metadata = {
+                "dialogue_state": "STANDARD_CHAT",
+                "dialogue_move": "natural_response",
+                "learner_revision_status": "not_applicable",
+                "completion_status": "continue",
+                "fidelity_flags": [],
+            }
+        else:
+            response = f"我們來談{event.canonical_name}。你想先從哪個面向開始？"
+            metadata = {
+                "dialogue_state": "STANDARD_CHAT",
+                "dialogue_move": "natural_response",
+                "learner_revision_status": "not_applicable",
+                "completion_status": "continue",
+                "fidelity_flags": [],
+            }
+        return ChatGenerationResult(response=response, interaction_metadata=metadata)
 
     async def generate_chat_response(
         self,
@@ -126,21 +162,21 @@ class FakeLLMProvider:
             interaction_metadata = {
                 "dialogue_state": "INSPECT_EVIDENCE",
                 "dialogue_move": "evidence_probe",
-                "scaffold_level": "L1",
+                "disclosure_level": "D1",
                 "learner_revision_status": "not_yet",
                 "completion_status": "continue",
                 "fidelity_flags": [],
             }
         else:
-            voice = "我的直接回答" if persona else "直接回答"
+            voice = "依我所見" if persona else "一般來說"
             response = (
                 f"{speaker}：{voice}，{event.canonical_name} 的重要性在於它改變了制度與歷史發展。"
             )
             interaction_metadata = {
-                "dialogue_state": "DIRECT_RESPONSE",
-                "dialogue_move": "direct_correction",
+                "dialogue_state": "STANDARD_CHAT",
+                "dialogue_move": "natural_response",
                 "learner_revision_status": "not_applicable",
-                "completion_status": "complete",
+                "completion_status": "continue",
                 "fidelity_flags": [],
             }
         return ChatGenerationResult(
@@ -172,7 +208,7 @@ def client(monkeypatch) -> TestClient:
     app.state.event_initialization_service.wikipedia_provider = fake_provider
     app.state.llm_provider = fake_llm
     app.state.event_initialization_service.llm_provider = fake_llm
-    app.state.conversation_service.llm_provider = fake_llm
+    app.state.opening_service.llm_provider = fake_llm
     app.state.chat_service.llm_provider = fake_llm
     app.state.task_service.llm_provider = fake_llm
     return TestClient(app)

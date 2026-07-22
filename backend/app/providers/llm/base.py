@@ -101,7 +101,8 @@ class LLMProvider(Protocol):
         personas: list[Persona],
         condition: ExperimentCondition,
         attempt: TaskAttempt,
-    ) -> str:
+        prompt: str,
+    ) -> ChatGenerationResult:
         """依 condition 與 learner task judgement 產生 conversation 開場白。
 
         Args:
@@ -109,9 +110,10 @@ class LLMProvider(Protocol):
             personas: 可用的 persona 清單。
             condition: 當前實驗條件。
             attempt: Learner 的 task attempt（含 judgement）。
+            prompt: PromptService 組裝的 opening modules。
 
         Returns:
-            str: 開場白文字。
+            ChatGenerationResult: 開場白與隱藏的 interaction metadata。
         """
         ...
 

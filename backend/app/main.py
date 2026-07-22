@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.db import InMemoryRepository, SupabaseRepository
 from app.providers import WikipediaProvider
 from app.providers.llm import build_llm_provider
+from app.services.conversation_opening_service import ConversationOpeningService
 from app.services import (
     ChatService,
     ConversationService,
@@ -74,22 +75,24 @@ def create_app() -> FastAPI:
     llm_provider = build_llm_provider(settings)
     rag_pipeline = RagPipelineService(repository)
     prompt_service = PromptService()
+    opening_service = ConversationOpeningService(llm_provider, prompt_service)
 
     app.state.repository = repository
     app.state.wikipedia_provider = wikipedia_provider
     app.state.llm_provider = llm_provider
     app.state.rag_pipeline = rag_pipeline
     app.state.prompt_service = prompt_service
+    app.state.opening_service = opening_service
     app.state.event_service = EventService(repository)
     app.state.event_initialization_service = EventInitializationService(
         repository=repository,
         wikipedia_provider=wikipedia_provider,
         llm_provider=llm_provider,
     )
-    app.state.conversation_service = ConversationService(repository, llm_provider)
+    app.state.conversation_service = ConversationService(repository, opening_service)
     app.state.chat_service = ChatService(repository, llm_provider, prompt_service, rag_pipeline)
     app.state.persona_service = PersonaService(repository)
-    app.state.task_service = TaskService(repository, llm_provider)
+    app.state.task_service = TaskService(repository, llm_provider, opening_service)
     app.state.session_service = SessionService(repository)
     app.state.active_task_attempts = set()
 

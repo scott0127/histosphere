@@ -142,7 +142,7 @@ class ChatOutputPayload(BaseModel):
     related_events: list[dict] = Field(default_factory=list)
     dynamic_context: str = ""
     dialogue_state: Literal[
-        "DIRECT_RESPONSE",
+        "STANDARD_CHAT",
         "ELICIT_REASONING",
         "INSPECT_EVIDENCE",
         "CONTEXTUALIZE_OR_COMPARE",
@@ -151,6 +151,8 @@ class ChatOutputPayload(BaseModel):
         "RESOLVED",
     ] | None = None
     dialogue_move: str | None = None
+    disclosure_level: Literal["D0", "D1", "D2", "D3", "D4"] | None = None
+    # Read-only compatibility for completions produced before the D0-D4 contract.
     scaffold_level: Literal["L0", "L1", "L2", "L3", "L4"] | None = None
     learner_revision_status: Literal["not_yet", "partial", "revised", "unresolved", "not_applicable"] | None = None
     completion_status: Literal["continue", "resolved", "complete"] | None = None

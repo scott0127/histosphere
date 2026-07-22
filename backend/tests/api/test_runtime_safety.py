@@ -198,7 +198,8 @@ def test_admin_timer_is_opt_in_and_completes_due_session(client):
 def test_persona_prompt_contract_and_dry_run_are_non_persistent(client):
     initialized = admin_initialize(client, "Persona contract 測試")
     profile = initialized["personas"][0]["prompt_profile"]
-    assert profile["contract_version"] == "persona_prompt_v1"
+    assert profile["contract_version"] == "persona_prompt_v2"
+    assert profile["speaking_style"]
     assert profile["knowledge_boundary"]
     assert profile["forbidden_claims"]
 
@@ -208,7 +209,7 @@ def test_persona_prompt_contract_and_dry_run_are_non_persistent(client):
         headers=ADMIN_HEADERS,
         json={
             "event_id": initialized["event_id"],
-            "condition_key": "ebl_roleplay",
+            "condition_key": "no_ebl_roleplay",
             "persona_id": initialized["personas"][0]["id"],
             "sample_user_message": "請以人物資訊邊界回應。",
         },
@@ -219,3 +220,16 @@ def test_persona_prompt_contract_and_dry_run_are_non_persistent(client):
     assert module_names[:3] == ["general_prompt", "independent_1_prompt", "independent_2_prompt"]
     assert payload["response"]
     assert len(client.app.state.repository.list_research_logs()) == before_logs
+
+    missing_attempt = client.post(
+        "/api/admin/prompt-dry-run",
+        headers=ADMIN_HEADERS,
+        json={
+            "event_id": initialized["event_id"],
+            "condition_key": "ebl_roleplay",
+            "persona_id": initialized["personas"][0]["id"],
+            "sample_user_message": "請檢查我的理由。",
+        },
+    )
+    assert missing_attempt.status_code == 400
+    assert "task_attempt_id" in missing_attempt.json()["detail"]

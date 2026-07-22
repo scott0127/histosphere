@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.persona_prompt_contract import PersonaPromptProfile
 from app.models.domain import ChatMessage, ConditionKey
 
 
@@ -163,7 +164,7 @@ class PersonaCreateRequest(BaseModel):
     expertise_areas: list[str] = Field(default_factory=list)
     sources: list[dict[str, Any]] = Field(default_factory=list)
     avatar_url: str | None = None
-    prompt_profile: dict[str, Any] = Field(default_factory=dict)
+    prompt_profile: PersonaPromptProfile = Field(default_factory=PersonaPromptProfile)
     active: bool = True
     sort_order: int = 0
     revision_state: str = "manual"
@@ -195,7 +196,7 @@ class PersonaUpdateRequest(BaseModel):
     expertise_areas: list[str] | None = None
     sources: list[dict[str, Any]] | None = None
     avatar_url: str | None = None
-    prompt_profile: dict[str, Any] | None = None
+    prompt_profile: PersonaPromptProfile | None = None
     active: bool | None = None
     sort_order: int | None = None
     revision_state: str | None = None
@@ -274,4 +275,5 @@ class AdminPromptDryRunRequest(BaseModel):
     event_id: str = Field(..., min_length=1)
     condition_key: ConditionKey
     persona_id: str | None = None
+    task_attempt_id: str | None = None
     sample_user_message: str = Field(default="請說明這個事件的重要性。", min_length=1)

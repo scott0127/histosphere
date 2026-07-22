@@ -11,7 +11,7 @@ from typing import Final, Literal
 
 ConditionCode = Literal["01", "02", "03", "04"]
 AgentMode = Literal["generic", "persona"]
-ResponsePolicy = Literal["direct", "scaffold"]
+ResponsePolicy = Literal["standard", "scaffold"]
 
 
 @dataclass(frozen=True)
@@ -34,8 +34,8 @@ EXPERIMENT_CONDITION_DEFINITIONS: Final = (
         ebl_enabled=False,
         roleplay_enabled=False,
         agent_mode="generic",
-        response_policy="direct",
-        default_description="一般 ChatGPT 式回答；可直接給正確答案。",
+        response_policy="standard",
+        default_description="一般 AI 歷史對話；自然回答與追問，不主動執行 Historical EBL。",
     ),
     ExperimentConditionDefinition(
         code="02",
@@ -57,8 +57,8 @@ EXPERIMENT_CONDITION_DEFINITIONS: Final = (
         ebl_enabled=False,
         roleplay_enabled=True,
         agent_mode="persona",
-        response_policy="direct",
-        default_description="AI historical persona role-play；沉浸式回答，可直接給答案。",
+        response_policy="standard",
+        default_description="AI historical persona role-play；以事件中的人物視角自然對話，不主動執行 Historical EBL。",
     ),
     ExperimentConditionDefinition(
         code="04",
