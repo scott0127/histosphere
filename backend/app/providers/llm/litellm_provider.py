@@ -35,13 +35,19 @@ from app.providers.llm.structured import (
 
 
 CHAT_OUTPUT_JSON_CONTRACT = (
-    'Return exactly one JSON object with every key in this shape: '
-    '{"response":"learner-facing Traditional Chinese text","annotations":[],'
-    '"related_events":[],"dynamic_context":"","dialogue_state":"STATE",'
-    '"dialogue_move":"MOVE","disclosure_level":null,'
-    '"learner_revision_status":"STATUS","completion_status":"STATUS",'
-    '"fidelity_flags":[]}. '
-    "Use the interaction_runtime values for STATE, MOVE, disclosure_level, and statuses. "
+    "Return exactly one JSON object. Every key is required. "
+    'Use this shape: {"response":"learner-facing Traditional Chinese text",'
+    '"annotations":[{"text":"term","explanation":"short explanation"}],'
+    '"related_events":[{"event_name":"name","event_year":1789,"event_id":null,'
+    '"relevance_reason":"reason","is_explorable":false}],"dynamic_context":"",'
+    '"dialogue_state":"STANDARD_CHAT|ELICIT_REASONING|INSPECT_EVIDENCE|'
+    'CONTEXTUALIZE_OR_COMPARE|REVISE_CLAIM|REFLECT|RESOLVED",'
+    '"dialogue_move":"runtime-provided move","disclosure_level":null,'
+    '"learner_revision_status":"not_yet|partial|revised|unresolved|not_applicable",'
+    '"completion_status":"continue|resolved|complete","fidelity_flags":[]}. '
+    "Each pipe-delimited field above is an enum: return exactly one allowed value, never the entire pipe string. "
+    "Use an empty array instead of strings when there are no annotations or related events. "
+    "Use the interaction_runtime values for dialogue_state, dialogue_move, disclosure_level, and statuses. "
     "fidelity_flags must contain only suspected rule violations; otherwise return an empty list. "
     "Do not add keys outside this object or wrap it in markdown."
 )

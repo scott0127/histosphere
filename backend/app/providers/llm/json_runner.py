@@ -19,6 +19,7 @@ from litellm import acompletion
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
+from app.services.llm_generation_audit import record_rejected_generation
 
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
@@ -46,6 +47,7 @@ class LLMCallCandidate:
     api_base: str | None = None
     api_key: str | None = None
     extra_body: dict | None = None
+    reasoning_effort: str | None = None
 
 
 class LLMJsonRunner:
@@ -110,6 +112,14 @@ class LLMJsonRunner:
                     self._mark_success(candidate)
                     return payload
                 except (json.JSONDecodeError, ValidationError) as first_error:
+                    record_rejected_generation(
+                        stage="schema_validation_initial",
+                        provider=candidate.provider,
+                        model=candidate.display_model,
+                        task_name=task_name,
+                        raw_output=first_text,
+                        reasons=[self._safe_error_message(first_error)],
+                    )
                     repair_prompt = (
                         "The previous response failed JSON validation. "
                         f"Task: {task_name}\n"
@@ -122,10 +132,29 @@ class LLMJsonRunner:
                         system_prompt=system_prompt,
                         user_prompt=f"{user_prompt}\n\n{repair_prompt}\n\nPrevious response:\n{first_text}",
                     )
-                    payload = self._parse(schema, second_text)
+                    try:
+                        payload = self._parse(schema, second_text)
+                    except (json.JSONDecodeError, ValidationError) as second_error:
+                        record_rejected_generation(
+                            stage="schema_validation_repair",
+                            provider=candidate.provider,
+                            model=candidate.display_model,
+                            task_name=task_name,
+                            raw_output=second_text,
+                            reasons=[self._safe_error_message(second_error)],
+                        )
+                        raise
                     self._mark_success(candidate)
                     return payload
             except Exception as exc:
+                record_rejected_generation(
+                    stage="provider_or_generation_failure",
+                    provider=candidate.provider,
+                    model=candidate.display_model,
+                    task_name=task_name,
+                    raw_output=None,
+                    reasons=[self._safe_error_message(exc)],
+                )
                 errors.append(
                     f"{candidate.provider}:{candidate.display_model}: {self._safe_error_message(exc)}"
                 )
@@ -153,22 +182,42 @@ class LLMJsonRunner:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": self.settings.llm_temperature,
             "max_tokens": self.settings.llm_max_output_tokens,
             "timeout": self.settings.llm_timeout_seconds,
         }
+        if self._supports_sampling_temperature(candidate.model):
+            kwargs["temperature"] = self.settings.llm_temperature
         if candidate.api_base:
             kwargs["api_base"] = candidate.api_base
         if candidate.api_key:
             kwargs["api_key"] = candidate.api_key
         if candidate.extra_body:
             kwargs["extra_body"] = candidate.extra_body
+        if candidate.reasoning_effort:
+            kwargs["reasoning_effort"] = candidate.reasoning_effort
+        if candidate.provider in {"gemini", "cohere"}:
+            kwargs["response_format"] = {"type": "json_object"}
 
         response = await acompletion(**kwargs)
         content = response.choices[0].message.content
         if not content:
             raise RuntimeError("LLM returned empty content")
         return str(content)
+
+    @staticmethod
+    def _supports_sampling_temperature(model: str) -> bool:
+        """Return whether the target still accepts sampling parameters.
+
+        Gemini 3.5 and 3.6 deprecated ``temperature`` and may reject it in a
+        future API revision. Keeping this decision beside request assembly
+        prevents a model upgrade from breaking every structured completion.
+        """
+
+        normalized = model.lower()
+        return not (
+            "gemini-3.5-" in normalized
+            or "gemini-3.6-" in normalized
+        )
 
     def _candidates(self) -> list[LLMCallCandidate]:
         """建立候選 LLM endpoint 清單（含 fallback 與 NVIDIA）。
@@ -214,6 +263,23 @@ class LLMJsonRunner:
         normalized = model.removeprefix("openai/")
         if normalized.startswith("nvidia/"):
             return self._nvidia_candidate(normalized)
+        if normalized.startswith("gemini/"):
+            return LLMCallCandidate(
+                provider="gemini",
+                model=model,
+                display_model=model,
+                api_base=self.settings.llm_api_base,
+                api_key=self.settings.gemini_api_key or self.settings.llm_api_key,
+                reasoning_effort=self.settings.gemini_reasoning_effort,
+            )
+        if normalized.startswith("cohere/"):
+            return LLMCallCandidate(
+                provider="cohere",
+                model=model,
+                display_model=model,
+                api_base=self.settings.llm_api_base,
+                api_key=self.settings.cohere_api_key or self.settings.llm_api_key,
+            )
         return LLMCallCandidate(
             provider="litellm",
             model=model,
@@ -268,7 +334,12 @@ class LLMJsonRunner:
             str: 已遮蔽敏感資訊的錯誤訊息。
         """
         text = str(exc)
-        for secret in (self.settings.llm_api_key, self.settings.nvidia_api_key):
+        for secret in (
+            self.settings.llm_api_key,
+            self.settings.gemini_api_key,
+            self.settings.nvidia_api_key,
+            self.settings.cohere_api_key,
+        ):
             if secret:
                 text = text.replace(secret, "***")
         return text

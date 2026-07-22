@@ -391,6 +391,50 @@ def test_same_ebl_state_escalates_one_disclosure_level_at_a_time():
         )
 
 
+def test_initial_ebl_prompt_withholds_source_and_expected_answer():
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
+    prompt = runtime.prompt_block()
+
+    assert runtime.prompt_disclosure_ceiling == "D0"
+    assert runtime.source_content_available is False
+    assert "第三等級反對每一等級各一票" not in prompt
+    assert "按人數" not in prompt
+    assert "SERVER_SIDE_HIDDEN" in prompt
+
+
+def test_initial_disclosure_cannot_jump_past_prompt_ceiling():
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
+    metadata = resolve_interaction_metadata(
+        runtime,
+        {
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "disclosure_level": "D4",
+        },
+        "你原先的判斷理由是什麼？",
+    )
+
+    assert metadata["disclosure_level"] == "D0"
+
+
+def test_hidden_source_excerpt_requires_regeneration_at_d0():
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
+    raw_response = "題目已經說第三等級反對每一等級各一票，請重新想想。"
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "disclosure_level": "D0",
+        },
+        raw_response,
+    )
+
+    assert enforced.retry_required is True
+    assert "disclosure_source_excerpt" in enforced.metadata["fidelity_flags"]
+
+
 def test_ebl_answer_leak_requires_regeneration_before_delivery():
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
     raw_response = "正確答案是「按人數」。你現在理解了嗎？"

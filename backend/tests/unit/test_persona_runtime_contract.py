@@ -116,6 +116,32 @@ def test_opening_audit_requires_identity_event_anchor_and_in_event_situation():
     assert immersive == ()
 
 
+def test_opening_audit_accepts_natural_in_event_situation_language():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    flags = audit_persona_response(
+        "公民，我是羅伯斯比爾。當此共和國安危存亡之際，我們在國民公會面對內外壓力。",
+        context,
+        is_opening=True,
+    )
+
+    assert flags == ()
+
+    alternative = audit_persona_response(
+        "公民，我是羅伯斯比爾。我們正處於共和國存亡與國民公會爭論交織的危機。",
+        context,
+        is_opening=True,
+    )
+    assert alternative == ()
+
+    facing_crisis = audit_persona_response(
+        "公民，我是羅伯斯比爾。在 1793 年國民公會面臨內外危機的時刻，我們必須作出抉擇。",
+        context,
+        is_opening=True,
+    )
+    assert facing_crisis == ()
+
+
 def test_persona_audit_rejects_ai_meta_voice():
     context = build_persona_runtime_context(_event(), _persona())
     flags = audit_persona_response(
@@ -176,7 +202,7 @@ def test_opening_service_regenerates_a_generic_persona_candidate():
 
     assert len(provider.prompts) == 2
     assert "[validation_retry]" in provider.prompts[1]
-    assert "configured persona's first-person voice" in provider.prompts[1]
+    assert "explicit first-person marker" in provider.prompts[1]
     assert "selected in-event moment" in provider.prompts[1]
     assert opening.metadata["generation_retry_count"] == 1
     assert len(opening.metadata["rejected_candidates"]) == 1
@@ -222,3 +248,27 @@ def test_opening_service_never_returns_a_repeatedly_invalid_candidate():
         )
 
     assert len(provider.prompts) == 3
+
+
+def test_opening_retry_keeps_prior_remediation_requirements():
+    provider = _SequenceOpeningProvider(
+        [
+            "羅伯斯比爾是法國大革命的重要人物。",
+            "我是羅伯斯比爾。國民公會值得討論。",
+            "我是羅伯斯比爾。當此國民公會面臨危機之際，我們必須作出抉擇。",
+        ]
+    )
+    service = ConversationOpeningService(provider, PromptService())
+
+    opening = asyncio.run(
+        service.generate(
+            event=_event(),
+            personas=[_persona()],
+            condition=_condition("03"),
+            attempt=_attempt(),
+        )
+    )
+
+    assert opening.metadata["generation_retry_count"] == 2
+    assert "explicit first-person marker" in provider.prompts[2]
+    assert "selected in-event moment" in provider.prompts[2]

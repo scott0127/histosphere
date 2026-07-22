@@ -47,6 +47,37 @@ DIALOGUE_MOVE_BY_STATE: dict[str, str] = {
     },
 }
 DISCLOSURE_LEVELS = ("D0", "D1", "D2", "D3", "D4")
+DISCLOSURE_POLICY = {
+    "D0": {
+        "allowed": "Restate the learner claim and elicit the reasoning already used.",
+        "hard_ceiling": (
+            "Use only facts already stated by the learner. Do not add a historical fact, evidence excerpt, "
+            "number, relationship, correction, or answer clue."
+        ),
+    },
+    "D1": {
+        "allowed": "Point to the relevant time, place, person, source location, or relation to inspect.",
+        "hard_ceiling": (
+            "Name where to inspect, but do not state or paraphrase what the evidence says. Do not supply a number, "
+            "comparison result, causal relationship, source excerpt, conclusion, or answer synonym."
+        ),
+    },
+    "D2": {
+        "allowed": "Provide one existing evidence clue or one relationship the learner can evaluate.",
+        "hard_ceiling": (
+            "Use exactly one clue already present in task_source_text or event_context. Do not state the conclusion "
+            "or complete the learner's claim."
+        ),
+    },
+    "D3": {
+        "allowed": "Provide two clues, a comparison frame, or a sentence stem and rule out one incorrect path.",
+        "hard_ceiling": "Do not finish the claim-evidence-reasoning argument for the learner.",
+    },
+    "D4": {
+        "allowed": "Organize the strongest available evidence and its limits while leaving the key answer blank.",
+        "hard_ceiling": "Do not state the complete answer or a direct synonym, even after repeated failure.",
+    },
+}
 LEGACY_DISCLOSURE_LEVELS = {f"L{index}": level for index, level in enumerate(DISCLOSURE_LEVELS)}
 INTERACTION_RETRY_FLAGS = frozenset(
     {
@@ -55,6 +86,7 @@ INTERACTION_RETRY_FLAGS = frozenset(
         "excessive_scaffold_questions",
         "overlong_scaffold_response",
         "early_answer_exposure",
+        "disclosure_source_excerpt",
         "next_target_transition_missing",
     }
 )
@@ -105,14 +137,44 @@ class InteractionRuntime:
     previous_disclosure_level: str | None
     previous_attempts_in_state: int
 
+    @property
+    def prompt_disclosure_ceiling(self) -> str | None:
+        """Maximum evidence detail that may be supplied to this completion.
+
+        The renderer receives no source text for D0/D1. It can request D2 only
+        after the previous accepted turn reached D1, so hidden evidence cannot
+        leak merely because the model saw it in the prompt.
+        """
+
+        if self.interaction_mode == "standard_chat":
+            return None
+        if self.previous_disclosure_level not in DISCLOSURE_LEVELS:
+            return "D0"
+        previous_index = DISCLOSURE_LEVELS.index(self.previous_disclosure_level)
+        return DISCLOSURE_LEVELS[min(previous_index + 1, len(DISCLOSURE_LEVELS) - 1)]
+
+    @property
+    def source_content_available(self) -> bool:
+        ceiling = self.prompt_disclosure_ceiling
+        return ceiling in {"D2", "D3", "D4"}
+
     def prompt_block(self) -> str:
         target = self.target
+        source_text = (
+            target.source_text
+            if target and self.source_content_available
+            else "WITHHELD: point to the task/source location only; do not state or infer its content."
+        )
         target_payload = {
             "question_id": target.question_id if target else None,
             "prompt": target.prompt if target else "No task item is attached.",
-            "task_source_text": target.source_text if target else None,
+            "task_source_text": source_text if target else None,
             "learner_answer": target.learner_answer if target else None,
-            "expected_answer": target.expected_answer if target else None,
+            "expected_answer": (
+                "SERVER_SIDE_HIDDEN: never state, infer, or paraphrase the answer before RESOLVED."
+                if target
+                else None
+            ),
             "correctness": target.correctness if target else "ungraded",
             "error_code": target.error_code if target else None,
             "historical_concept": target.historical_concept if target else None,
@@ -165,11 +227,20 @@ class InteractionRuntime:
             f"{shared}\n"
             f"Target historical-thinking focus: "
             f"{historical_thinking_focus(target.historical_concept, target.reasoning_process) if target else 'none'}\n"
+            "Decision order: first select the Historical EBL dialogue state and its historical-thinking move; "
+            "only then select a disclosure level to control how much help expresses that move. Disclosure levels "
+            "are not Historical EBL stages and must never replace the selected reasoning action.\n"
+            f"Disclosure policy: {json.dumps(DISCLOSURE_POLICY, ensure_ascii=False)}\n"
+            "Treat the selected disclosure level as a hard ceiling on every learner-visible sentence, not as a "
+            "suggestion. If uncertain between two levels, use the lower level. In particular, D1 may identify the "
+            "sentence, source, time, person, place, or relationship to inspect, but it must not disclose the evidence "
+            "content, a new numeric fact, or the result of a comparison.\n"
             f"Previous dialogue state: {self.previous_state or 'NONE'}\n"
             f"Allowed response states: {', '.join(self.allowed_states)}\n"
             f"Allowed state-to-move mapping: {state_moves}\n"
             f"Allowed move rules: {json.dumps(move_rules, ensure_ascii=False)}\n"
             f"Previous disclosure level: {self.previous_disclosure_level or 'NONE'}\n"
+            f"Prompt evidence ceiling: {self.prompt_disclosure_ceiling or 'NONE'}\n"
             f"Previous attempts in state: {self.previous_attempts_in_state}\n"
             f"Next unresolved target for transition only: {json.dumps(next_target_payload, ensure_ascii=False)}\n"
             "Required behavior: choose exactly one allowed response state after assessing the learner's latest "
@@ -443,9 +514,13 @@ def _disclosure_level(runtime: InteractionRuntime, state: str, raw_level: Any) -
         if runtime.previous_disclosure_level in DISCLOSURE_LEVELS
         else 0
     )
+    ceiling = runtime.prompt_disclosure_ceiling or "D4"
+    ceiling_index = DISCLOSURE_LEVELS.index(ceiling)
     if state == runtime.previous_state:
-        return DISCLOSURE_LEVELS[min(4, max(suggested_index, previous_index + 1))]
-    return DISCLOSURE_LEVELS[min(4, max(suggested_index, previous_index - 1, 0))]
+        resolved_index = min(4, max(suggested_index, previous_index + 1))
+    else:
+        resolved_index = min(4, max(suggested_index, previous_index - 1, 0))
+    return DISCLOSURE_LEVELS[min(resolved_index, ceiling_index)]
 
 
 def _answer_text(value: Any) -> str:
@@ -486,6 +561,32 @@ def _contains_expected_answer(response_text: str, expected_answer: Any) -> bool:
             f"填入{answer}",
         )
     )
+
+
+def _contains_hidden_source_excerpt(runtime: InteractionRuntime, response_text: str) -> bool:
+    """Detect verbatim evidence leakage while D0/D1 source content is hidden."""
+
+    if not runtime.target or runtime.target.source_text is None or runtime.target.source_text == "":
+        return False
+    source = re.sub(r"[\W_]+", "", str(runtime.target.source_text), flags=re.UNICODE)
+    response = re.sub(r"[\W_]+", "", response_text, flags=re.UNICODE)
+    prompt = re.sub(r"[\W_]+", "", runtime.target.prompt, flags=re.UNICODE)
+    learner_answer = re.sub(
+        r"[\W_]+",
+        "",
+        _answer_text(runtime.target.learner_answer),
+        flags=re.UNICODE,
+    )
+    fragment_length = 8
+    if len(source) < fragment_length:
+        return False
+    for index in range(len(source) - fragment_length + 1):
+        fragment = source[index : index + fragment_length]
+        if fragment in prompt or fragment in learner_answer:
+            continue
+        if fragment in response:
+            return True
+    return False
 
 
 def resolve_interaction_metadata(
@@ -563,6 +664,12 @@ def resolve_interaction_metadata(
         proposed_state,
         raw.get("disclosure_level") or raw.get("scaffold_level"),
     )
+    if (
+        proposed_state != "RESOLVED"
+        and resolved_disclosure_level in {"D0", "D1"}
+        and _contains_hidden_source_excerpt(runtime, response_text)
+    ):
+        flags.add("disclosure_source_excerpt")
     expected_answer = runtime.target.expected_answer if runtime.target else None
     if (
         proposed_state != "RESOLVED"

@@ -217,7 +217,10 @@ def test_persona_prompt_contract_and_dry_run_are_non_persistent(client):
     assert response.status_code == 200
     payload = response.json()
     module_names = [module["name"] for module in payload["modules"]]
-    assert module_names[:3] == ["general_prompt", "independent_1_prompt", "independent_2_prompt"]
+    assert module_names[0] == "general_prompt"
+    assert module_names.index("independent_2_prompt") < module_names.index("interaction_runtime")
+    assert module_names.index("interaction_runtime") < module_names.index("independent_1_prompt")
+    assert module_names.index("independent_1_prompt") < module_names.index("persona_event_context")
     assert payload["response"]
     assert len(client.app.state.repository.list_research_logs()) == before_logs
 

@@ -8,7 +8,7 @@ def test_gemini_is_primary_when_both_provider_keys_exist(monkeypatch) -> None:
     monkeypatch.setenv("NVIDIA_API_KEY", "nvidia-test-key")
     monkeypatch.delenv("GEMINI_LLM_MODEL", raising=False)
 
-    assert _default_llm_model() == "gemini/gemini-3.6-flash"
+    assert _default_llm_model() == "gemini/gemini-3.5-flash-lite"
 
 
 def test_nvidia_is_primary_when_gemini_is_unavailable(monkeypatch) -> None:
@@ -24,7 +24,7 @@ def test_gemini_primary_falls_back_to_nvidia(monkeypatch) -> None:
     monkeypatch.setenv("NVIDIA_API_KEY", "nvidia-test-key")
     monkeypatch.delenv("NVIDIA_LLM_MODEL", raising=False)
 
-    assert _default_fallback_models("gemini/gemini-3.6-flash") == [
+    assert _default_fallback_models("gemini/gemini-3.5-flash-lite") == [
         "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     ]
 
@@ -35,7 +35,7 @@ def test_explicit_fallback_order_has_priority(monkeypatch) -> None:
         "gemini/gemini-3.5-flash-lite,nvidia/custom-model",
     )
 
-    assert _default_fallback_models("gemini/gemini-3.6-flash") == [
+    assert _default_fallback_models("gemini/gemini-3.5-flash-lite") == [
         "gemini/gemini-3.5-flash-lite",
         "nvidia/custom-model",
     ]

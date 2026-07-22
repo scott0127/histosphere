@@ -93,7 +93,7 @@ def _default_llm_model() -> str:
 
     優先順序:
         1. 若已設定 ``GEMINI_API_KEY``，使用 ``GEMINI_LLM_MODEL``
-           環境變數（預設 ``gemini/gemini-3.6-flash``）。
+           環境變數（預設 ``gemini/gemini-3.5-flash-lite``）。
         2. 否則若已設定 ``NVIDIA_API_KEY``，使用 ``NVIDIA_LLM_MODEL``。
         3. 兩者皆未設定時仍回傳 Gemini 預設值，讓啟動時的設定可預期。
 
@@ -101,10 +101,10 @@ def _default_llm_model() -> str:
         str: LiteLLM 格式的模型識別字串。
     """
     if os.getenv("GEMINI_API_KEY"):
-        return os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.6-flash")
+        return os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.5-flash-lite")
     if os.getenv("NVIDIA_API_KEY"):
         return os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
-    return "gemini/gemini-3.6-flash"
+    return "gemini/gemini-3.5-flash-lite"
 
 
 def _default_fallback_models(primary_model: str) -> list[str]:
@@ -125,7 +125,7 @@ def _default_fallback_models(primary_model: str) -> list[str]:
     if os.getenv("LLM_FALLBACK_MODELS"):
         return _split_csv(os.getenv("LLM_FALLBACK_MODELS"))
     if primary_model.startswith("nvidia/") and os.getenv("GEMINI_API_KEY"):
-        return [os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.6-flash")]
+        return [os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.5-flash-lite")]
     if os.getenv("NVIDIA_API_KEY"):
         return [os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")]
     return []
@@ -159,11 +159,15 @@ class Settings(BaseModel):
         llm_temperature: LLM 生成溫度。
         llm_max_output_tokens: LLM 最大輸出 token 數。
         llm_timeout_seconds: LLM 請求逾時秒數。
+        gemini_api_key: Gemini API key（可選）。
+        gemini_reasoning_effort: Gemini thinking 強度；即時對話預設 ``low``。
         nvidia_api_key: NVIDIA NIM API key（可選）。
         nvidia_api_base: NVIDIA NIM API base URL。
         nvidia_llm_model: NVIDIA 專用的模型名稱。
         nvidia_enable_thinking: 是否啟用 NVIDIA 推理思考模式。
         nvidia_reasoning_budget: NVIDIA 推理思考的 token 預算。
+        cohere_api_key: Cohere API key（可選）。
+        cohere_llm_model: Cohere 備選模型名稱。
     """
 
     app_name: str = "Histosphere Backend"
@@ -178,18 +182,22 @@ class Settings(BaseModel):
     allow_in_memory_repository: bool = False
     admin_key: str = "scott5497"
     llm_provider: str = "litellm"
-    llm_model: str = "gemini/gemini-3.6-flash"
+    llm_model: str = "gemini/gemini-3.5-flash-lite"
     llm_fallback_models: list[str] = Field(default_factory=list)
     llm_api_base: str | None = None
     llm_api_key: str | None = None
     llm_temperature: float = 0.3
     llm_max_output_tokens: int = 4096
     llm_timeout_seconds: float = 60.0
+    gemini_api_key: str | None = None
+    gemini_reasoning_effort: str = "minimal"
     nvidia_api_key: str | None = None
     nvidia_api_base: str = "https://integrate.api.nvidia.com/v1"
     nvidia_llm_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     nvidia_enable_thinking: bool = False
     nvidia_reasoning_budget: int = 4096
+    cohere_api_key: str | None = None
+    cohere_llm_model: str = "cohere/command-a-plus-05-2026"
 
     @property
     def should_use_supabase(self) -> bool:
@@ -271,9 +279,13 @@ def get_settings() -> Settings:
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),
         llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096")),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")),
+        gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        gemini_reasoning_effort=os.getenv("GEMINI_REASONING_EFFORT", "minimal"),
         nvidia_api_key=os.getenv("NVIDIA_API_KEY"),
         nvidia_api_base=os.getenv("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1"),
         nvidia_llm_model=os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"),
         nvidia_enable_thinking=_env_bool("NVIDIA_ENABLE_THINKING", False),
         nvidia_reasoning_budget=int(os.getenv("NVIDIA_REASONING_BUDGET", "4096")),
+        cohere_api_key=os.getenv("COHERE_API_KEY"),
+        cohere_llm_model=os.getenv("COHERE_LLM_MODEL", "cohere/command-a-plus-05-2026"),
     )

@@ -11,6 +11,7 @@ from app.core.persona_prompt_contract import build_persona_runtime_context
 from app.models.domain import Event, ExperimentCondition, Persona, TaskAttempt
 from app.providers.llm.base import ChatGenerationResult, LLMProvider
 from app.services.completion_validation import validate_completion_candidate
+from app.services.llm_generation_audit import record_rejected_generation
 from app.services.prompt_service import PromptModule, PromptService
 
 
@@ -72,6 +73,7 @@ class ConversationOpeningService:
         base_prompt = self.prompt_service.render_modules(modules)
         persona_context = build_persona_runtime_context(event, persona) if persona else None
         rejected_candidates: list[dict[str, Any]] = []
+        accumulated_retry_flags: set[str] = set()
         prompt = base_prompt
 
         for generation_index in range(MAX_OPENING_GENERATION_ATTEMPTS):
@@ -108,14 +110,34 @@ class ConversationOpeningService:
                     modules=tuple(modules),
                 )
 
+            runner = getattr(self.llm_provider, "runner", None)
+            audit_id = record_rejected_generation(
+                stage="opening_contract_validation",
+                provider=str(getattr(runner, "last_provider", "unknown")),
+                model=str(getattr(runner, "last_model", "unknown")),
+                task_name="conversation_opening",
+                raw_output=generation.response,
+                reasons=list(validation.retry_flags),
+                context={
+                    "event_id": event.id,
+                    "attempt_id": attempt.id,
+                    "condition_key": condition.condition_key,
+                    "generation_index": generation_index,
+                },
+            )
             rejected_candidates.append(
                 {
+                    "audit_id": audit_id,
                     "sha256": hashlib.sha256(generation.response.encode("utf-8")).hexdigest(),
                     "length": len(generation.response),
                     "flags": list(validation.retry_flags),
                 }
             )
-            prompt = self.prompt_service.build_retry_prompt(base_prompt, validation.retry_flags)
+            accumulated_retry_flags.update(validation.retry_flags)
+            prompt = self.prompt_service.build_retry_prompt(
+                base_prompt,
+                tuple(sorted(accumulated_retry_flags)),
+            )
 
         raise OpeningValidationError(rejected_candidates)
 

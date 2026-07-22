@@ -20,6 +20,7 @@ from app.providers.llm.base import ChatGenerationResult, LLMProvider
 from app.crud.protocols import RepositoryProtocol
 from app.services.prompt_service import PromptService
 from app.services.completion_validation import validate_completion_candidate
+from app.services.llm_generation_audit import record_rejected_generation
 from app.services.rag_pipeline_service import RagPipelineService
 from app.services.session_runtime import expire_session_if_due
 
@@ -249,6 +250,7 @@ class ChatService:
         """Generate without persistence; shared by runtime chat and Admin dry-run."""
         persona_context = build_persona_runtime_context(event, selected) if selected else None
         rejected_candidates: list[dict[str, Any]] = []
+        accumulated_retry_flags: set[str] = set()
         prompt = base_prompt
 
         for generation_index in range(MAX_CHAT_GENERATION_ATTEMPTS):
@@ -284,14 +286,34 @@ class ChatService:
                     metadata,
                 )
 
+            runner = getattr(self.llm_provider, "runner", None)
+            audit_id = record_rejected_generation(
+                stage="chat_contract_validation",
+                provider=str(getattr(runner, "last_provider", "unknown")),
+                model=str(getattr(runner, "last_model", "unknown")),
+                task_name="chat_response",
+                raw_output=generation.response,
+                reasons=list(validation.retry_flags),
+                context={
+                    "event_id": event.id,
+                    "attempt_id": task_attempt.id if task_attempt else None,
+                    "condition_key": condition.condition_key,
+                    "generation_index": generation_index,
+                },
+            )
             rejected_candidates.append(
                 {
+                    "audit_id": audit_id,
                     "sha256": hashlib.sha256(generation.response.encode("utf-8")).hexdigest(),
                     "length": len(generation.response),
                     "flags": list(validation.retry_flags),
                 }
             )
-            prompt = self.prompt_service.build_retry_prompt(base_prompt, validation.retry_flags)
+            accumulated_retry_flags.update(validation.retry_flags)
+            prompt = self.prompt_service.build_retry_prompt(
+                base_prompt,
+                tuple(sorted(accumulated_retry_flags)),
+            )
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
