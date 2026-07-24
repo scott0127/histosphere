@@ -29,7 +29,11 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v3"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v4"
+COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
+    INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v3",
+}
 EBL_INITIAL_STATE: DialogueState = "ELICIT_REASONING"
 EBL_STATE_TRANSITIONS: dict[str, tuple[DialogueState, ...]] = {
     "ELICIT_REASONING": ("ELICIT_REASONING", "INSPECT_EVIDENCE"),
@@ -83,10 +87,10 @@ INTERACTION_RETRY_FLAGS = frozenset(
     {
         "invalid_state_transition",
         "invalid_dialogue_move",
+        "invalid_disclosure_transition",
         "excessive_scaffold_questions",
         "overlong_scaffold_response",
         "early_answer_exposure",
-        "disclosure_source_excerpt",
         "next_target_transition_missing",
     }
 )
@@ -138,23 +142,28 @@ class InteractionRuntime:
     previous_attempts_in_state: int
 
     @property
-    def prompt_disclosure_ceiling(self) -> str | None:
-        """Maximum evidence detail that may be supplied to this completion.
-
-        The renderer receives no source text for D0/D1. It can request D2 only
-        after the previous accepted turn reached D1, so hidden evidence cannot
-        leak merely because the model saw it in the prompt.
-        """
-
+    def allowed_disclosure_levels(self) -> tuple[str, ...]:
+        """回傳本回合允許模型選擇的揭露等級，最多只能升降一級。"""
         if self.interaction_mode == "standard_chat":
-            return None
+            return ()
         if self.previous_disclosure_level not in DISCLOSURE_LEVELS:
-            return "D0"
+            return ("D0",)
         previous_index = DISCLOSURE_LEVELS.index(self.previous_disclosure_level)
-        return DISCLOSURE_LEVELS[min(previous_index + 1, len(DISCLOSURE_LEVELS) - 1)]
+        start = max(0, previous_index - 1)
+        end = min(len(DISCLOSURE_LEVELS), previous_index + 2)
+        return DISCLOSURE_LEVELS[start:end]
+
+    @property
+    def prompt_disclosure_ceiling(self) -> str | None:
+        """保留給既有 metadata 使用；實際決策範圍以 allowed_disclosure_levels 為準。"""
+
+        allowed = self.allowed_disclosure_levels
+        return allowed[-1] if allowed else None
 
     @property
     def source_content_available(self) -> bool:
+        """單次呼叫若允許選到 D2 以上，就提供核准證據供模型依最終 D 使用。"""
+
         ceiling = self.prompt_disclosure_ceiling
         return ceiling in {"D2", "D3", "D4"}
 
@@ -240,17 +249,23 @@ class InteractionRuntime:
             f"Allowed state-to-move mapping: {state_moves}\n"
             f"Allowed move rules: {json.dumps(move_rules, ensure_ascii=False)}\n"
             f"Previous disclosure level: {self.previous_disclosure_level or 'NONE'}\n"
+            f"Allowed disclosure levels this turn: {', '.join(self.allowed_disclosure_levels)}\n"
             f"Prompt evidence ceiling: {self.prompt_disclosure_ceiling or 'NONE'}\n"
             f"Previous attempts in state: {self.previous_attempts_in_state}\n"
             f"Next unresolved target for transition only: {json.dumps(next_target_payload, ensure_ascii=False)}\n"
-            "Required behavior: choose exactly one allowed response state after assessing the learner's latest "
-            "message. Perform one primary historical-reasoning move for the current target. A move may be expressed "
+            "Required behavior: if no learner message exists yet, use learner_progress=not_assessed and D0. Otherwise, "
+            "first assess the learner's latest message as no_progress, partial_progress, clear_progress, or resolved. "
+            "Then choose exactly one disclosure level from the allowed list and briefly "
+            "record the reason in disclosure_reason. Increase support when the learner shows little progress, keep it "
+            "stable for partial progress, and reduce it when the learner demonstrates more independent reasoning. "
+            "Do not change disclosure by more than one level. Choose exactly one allowed response state and perform "
+            "one primary historical-reasoning move for the current target. A move may be expressed "
             "as a cue, evidence pointer, contrast, sentence stem, or zero to two tightly related questions; do not "
             "turn every turn into an interview. Do not discuss a second task error before RESOLVED. When RESOLVED "
             "and a next target exists, briefly confirm the current correction and bridge to that next target without "
             "revealing its answer. Before RESOLVED, do not reveal the complete expected answer at any disclosure "
-            "level. If the learner has not progressed, remain in the previous state and "
-            "increase support by at most one level. If the learner has progressed, advance by at most one state. "
+            "level. The dialogue state and disclosure level are separate decisions: progress may advance the reasoning "
+            "state without mechanically changing disclosure. "
             "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
             "not invent a source ID or quotation."
         )
@@ -310,7 +325,7 @@ def _resolved_question_ids(messages: Sequence[Any]) -> set[str]:
 def _last_interaction_metadata(messages: Sequence[Any]) -> dict[str, Any]:
     for message in reversed(messages):
         metadata = _message_metadata(message)
-        if metadata.get("interaction_policy_version") == INTERACTION_POLICY_VERSION:
+        if metadata.get("interaction_policy_version") in COMPATIBLE_INTERACTION_POLICY_VERSIONS:
             return metadata
     return {}
 
@@ -503,24 +518,19 @@ def _normalize_disclosure_level(raw_level: Any) -> str | None:
     return LEGACY_DISCLOSURE_LEVELS.get(str(raw_level))
 
 
-def _disclosure_level(runtime: InteractionRuntime, state: str, raw_level: Any) -> str:
+def _disclosure_level(runtime: InteractionRuntime, raw_level: Any) -> tuple[str, bool]:
+    """驗證模型選擇的 D 等級；越級時回傳安全 fallback 並要求重新生成。"""
+
     normalized_level = _normalize_disclosure_level(raw_level)
-    if normalized_level in DISCLOSURE_LEVELS:
-        suggested_index = DISCLOSURE_LEVELS.index(normalized_level)
-    else:
-        suggested_index = 0
-    previous_index = (
-        DISCLOSURE_LEVELS.index(runtime.previous_disclosure_level)
-        if runtime.previous_disclosure_level in DISCLOSURE_LEVELS
-        else 0
+    allowed = runtime.allowed_disclosure_levels or ("D0",)
+    if normalized_level in allowed:
+        return normalized_level, True
+    fallback = (
+        runtime.previous_disclosure_level
+        if runtime.previous_disclosure_level in allowed
+        else allowed[0]
     )
-    ceiling = runtime.prompt_disclosure_ceiling or "D4"
-    ceiling_index = DISCLOSURE_LEVELS.index(ceiling)
-    if state == runtime.previous_state:
-        resolved_index = min(4, max(suggested_index, previous_index + 1))
-    else:
-        resolved_index = min(4, max(suggested_index, previous_index - 1, 0))
-    return DISCLOSURE_LEVELS[min(resolved_index, ceiling_index)]
+    return fallback, False
 
 
 def _answer_text(value: Any) -> str:
@@ -561,32 +571,6 @@ def _contains_expected_answer(response_text: str, expected_answer: Any) -> bool:
             f"填入{answer}",
         )
     )
-
-
-def _contains_hidden_source_excerpt(runtime: InteractionRuntime, response_text: str) -> bool:
-    """Detect verbatim evidence leakage while D0/D1 source content is hidden."""
-
-    if not runtime.target or runtime.target.source_text is None or runtime.target.source_text == "":
-        return False
-    source = re.sub(r"[\W_]+", "", str(runtime.target.source_text), flags=re.UNICODE)
-    response = re.sub(r"[\W_]+", "", response_text, flags=re.UNICODE)
-    prompt = re.sub(r"[\W_]+", "", runtime.target.prompt, flags=re.UNICODE)
-    learner_answer = re.sub(
-        r"[\W_]+",
-        "",
-        _answer_text(runtime.target.learner_answer),
-        flags=re.UNICODE,
-    )
-    fragment_length = 8
-    if len(source) < fragment_length:
-        return False
-    for index in range(len(source) - fragment_length + 1):
-        fragment = source[index : index + fragment_length]
-        if fragment in prompt or fragment in learner_answer:
-            continue
-        if fragment in response:
-            return True
-    return False
 
 
 def resolve_interaction_metadata(
@@ -641,6 +625,8 @@ def resolve_interaction_metadata(
             "attempts_in_state": 0,
             "learner_revision_status": raw.get("learner_revision_status") or "not_applicable",
             "completion_status": "continue",
+            "learner_progress": "not_assessed",
+            "disclosure_reason": None,
             "fidelity_flags": sorted(flags),
             "provider_fidelity_flags": provider_flags,
             **target_metadata,
@@ -659,17 +645,12 @@ def resolve_interaction_metadata(
         flags.add("excessive_scaffold_questions")
     if len(response_text) > 700:
         flags.add("overlong_scaffold_response")
-    resolved_disclosure_level = _disclosure_level(
+    resolved_disclosure_level, disclosure_transition_valid = _disclosure_level(
         runtime,
-        proposed_state,
         raw.get("disclosure_level") or raw.get("scaffold_level"),
     )
-    if (
-        proposed_state != "RESOLVED"
-        and resolved_disclosure_level in {"D0", "D1"}
-        and _contains_hidden_source_excerpt(runtime, response_text)
-    ):
-        flags.add("disclosure_source_excerpt")
+    if not disclosure_transition_valid:
+        flags.add("invalid_disclosure_transition")
     expected_answer = runtime.target.expected_answer if runtime.target else None
     if (
         proposed_state != "RESOLVED"
@@ -690,6 +671,18 @@ def resolve_interaction_metadata(
     revision_status = raw.get("learner_revision_status")
     if revision_status not in {"not_yet", "partial", "revised", "unresolved"}:
         revision_status = "revised" if proposed_state == "RESOLVED" else "not_yet"
+    learner_progress = raw.get("learner_progress")
+    if learner_progress not in {
+        "not_assessed",
+        "no_progress",
+        "partial_progress",
+        "clear_progress",
+        "resolved",
+    }:
+        learner_progress = "resolved" if proposed_state == "RESOLVED" else "not_assessed"
+    disclosure_reason = raw.get("disclosure_reason")
+    if not isinstance(disclosure_reason, str) or not disclosure_reason.strip():
+        disclosure_reason = None
 
     return {
         "interaction_policy_version": INTERACTION_POLICY_VERSION,
@@ -699,6 +692,9 @@ def resolve_interaction_metadata(
         "dialogue_move": expected_move,
         "primary_historical_thinking_move": primary_reasoning_move(proposed_state),
         "disclosure_level": resolved_disclosure_level,
+        "allowed_disclosure_levels": list(runtime.allowed_disclosure_levels),
+        "learner_progress": learner_progress,
+        "disclosure_reason": disclosure_reason,
         "attempts_in_state": attempts_in_state,
         "learner_revision_status": revision_status,
         "completion_status": completion_status,

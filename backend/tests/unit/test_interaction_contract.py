@@ -362,33 +362,81 @@ def test_ebl_can_progress_through_the_complete_state_sequence():
     assert completed_runtime.allowed_states == ("RESOLVED",)
 
 
-def test_same_ebl_state_escalates_one_disclosure_level_at_a_time():
+def test_same_ebl_state_accepts_model_selected_adjacent_disclosure_level():
     condition = _condition("02")
-    messages: list[ChatMessage] = []
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="先說明你原先判斷的理由。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "disclosure_level": "D2",
+            "completion_status": "continue",
+        },
+    )
 
-    for expected_level in ("D0", "D1", "D2"):
-        runtime = build_interaction_runtime(condition, _attempt(), messages)
+    for selected_level, learner_progress in (
+        ("D1", "clear_progress"),
+        ("D2", "partial_progress"),
+        ("D3", "no_progress"),
+    ):
+        runtime = build_interaction_runtime(condition, _attempt(), [previous])
         enforced = enforce_interaction_response(
             runtime,
             {
                 "dialogue_state": "ELICIT_REASONING",
                 "dialogue_move": "reasoning_probe",
-                "disclosure_level": "D0",
+                "disclosure_level": selected_level,
+                "learner_progress": learner_progress,
+                "disclosure_reason": "依受測者本回合的推理完整度調整。",
             },
             "你是根據哪一項史實得出原先的判斷？",
         )
 
-        assert enforced.metadata["disclosure_level"] == expected_level
-        messages.append(
-            ChatMessage(
-                conversation_id="conversation-1",
-                speaker_type="assistant",
-                speaker_name="AI Tutor",
-                content=enforced.response,
-                sequence_index=len(messages),
-                metadata=enforced.metadata,
-            )
-        )
+        assert enforced.retry_required is False
+        assert enforced.metadata["allowed_disclosure_levels"] == ["D1", "D2", "D3"]
+        assert enforced.metadata["disclosure_level"] == selected_level
+        assert enforced.metadata["learner_progress"] == learner_progress
+        assert enforced.metadata["disclosure_reason"] == "依受測者本回合的推理完整度調整。"
+
+
+def test_first_learner_reply_may_choose_d0_or_d1_only():
+    condition = _condition("02")
+    greeting = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="你原本是根據什麼理由作答？",
+        metadata=initial_greeting_metadata(
+            condition,
+            _attempt(),
+            "你原本是根據什麼理由作答？",
+        ),
+    )
+    runtime = build_interaction_runtime(condition, _attempt(), [greeting])
+
+    assert runtime.allowed_disclosure_levels == ("D0", "D1")
+    assert runtime.source_content_available is False
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "INSPECT_EVIDENCE",
+            "dialogue_move": "evidence_probe",
+            "disclosure_level": "D1",
+            "learner_progress": "no_progress",
+            "disclosure_reason": "受測者尚未提出可檢查的史實依據。",
+        },
+        "先回到題目中的代表權安排，哪一個關係最值得重新檢查？",
+    )
+
+    assert enforced.retry_required is False
+    assert enforced.metadata["disclosure_level"] == "D1"
+    assert enforced.metadata["learner_progress"] == "no_progress"
 
 
 def test_initial_ebl_prompt_withholds_source_and_expected_answer():
@@ -404,7 +452,7 @@ def test_initial_ebl_prompt_withholds_source_and_expected_answer():
 
 def test_initial_disclosure_cannot_jump_past_prompt_ceiling():
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
-    metadata = resolve_interaction_metadata(
+    enforced = enforce_interaction_response(
         runtime,
         {
             "dialogue_state": "ELICIT_REASONING",
@@ -414,25 +462,9 @@ def test_initial_disclosure_cannot_jump_past_prompt_ceiling():
         "你原先的判斷理由是什麼？",
     )
 
-    assert metadata["disclosure_level"] == "D0"
-
-
-def test_hidden_source_excerpt_requires_regeneration_at_d0():
-    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
-    raw_response = "題目已經說第三等級反對每一等級各一票，請重新想想。"
-
-    enforced = enforce_interaction_response(
-        runtime,
-        {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
-            "disclosure_level": "D0",
-        },
-        raw_response,
-    )
-
     assert enforced.retry_required is True
-    assert "disclosure_source_excerpt" in enforced.metadata["fidelity_flags"]
+    assert enforced.metadata["disclosure_level"] == "D0"
+    assert "invalid_disclosure_transition" in enforced.metadata["fidelity_flags"]
 
 
 def test_ebl_answer_leak_requires_regeneration_before_delivery():

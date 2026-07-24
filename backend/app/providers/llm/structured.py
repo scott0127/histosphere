@@ -152,8 +152,17 @@ class ChatOutputPayload(BaseModel):
     ] | None = None
     dialogue_move: str | None = None
     disclosure_level: Literal["D0", "D1", "D2", "D3", "D4"] | None = None
-    # Read-only compatibility for completions produced before the D0-D4 contract.
+    # 僅供讀取舊版 L0-L4 completion，新的模型輸出一律使用 disclosure_level。
     scaffold_level: Literal["L0", "L1", "L2", "L3", "L4"] | None = None
+    # 這兩個欄位只供研究紀錄與後端決策稽核，不顯示給受測者。
+    learner_progress: Literal[
+        "not_assessed",
+        "no_progress",
+        "partial_progress",
+        "clear_progress",
+        "resolved",
+    ] | None = None
+    disclosure_reason: str | None = None
     learner_revision_status: Literal["not_yet", "partial", "revised", "unresolved", "not_applicable"] | None = None
     completion_status: Literal["continue", "resolved", "complete"] | None = None
     fidelity_flags: list[str] = Field(default_factory=list)

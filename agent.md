@@ -14,6 +14,8 @@ Your goal is to implement the requested feature in a production-realistic way. D
    - Use `codebase-memory-mcp` to understand prior decisions, existing architecture, completed tasks, unresolved issues, and conventions.
    - Before making architectural changes, check whether relevant decisions already exist in memory.
    - Update persistent memory only when the user explicitly asks for a memory update; keep any approved note concise and engineering-focused.
+   - When the user explicitly asks to update memory, also update the repository root `記憶.md`. Do not write only an external Codex memory note.
+   - If a new decision supersedes an older rule, revise the conflicting section in `記憶.md` and record the supersession in the new external note.
 
 3. **Do not invent unnecessary custom behavior**
    - Do not add custom configuration, custom abstractions, custom routing, custom state layers, or custom backend logic unless the project clearly needs it.

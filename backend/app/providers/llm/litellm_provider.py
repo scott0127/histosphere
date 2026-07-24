@@ -43,11 +43,15 @@ CHAT_OUTPUT_JSON_CONTRACT = (
     '"dialogue_state":"STANDARD_CHAT|ELICIT_REASONING|INSPECT_EVIDENCE|'
     'CONTEXTUALIZE_OR_COMPARE|REVISE_CLAIM|REFLECT|RESOLVED",'
     '"dialogue_move":"runtime-provided move","disclosure_level":null,'
+    '"learner_progress":"not_assessed|no_progress|partial_progress|clear_progress|resolved",'
+    '"disclosure_reason":"brief hidden reason or empty string",'
     '"learner_revision_status":"not_yet|partial|revised|unresolved|not_applicable",'
     '"completion_status":"continue|resolved|complete","fidelity_flags":[]}. '
     "Each pipe-delimited field above is an enum: return exactly one allowed value, never the entire pipe string. "
     "Use an empty array instead of strings when there are no annotations or related events. "
-    "Use the interaction_runtime values for dialogue_state, dialogue_move, disclosure_level, and statuses. "
+    "Use the interaction_runtime values for dialogue_state and dialogue_move. In EBL mode, assess learner_progress "
+    "and choose disclosure_level from the runtime-provided allowed list; in Standard Chat or before the learner has "
+    "replied, use learner_progress=not_assessed. Keep disclosure_reason concise and do not expose it in response. "
     "fidelity_flags must contain only suspected rule violations; otherwise return an empty list. "
     "Do not add keys outside this object or wrap it in markdown."
 )
@@ -351,6 +355,8 @@ class LiteLLMProvider:
                 "dialogue_state": payload.dialogue_state,
                 "dialogue_move": payload.dialogue_move,
                 "disclosure_level": payload.disclosure_level or legacy_disclosure,
+                "learner_progress": payload.learner_progress,
+                "disclosure_reason": payload.disclosure_reason,
                 "learner_revision_status": payload.learner_revision_status,
                 "completion_status": payload.completion_status,
                 "fidelity_flags": payload.fidelity_flags,
