@@ -15,7 +15,6 @@
 
     <EventLibraryHeader
       :is-refreshing="isRefreshing"
-      :is-authenticated="isAuthenticated"
       :is-admin-mode="isAdminMode"
       :admin-view-mode="adminViewMode"
       :display-name="displayName"
@@ -94,6 +93,11 @@ import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import { participantUuid, studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import { shouldExitAdminModeForAuthTransition } from '~/utils/adminMode';
+import {
+  clearAdminSessionKey,
+  getAdminSessionKey,
+  setAdminSessionKey,
+} from '~/utils/adminSession';
 import { fetchAdminSnapshot } from '~/utils/histosphereApi';
 
 definePageMeta({
@@ -139,8 +143,7 @@ const adminTestUserId = computed(() => participantUuid(`admin-test:${user.value?
 const canManageEvents = computed(() => isAdminMode.value && activityMode.value === 'admin');
 
 const storedAdminKey = () => {
-  if (!import.meta.client) return '';
-  return localStorage.getItem('histosphere_admin_key')?.trim() || '';
+  return getAdminSessionKey();
 };
 const {
   initializeError,
@@ -235,12 +238,12 @@ const verifyAndEnterAdminMode = async (adminKey: string) => {
   adminModeError.value = null;
   try {
     await fetchAdminSnapshot(trimmedKey);
-    localStorage.setItem('histosphere_admin_key', trimmedKey);
+    setAdminSessionKey(trimmedKey);
     enterAdminMode();
     await navigateTo('/admin');
   } catch (e: any) {
     exitAdminMode();
-    localStorage.removeItem('histosphere_admin_key');
+    clearAdminSessionKey();
     adminModeError.value = e.data?.detail || 'Admin key 無效，無法進入管理員檢視。';
   } finally {
     adminModePending.value = false;
@@ -250,9 +253,6 @@ const verifyAndEnterAdminMode = async (adminKey: string) => {
 const handleExitAdminMode = async (reloadParticipant = true) => {
   exitAdminMode();
   adminModeError.value = null;
-  if (import.meta.client) {
-    localStorage.removeItem('histosphere_admin_key');
-  }
   if (reloadParticipant && user.value?.id) {
     await resetForAuthScope();
     await loadParticipantForAuthUser(user.value.id);

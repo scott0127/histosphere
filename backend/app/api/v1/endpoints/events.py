@@ -11,9 +11,10 @@ Routes:
     POST   /api/event/{event_id}/regenerate-background: 重新生成背景圖。
 """
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends
 
-from app.api.deps import get_event_initialization_service, get_event_service, is_valid_admin_key
+from app.api.deps import get_event_initialization_service, get_event_service, require_authenticated_actor
+from app.core.auth import AuthenticatedActor
 from app.schemas.requests import EventCheckRequest, EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse, EventListItem
 from app.services import EventInitializationService, EventService
@@ -44,7 +45,7 @@ def check_event(
 @router.post("/event/initialize", response_model=EventInitializeResponse)
 async def initialize_event(
     request: EventInitializeRequest,
-    x_admin_key: str | None = Header(default=None),
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: EventInitializationService = Depends(get_event_initialization_service),
 ) -> EventInitializeResponse:
     """建立事件學習工作區，但不直接建立 conversation。
@@ -62,7 +63,9 @@ async def initialize_event(
         EventInitializeResponse: 包含 event_id、session_id、
             event、task、personas 與 condition。
     """
-    return await service.initialize(request, admin_override=is_valid_admin_key(x_admin_key))
+    user_id = request.user_id if actor.is_admin else actor.resolve_user_id()
+    verified_request = request.model_copy(update={"user_id": user_id})
+    return await service.initialize(verified_request, admin_override=actor.is_admin)
 
 
 @router.get("/events", response_model=list[EventListItem])

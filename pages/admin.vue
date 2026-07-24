@@ -26,30 +26,20 @@
             <Icon name="mdi:eye" class="h-4 w-4" />
             受測者測試
           </button>
+          <button
+            type="button"
+            class="admin-button-secondary inline-flex min-h-10 items-center justify-center gap-2 px-4 text-xs font-bold"
+            @click="leaveAdminMode"
+          >
+            <Icon name="mdi:logout" class="h-4 w-4" />
+            退出
+          </button>
           <span class="admin-badge">Admin mode</span>
         </div>
       </div>
     </header>
 
     <main class="mx-auto max-w-7xl space-y-6 px-5 py-10 md:py-12">
-      <section v-if="authLoading" class="admin-hero p-6 text-center">
-        <Icon name="mdi:loading" class="mx-auto h-8 w-8 animate-spin text-[var(--admin-coffee)]" />
-        <p class="admin-copy mt-3 text-sm font-bold">正在確認登入狀態...</p>
-      </section>
-
-      <section v-else-if="!isAuthenticated" class="admin-hero p-6">
-        <p class="admin-kicker">Admin access</p>
-        <h1 class="admin-heading mt-1 font-serif text-3xl font-bold">請先登入管理員帳號</h1>
-        <p class="admin-copy mt-2 max-w-2xl text-sm font-semibold leading-7">
-          後台需要 Supabase Auth 登入，再輸入 admin key 才會載入任何管理資料。
-        </p>
-        <NuxtLink to="/auth/login" class="admin-button-primary mt-5 inline-flex min-h-11 items-center justify-center gap-2 px-5 text-sm font-bold">
-          <Icon name="mdi:login" class="h-5 w-5" />
-          前往登入
-        </NuxtLink>
-      </section>
-
-      <template v-else>
       <section class="admin-hero">
         <div class="p-5 md:p-6">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -62,7 +52,7 @@
                 {{ snapshot ? '先選擇歷史事件，再進入該事件的 task、事件資料與人物設定。' : '驗證成功後才會載入後台資料與管理工具。' }}
               </p>
               <p class="admin-caption mt-2 text-xs font-bold">
-                已登入：{{ displayName || 'admin' }}
+                共用研究者密碼驗證；關閉分頁或退出後會自動清除。
               </p>
             </div>
             <div class="flex w-full flex-col gap-2 sm:flex-row lg:w-[520px]">
@@ -75,7 +65,7 @@
               />
               <button
                 class="admin-button-primary inline-flex min-h-12 items-center justify-center gap-2 px-5 text-sm font-bold"
-                @click="loadSnapshot"
+                @click="handleLoadSnapshot"
               >
                 <Icon name="mdi:database-search" class="h-5 w-5" />
                 {{ snapshot ? '重新載入' : '載入資料' }}
@@ -468,7 +458,6 @@
         </section>
         </template>
       </section>
-      </template>
     </main>
   </div>
 </template>
@@ -476,7 +465,7 @@
 <script setup lang="ts">
 // 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { buildParticipantDashboardRows } from '~/utils/adminParticipantDashboard';
 
 definePageMeta({
@@ -493,15 +482,7 @@ const openSections = ref<Record<AdminSectionKey, boolean>>({
   personas: true,
 });
 
-const {
-  displayName,
-  initialize: initializeAuth,
-  isAuthenticated,
-  loading: authLoading,
-  user,
-} = useAuth();
-const authUserId = computed(() => user.value?.id || null);
-const { enterAdminMode, initAdminMode, setAdminViewMode } = useAdminMode();
+const { enterAdminMode, exitAdminMode, initAdminMode, setAdminViewMode } = useAdminMode();
 const {
   adminKey,
   authUsers,
@@ -539,23 +520,25 @@ const {
   taskJson,
   taskQuestionCount,
   updatingTimerSessionId,
-} = useAdminWorkspace(isAuthenticated);
+} = useAdminWorkspace();
 
 const participantRows = computed(() => {
   return snapshot.value ? buildParticipantDashboardRows(snapshot.value, authUsers.value) : [];
 });
 
-// 後台採 Supabase Auth + admin key；未登入時不顯示 key 表單，也不載入任何後台資料。
 onMounted(async () => {
   initAdminMode();
-  await initializeAuth();
-  if (isAuthenticated.value) {
-    restoreStoredAdminKey();
-    if (adminKey.value) {
-      await loadSnapshot();
-    }
+  restoreStoredAdminKey();
+  if (adminKey.value && await loadSnapshot()) {
+    enterAdminMode();
   }
 });
+
+const handleLoadSnapshot = async () => {
+  if (await loadSnapshot()) {
+    enterAdminMode();
+  }
+};
 
 const enterAdminTestMode = async () => {
   enterAdminMode();
@@ -563,17 +546,11 @@ const enterAdminTestMode = async () => {
   await navigateTo('/');
 };
 
-watch(isAuthenticated, (authenticated) => {
-  if (authenticated) return;
+const leaveAdminMode = async () => {
   resetWorkspace();
-});
-
-watch(authUserId, (nextUserId, previousUserId) => {
-  if (!nextUserId || !previousUserId || nextUserId === previousUserId) {
-    return;
-  }
-  resetWorkspace();
-});
+  exitAdminMode();
+  await navigateTo('/');
+};
 
 const toggleSection = (section: AdminSectionKey) => {
   openSections.value[section] = !openSections.value[section];

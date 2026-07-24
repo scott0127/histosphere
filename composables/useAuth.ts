@@ -3,6 +3,8 @@
  * 管理用戶認證狀態 (登入/登出/註冊/密碼重設/個人資料)
  */
 import { createClient, type User, type Session } from '@supabase/supabase-js'
+import { clearAdminSession } from '~/utils/adminSession'
+import { getCurrentAccessToken, setCurrentAccessToken } from '~/utils/authSession'
 
 // Supabase 客戶端 (單例)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
@@ -15,9 +17,7 @@ let authInitializePromise: Promise<void> | null = null
 
 function clearSharedBrowserSessionState() {
   if (!import.meta.client) return
-  localStorage.removeItem('histosphere_admin_key')
-  localStorage.removeItem('histosphere-admin-view-mode')
-  localStorage.removeItem('histosphere-admin-mode')
+  clearAdminSession()
   localStorage.removeItem('histosphere-participant-id')
 }
 
@@ -43,6 +43,7 @@ export function useAuth() {
   async function initialize() {
     if (!client) {
       console.warn('[useAuth] Supabase not configured')
+      setCurrentAccessToken(null)
       loading.value = false
       return
     }
@@ -63,6 +64,7 @@ export function useAuth() {
       const { data: { session: currentSession } } = await client.auth.getSession()
       session.value = currentSession
       user.value = currentSession?.user ?? null
+      setCurrentAccessToken(currentSession?.access_token)
 
       // 監聽認證狀態變化
       if (!authListenerInitialized) {
@@ -71,6 +73,7 @@ export function useAuth() {
           const nextUserId = newSession?.user?.id || null
           session.value = newSession
           user.value = newSession?.user ?? null
+          setCurrentAccessToken(newSession?.access_token)
 
           if (event === 'SIGNED_OUT' || (previousUserId && nextUserId && previousUserId !== nextUserId)) {
             clearSharedBrowserSessionState()
@@ -117,6 +120,7 @@ export function useAuth() {
 
       user.value = data.user
       session.value = data.session
+      setCurrentAccessToken(data.session?.access_token)
       if (previousUserId && data.user?.id && previousUserId !== data.user.id) {
         clearSharedBrowserSessionState()
       }
@@ -181,6 +185,7 @@ export function useAuth() {
     await client.auth.signOut()
     user.value = null
     session.value = null
+    setCurrentAccessToken(null)
     clearSharedBrowserSessionState()
   }
 
@@ -286,7 +291,7 @@ export function useAuth() {
    * 取得 JWT Token (用於 API 請求)
    */
   function getAccessToken(): string | null {
-    return session.value?.access_token ?? null
+    return getCurrentAccessToken()
   }
 
   /**

@@ -12,7 +12,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
-from app.api.deps import get_task_service
+from app.api.deps import get_task_service, require_authenticated_actor
+from app.core.auth import AuthenticatedActor
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
 from app.schemas.responses import (
     TaskDraftResponse,
@@ -51,6 +52,7 @@ def _schedule_processing(
 def save_task_draft(
     task_id: UUID,
     request: TaskDraftRequest,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskDraftResponse:
     """保存 task 草稿，供 learner 重新整理或換帳號後恢復作答。
@@ -68,7 +70,9 @@ def save_task_draft(
     Returns:
         TaskDraftResponse: 包含已儲存的 TaskAttempt 紀錄。
     """
-    return service.save_draft(str(task_id), request)
+    user_id = actor.resolve_user_id(request.user_id)
+    verified_request = request.model_copy(update={"user_id": user_id})
+    return service.save_draft(str(task_id), verified_request)
 
 
 @router.post(
@@ -81,6 +85,7 @@ async def submit_task(
     payload: TaskSubmitRequest,
     http_request: Request,
     background_tasks: BackgroundTasks,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskSubmissionAcceptedResponse:
     """Queue task judgement and return a persistent polling id immediately.
@@ -100,7 +105,9 @@ async def submit_task(
             event、task、personas、condition、attempt、
             judgement、greeting 與初始 history。
     """
-    accepted, _ = service.queue_submission(str(task_id), payload)
+    user_id = actor.resolve_user_id(payload.user_id)
+    verified_payload = payload.model_copy(update={"user_id": user_id})
+    accepted, _ = service.queue_submission(str(task_id), verified_payload)
     if accepted.status == "processing":
         _schedule_processing(http_request, background_tasks, service, accepted.attempt_id)
     return accepted
@@ -111,10 +118,16 @@ def task_submission_status(
     attempt_id: UUID,
     request: Request,
     background_tasks: BackgroundTasks,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskSubmissionStatusResponse:
     """Return queued task processing state and the final navigation payload."""
     response = service.submission_status(str(attempt_id))
+    owner_user_id = response.attempt.user_id
+    if not owner_user_id and response.attempt.session_id:
+        session = service.repository.get_session(response.attempt.session_id)
+        owner_user_id = session.user_id if session else None
+    actor.require_owner(owner_user_id)
     if response.attempt.status == "processing":
         _schedule_processing(request, background_tasks, service, str(attempt_id))
     return response

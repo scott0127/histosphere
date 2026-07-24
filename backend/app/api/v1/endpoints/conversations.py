@@ -13,7 +13,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_conversation_service
+from app.api.deps import get_conversation_service, require_authenticated_actor
+from app.core.auth import AuthenticatedActor
 from app.schemas.requests import ConversationCreateRequest
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.services import ConversationService
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 @router.post("", response_model=ConversationCreateResponse)
 async def create_conversation(
     request: ConversationCreateRequest,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationCreateResponse:
     """相容性建立 conversation；新版 learner flow 通常不直接呼叫。
@@ -40,17 +42,19 @@ async def create_conversation(
         ConversationCreateResponse: 包含 conversation_id、event、
             personas、condition、greeting 與初始 history。
     """
+    user_id = actor.resolve_user_id(request.user_id)
     return await service.create_conversation(
         event_id=request.event_id,
         task_attempt_id=request.task_attempt_id,
         session_id=request.session_id,
-        user_id=request.user_id,
+        user_id=user_id,
     )
 
 
 @router.get("/{conversation_id}", response_model=ConversationLoadResponse)
 def load_conversation(
     conversation_id: UUID,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationLoadResponse:
     """載入聊天頁回放所需的完整 conversation 狀態。
@@ -67,4 +71,7 @@ def load_conversation(
             personas、messages、condition、task_attempt
             與 related_events。
     """
-    return service.load_conversation(str(conversation_id))
+    response = service.load_conversation(str(conversation_id))
+    conversation = service.repository.get_conversation(str(conversation_id))
+    actor.require_owner(conversation.user_id if conversation else response.session.user_id if response.session else None)
+    return response

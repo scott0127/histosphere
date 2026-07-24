@@ -147,6 +147,7 @@ class Settings(BaseModel):
         repository_backend: 資料存取層後端類型
             （``"supabase"`` / ``"in_memory"``）。
         supabase_url: Supabase 專案 URL。
+        supabase_anon_key: Supabase JWT 驗證使用的 publishable/anon key。
         supabase_service_role_key: Supabase service role API key。
         allow_in_memory_repository: 是否允許 in-memory 資料存取
             （僅供測試使用）。
@@ -178,9 +179,10 @@ class Settings(BaseModel):
     wikipedia_user_agent: str = "HistosphereThesisPrototype/0.2 (local research prototype)"
     repository_backend: str = "supabase"
     supabase_url: str | None = None
+    supabase_anon_key: str | None = None
     supabase_service_role_key: str | None = None
     allow_in_memory_repository: bool = False
-    admin_key: str = "scott5497"
+    admin_key: str = ""
     llm_provider: str = "litellm"
     llm_model: str = "gemini/gemini-3.5-flash-lite"
     llm_fallback_models: list[str] = Field(default_factory=list)
@@ -257,6 +259,9 @@ def get_settings() -> Settings:
         or os.getenv("SUPABASE_KEY_SERVICE_ROLE")
         or os.getenv("SUPABASE_KEY_service_role")
     )
+    admin_key = (os.getenv("HISTOSPHERE_ADMIN_KEY") or "").strip()
+    if not admin_key:
+        raise RuntimeError("HISTOSPHERE_ADMIN_KEY must be provided through the environment.")
     llm_model = os.getenv("LLM_MODEL", _default_llm_model())
     return Settings(
         environment=os.getenv("BACKEND_ENVIRONMENT", "development"),
@@ -268,9 +273,10 @@ def get_settings() -> Settings:
         ),
         repository_backend=os.getenv("BACKEND_REPOSITORY", "supabase"),
         supabase_url=os.getenv("SUPABASE_URL"),
+        supabase_anon_key=os.getenv("SUPABASE_ANON_KEY") or os.getenv("VITE_SUPABASE_ANON_KEY"),
         supabase_service_role_key=service_role_key,
         allow_in_memory_repository=os.getenv("ALLOW_IN_MEMORY_REPOSITORY", "false").lower() == "true",
-        admin_key=os.getenv("HISTOSPHERE_ADMIN_KEY", "scott5497"),
+        admin_key=admin_key,
         llm_provider=os.getenv("LLM_PROVIDER", "litellm"),
         llm_model=llm_model,
         llm_fallback_models=_default_fallback_models(llm_model),

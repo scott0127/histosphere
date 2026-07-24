@@ -6,7 +6,25 @@ import {
   sampleTask,
 } from '../fixtures/histosphereFixtures.mjs';
 
+const createMemoryStorage = () => {
+  const values = new Map();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+    clear: () => values.clear(),
+  };
+};
+
+globalThis.window = {
+  localStorage: createMemoryStorage(),
+  sessionStorage: createMemoryStorage(),
+};
+
+const authSession = await globalThis.loadTsModule('utils/authSession.ts');
+const adminSession = await globalThis.loadTsModule('utils/adminSession.ts');
 const api = await globalThis.loadTsModule('utils/histosphereApi.ts');
+authSession.setCurrentAccessToken('participant-jwt');
 
 const createFetchRecorder = (responses = {}) => {
   const calls = [];
@@ -221,6 +239,7 @@ test('frontend api client initializes events and loads user progress with stable
     url: '/api/event/initialize',
     options: {
       method: 'POST',
+      headers: { Authorization: 'Bearer participant-jwt' },
       body: {
         event_name: '法國大革命',
         condition_key: 'ebl_roleplay',
@@ -231,7 +250,10 @@ test('frontend api client initializes events and loads user progress with stable
   });
   assert.deepEqual(calls[1], {
     url: '/api/sessions/progress',
-    options: { query: { user_id: 'participant-uuid' } },
+    options: {
+      headers: { Authorization: 'Bearer participant-jwt' },
+      query: { user_id: 'participant-uuid' },
+    },
   });
 });
 
@@ -287,6 +309,9 @@ test('frontend api client preserves task draft, asynchronous submit polling, con
     ['/api/conversations/conversation-1', 'GET'],
     ['/api/chat', 'POST'],
   ]);
+  for (const call of calls) {
+    assert.deepEqual(call.options.headers, { Authorization: 'Bearer participant-jwt' });
+  }
   assert.equal(calls[1].options.body.session_id, 'session-1');
   assert.deepEqual(calls[2].options.body, {
     session_id: 'session-1',
@@ -294,6 +319,19 @@ test('frontend api client preserves task draft, asynchronous submit polling, con
     response_payload: { answer_text: '回答' },
   });
   assert.equal(calls[5].options.body.user_message, '你好');
+});
+
+test('admin test mode uses the tab-scoped admin key instead of a learner JWT', async () => {
+  adminSession.setAdminSessionKey('test-admin');
+  const { calls, fetcher } = createFetchRecorder();
+
+  await api.fetchSessionState('session-admin-test', fetcher);
+
+  assert.deepEqual(calls[0], {
+    url: '/api/sessions/session-admin-test/state',
+    options: { headers: { 'x-admin-key': 'test-admin' } },
+  });
+  adminSession.clearAdminSession();
 });
 
 test('frontend api client starts and cancels optional session timers', async () => {

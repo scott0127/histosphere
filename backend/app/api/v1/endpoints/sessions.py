@@ -12,7 +12,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_session_service
+from app.api.deps import get_session_service, require_authenticated_actor
+from app.core.auth import AuthenticatedActor
 from app.schemas.responses import SessionStateResponse, UserProgressResponse
 from app.services import SessionService
 
@@ -21,7 +22,8 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 @router.get("/progress", response_model=UserProgressResponse)
 def user_progress(
-    user_id: str,
+    user_id: str | None = None,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: SessionService = Depends(get_session_service),
 ) -> UserProgressResponse:
     """列出受測者在各事件與 condition 的進度摘要。
@@ -37,12 +39,13 @@ def user_progress(
         UserProgressResponse: 包含 progress 清單，每筆紀錄
             含 event_id、condition_key、session_id、status 等。
     """
-    return service.user_progress(user_id)
+    return service.user_progress(actor.resolve_user_id(user_id))
 
 
 @router.get("/{session_id}/state", response_model=SessionStateResponse)
 def session_state(
     session_id: UUID,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
     service: SessionService = Depends(get_session_service),
 ) -> SessionStateResponse:
     """載入單一實驗 session 的可恢復狀態。
@@ -59,4 +62,6 @@ def session_state(
         SessionStateResponse: 包含 session、event、task、
             personas、condition、attempt 與 conversation_id。
     """
-    return service.load_state(str(session_id))
+    response = service.load_state(str(session_id))
+    actor.require_owner(response.session.user_id)
+    return response

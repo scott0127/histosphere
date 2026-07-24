@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
+from app.core.auth import SupabaseJWTVerifier
 from app.core.config import get_settings
 from app.db import InMemoryRepository, SupabaseRepository
 from app.providers import WikipediaProvider
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     opening_service = ConversationOpeningService(llm_provider, prompt_service)
 
     app.state.repository = repository
+    app.state.supabase_jwt_verifier = SupabaseJWTVerifier(settings)
     app.state.wikipedia_provider = wikipedia_provider
     app.state.llm_provider = llm_provider
     app.state.rag_pipeline = rag_pipeline

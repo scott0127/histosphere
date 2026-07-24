@@ -1,5 +1,7 @@
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.auth import AuthenticatedActor
 from app.core.config import get_settings
 from app.providers.llm import LLMProvider
 from app.providers.wikipedia_provider import WikipediaProvider
@@ -15,6 +17,8 @@ from app.services import (
     SessionService,
     TaskService,
 )
+
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_repository(request: Request) -> RepositoryProtocol:
@@ -73,3 +77,22 @@ def require_admin_key(x_admin_key: str | None = Header(default=None)) -> None:
 def is_valid_admin_key(value: str | None) -> bool:
     """Return whether an optional header contains the configured admin key."""
     return bool(value and value == get_settings().admin_key)
+
+
+async def require_authenticated_actor(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    x_admin_key: str | None = Header(default=None),
+) -> AuthenticatedActor:
+    """Resolve Admin-key access or a verified Supabase Auth bearer token."""
+    if is_valid_admin_key(x_admin_key):
+        return AuthenticatedActor(user_id=None, is_admin=True)
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="A valid Supabase Auth bearer token is required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await request.app.state.supabase_jwt_verifier.verify(credentials.credentials)
+    return AuthenticatedActor(user_id=user.id)

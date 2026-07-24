@@ -1,7 +1,6 @@
 // useAdminWorkspace 管理 admin 頁的 snapshot 載入、JSON 編輯狀態與保存流程。
 // Page 保留登入畫面與折疊 UI；這裡負責 admin API 的狀態一致性。
 import { computed, ref, watch } from 'vue';
-import type { ComputedRef, Ref } from 'vue';
 import { taskControlQuestions } from '~/composables/useTaskControl';
 import type {
   AdminPromptPreviewResponse,
@@ -21,6 +20,11 @@ import {
   sortPromptConditions,
 } from '~/utils/adminWorkspaceState';
 import {
+  clearAdminSessionKey,
+  getAdminSessionKey,
+  setAdminSessionKey,
+} from '~/utils/adminSession';
+import {
   archiveAdminEvent,
   cancelAdminSessionTimer,
   fetchAdminAuthUsers,
@@ -37,9 +41,7 @@ import {
   type ParticipantUpdateInput,
 } from '~/utils/histosphereApi';
 
-export const useAdminWorkspace = (
-  isAuthenticated: Ref<boolean> | ComputedRef<boolean>,
-) => {
+export const useAdminWorkspace = () => {
   const adminKey = ref('');
   const snapshot = ref<AdminSnapshotResponse | null>(null);
   const authUsers = ref<AdminAuthUserSummary[]>([]);
@@ -87,14 +89,14 @@ export const useAdminWorkspace = (
     promptDryRun.value = null;
     selectedConditionId.value = null;
     selectedEventId.value = null;
-    if (clearStoredKey && import.meta.client) {
-      localStorage.removeItem('histosphere_admin_key');
+    if (clearStoredKey) {
+      clearAdminSessionKey();
     }
   };
 
   const restoreStoredAdminKey = () => {
     if (!import.meta.client) return;
-    adminKey.value = localStorage.getItem('histosphere_admin_key') || '';
+    adminKey.value = getAdminSessionKey();
   };
 
   const loadAuthUsers = async () => {
@@ -110,18 +112,9 @@ export const useAdminWorkspace = (
 
   const loadSnapshot = async () => {
     error.value = null;
-    if (!isAuthenticated.value) {
-      snapshot.value = null;
-      authUsers.value = [];
-      error.value = '請先登入管理員帳號。';
-      return;
-    }
-
     try {
-      if (import.meta.client) {
-        localStorage.setItem('histosphere_admin_key', adminKey.value);
-      }
       const data = await fetchAdminSnapshot(adminKey.value);
+      setAdminSessionKey(adminKey.value);
       const editable = buildAdminEditableJson(data);
 
       taskJson.value = editable.taskJson;
@@ -135,8 +128,11 @@ export const useAdminWorkspace = (
         selectedConditionId.value = sortPromptConditions(data.conditions)[0]?.id || null;
       }
       await loadAuthUsers();
+      return true;
     } catch (e: any) {
+      clearAdminSessionKey();
       error.value = formatAdminApiError(e, '後台資料載入失敗，請確認 admin key。');
+      return false;
     }
   };
 

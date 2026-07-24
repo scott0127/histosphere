@@ -22,6 +22,8 @@ import type {
   TaskSubmissionStatusResponse,
   UserProgressResponse,
 } from '../types';
+import { getAdminSessionKey } from '~/utils/adminSession';
+import { getCurrentAccessToken } from '~/utils/authSession';
 
 export type FrontendFetchOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -90,6 +92,16 @@ export type ParticipantUpdateInput = Partial<Pick<
 >>;
 
 const adminHeaders = (adminKey: string) => ({ 'x-admin-key': adminKey });
+const learnerAuthOptions = () => {
+  const adminKey = getAdminSessionKey();
+  if (adminKey) {
+    return { headers: adminHeaders(adminKey) };
+  }
+  const accessToken = getCurrentAccessToken();
+  return accessToken
+    ? { headers: { Authorization: `Bearer ${accessToken}` } }
+    : {};
+};
 
 export const fetchConditions = (fetcher: FrontendFetcher = $fetch) => {
   return fetcher<ExperimentCondition[]>('/api/conditions');
@@ -145,9 +157,12 @@ export const runAdminPromptDryRun = (
 };
 
 export const initializeEventMaterial = (input: InitializeEventInput, fetcher: FrontendFetcher = $fetch) => {
+  const authOptions = input.adminKey
+    ? { headers: adminHeaders(input.adminKey) }
+    : learnerAuthOptions();
   return fetcher<EventInitializeResponse>('/api/event/initialize', {
     method: 'POST',
-    ...(input.adminKey ? { headers: adminHeaders(input.adminKey) } : {}),
+    ...authOptions,
     body: {
       event_name: input.eventName,
       condition_key: input.conditionKey,
@@ -173,23 +188,26 @@ export const restoreAdminEvent = (adminKey: string, eventId: string, fetcher: Fr
 
 export const fetchUserProgress = (userId: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<UserProgressResponse>('/api/sessions/progress', {
+    ...learnerAuthOptions(),
     query: { user_id: userId },
   });
 };
 
 export const fetchParticipantMe = (authUserId: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<ParticipantMeResponse>('/api/participants/me', {
+    ...learnerAuthOptions(),
     query: { auth_user_id: authUserId },
   });
 };
 
 export const fetchSessionState = (sessionId: string, fetcher: FrontendFetcher = $fetch) => {
-  return fetcher<SessionStateResponse>(`/api/sessions/${sessionId}/state`);
+  return fetcher<SessionStateResponse>(`/api/sessions/${sessionId}/state`, learnerAuthOptions());
 };
 
 export const saveTaskDraft = (taskId: string, input: TaskDraftInput, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<TaskDraftResponse>(`/api/tasks/${taskId}/draft`, {
     method: 'PATCH',
+    ...learnerAuthOptions(),
     body: {
       session_id: input.sessionId,
       user_id: input.userId || null,
@@ -201,6 +219,7 @@ export const saveTaskDraft = (taskId: string, input: TaskDraftInput, fetcher: Fr
 export const submitTaskAnswers = (taskId: string, input: TaskSubmitInput, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<TaskSubmissionAcceptedResponse>(`/api/tasks/${taskId}/submit`, {
     method: 'POST',
+    ...learnerAuthOptions(),
     body: {
       session_id: input.sessionId,
       user_id: input.userId || null,
@@ -210,16 +229,17 @@ export const submitTaskAnswers = (taskId: string, input: TaskSubmitInput, fetche
 };
 
 export const fetchTaskSubmissionStatus = (attemptId: string, fetcher: FrontendFetcher = $fetch) => {
-  return fetcher<TaskSubmissionStatusResponse>(`/api/tasks/attempts/${attemptId}`);
+  return fetcher<TaskSubmissionStatusResponse>(`/api/tasks/attempts/${attemptId}`, learnerAuthOptions());
 };
 
 export const fetchConversation = (conversationId: string, fetcher: FrontendFetcher = $fetch) => {
-  return fetcher<ConversationLoadResponse>(`/api/conversations/${conversationId}`);
+  return fetcher<ConversationLoadResponse>(`/api/conversations/${conversationId}`, learnerAuthOptions());
 };
 
 export const sendChatMessage = (input: ChatMessageInput, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<ChatResponse>('/api/chat', {
     method: 'POST',
+    ...learnerAuthOptions(),
     body: {
       conversation_id: input.conversationId,
       user_message: input.userMessage,

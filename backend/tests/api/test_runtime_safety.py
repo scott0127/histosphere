@@ -123,6 +123,7 @@ def test_processing_attempt_is_recovered_by_polling_after_worker_loss(client):
         TaskSubmitRequest(
             session_id=initialized["session_id"],
             response_payload={"answer_text": "等待恢復"},
+            user_id="participant-001",
         ),
     )
     assert should_process is True
@@ -173,7 +174,7 @@ def test_chat_uses_database_backed_multi_turn_history(client):
 def test_admin_timer_is_opt_in_and_completes_due_session(client):
     initialized = admin_initialize(client, "計時器測試")
     session_id = initialized["session_id"]
-    original = client.get(f"/api/sessions/{session_id}/state").json()["session"]
+    original = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert original["timer_ends_at"] is None
 
     started = client.post(
@@ -190,7 +191,7 @@ def test_admin_timer_is_opt_in_and_completes_due_session(client):
     repository.save_session(session)
     assert client.app.state.session_service.expire_due_sessions() == 1
 
-    completed = client.get(f"/api/sessions/{session_id}/state").json()["session"]
+    completed = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert completed["status"] == "completed"
     assert completed["completion_reason"] == "timer_elapsed"
 

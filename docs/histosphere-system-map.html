@@ -1,0 +1,1664 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>HISTOSPHERE 系統完成度心智圖</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --red: light-dark(rgb(186 38 35), rgb(250 66 62));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget > :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type="file"] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type="file"]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type="file"]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}</style>
+</head>
+<body>
+<section id="histosphere-system-map" aria-label="HISTOSPHERE 系統完成度心智圖">
+  <style>
+    #histosphere-system-map {
+      color: var(--foreground);
+      width: 100%;
+    }
+
+    #histosphere-system-map .map-root {
+      display: grid;
+      justify-items: center;
+      gap: 0.75rem;
+      margin-block: 0.25rem 1rem;
+    }
+
+    #histosphere-system-map .root-node {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      border: 2px solid var(--foreground);
+      border-radius: 0.5rem;
+      background: var(--card);
+      color: var(--card-foreground);
+      font-weight: 500;
+    }
+
+    #histosphere-system-map .root-note {
+      color: var(--muted-foreground);
+      text-align: center;
+    }
+
+    #histosphere-system-map .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem 0.875rem;
+      margin-block: 0 1.25rem;
+      color: var(--muted-foreground);
+    }
+
+    #histosphere-system-map .legend-item,
+    #histosphere-system-map .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      white-space: nowrap;
+    }
+
+    #histosphere-system-map .dot {
+      width: 0.625rem;
+      height: 0.625rem;
+      border-radius: 999px;
+      background: var(--muted-foreground);
+      flex: none;
+    }
+
+    #histosphere-system-map [data-status="done"] .dot {
+      background: var(--viz-series-1);
+    }
+
+    #histosphere-system-map [data-status="partial"] .dot {
+      background: var(--viz-series-2);
+    }
+
+    #histosphere-system-map [data-status="missing"] .dot {
+      background: var(--destructive);
+    }
+
+    #histosphere-system-map [data-status="deferred"] .dot {
+      background: var(--viz-series-4);
+    }
+
+    #histosphere-system-map [data-status="accepted"] .dot {
+      background: var(--muted-foreground);
+    }
+
+    #histosphere-system-map .branches {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem 1.5rem;
+    }
+
+    #histosphere-system-map .branches::before {
+      content: "";
+      position: absolute;
+      inset-block: -1rem 0;
+      inset-inline-start: 50%;
+      width: 1px;
+      background: var(--border);
+      pointer-events: none;
+    }
+
+    #histosphere-system-map details {
+      position: relative;
+      min-width: 0;
+      border-block-start: 1px solid var(--border);
+    }
+
+    #histosphere-system-map details:nth-child(odd)::after,
+    #histosphere-system-map details:nth-child(even)::after {
+      content: "";
+      position: absolute;
+      inset-block-start: -1px;
+      width: 0.75rem;
+      height: 1px;
+      background: var(--border);
+    }
+
+    #histosphere-system-map details:nth-child(odd)::after {
+      inset-inline-end: -0.75rem;
+    }
+
+    #histosphere-system-map details:nth-child(even)::after {
+      inset-inline-start: -0.75rem;
+    }
+
+    #histosphere-system-map summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      min-height: 3rem;
+      padding: 0.625rem 0.25rem;
+      cursor: pointer;
+      list-style: none;
+      font-weight: 500;
+    }
+
+    #histosphere-system-map summary::-webkit-details-marker {
+      display: none;
+    }
+
+    #histosphere-system-map .summary-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+
+    #histosphere-system-map .chevron {
+      flex: none;
+      transition: transform 150ms ease;
+    }
+
+    #histosphere-system-map details[open] .chevron {
+      transform: rotate(90deg);
+    }
+
+    #histosphere-system-map .status {
+      color: var(--muted-foreground);
+      font-weight: 400;
+    }
+
+    #histosphere-system-map .functions {
+      position: relative;
+      margin: 0 0 0.75rem 0.75rem;
+      padding-inline-start: 1rem;
+      border-inline-start: 1px solid var(--border);
+    }
+
+    #histosphere-system-map .function {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.75rem;
+      align-items: start;
+      padding-block: 0.5rem;
+      border-block-end: 1px solid var(--border);
+    }
+
+    #histosphere-system-map .function:last-child {
+      border-block-end: 0;
+    }
+
+    #histosphere-system-map .function::before {
+      content: "";
+      position: absolute;
+      inset-inline-start: -1rem;
+      inset-block-start: 1rem;
+      width: 0.75rem;
+      height: 1px;
+      background: var(--border);
+    }
+
+    #histosphere-system-map .function-name {
+      min-width: 0;
+    }
+
+    #histosphere-system-map .function-note {
+      display: block;
+      margin-block-start: 0.125rem;
+      color: var(--muted-foreground);
+    }
+
+    @media (max-width: 620px) {
+      #histosphere-system-map .branches {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.5rem;
+        padding-inline-start: 0.75rem;
+        border-inline-start: 1px solid var(--border);
+      }
+
+      #histosphere-system-map .branches::before {
+        display: none;
+      }
+
+      #histosphere-system-map details:nth-child(n)::after {
+        inset-inline-start: -0.75rem;
+        inset-inline-end: auto;
+      }
+
+      #histosphere-system-map .function {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.25rem;
+      }
+    }
+  </style>
+
+  <div class="map-root">
+    <div class="root-node">
+      <svg data-lucide="landmark" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18"/><path d="M6 18v-7"/><path d="M10 18v-7"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="m12 2 9 5H3l9-5Z"/></svg>
+      <span>HISTOSPHERE</span>
+    </div>
+    <div class="root-note text-small">正式實驗系統盤點 · RAG 不列入完成度 · 存取控制已更新</div>
+  </div>
+
+  <div class="legend text-small" aria-label="完成度圖例">
+    <span class="legend-item" data-status="done"><span class="dot"></span>已完成</span>
+    <span class="legend-item" data-status="partial"><span class="dot"></span>部分完成</span>
+    <span class="legend-item" data-status="missing"><span class="dot"></span>未完成</span>
+    <span class="legend-item" data-status="deferred"><span class="dot"></span>已暫緩</span>
+    <span class="legend-item" data-status="accepted"><span class="dot"></span>已接受風險</span>
+  </div>
+
+  <div class="branches">
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>帳號與存取控制</span>
+        </span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Learner Supabase Auth 登入、登出、密碼重設與帳號切換狀態清理</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Admin 共享 key 單一門檻<span class="function-note text-small">不要求 Supabase Auth；key 只保存在當前分頁，退出模式即清除</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Learner API 的 Supabase JWT 驗證<span class="function-note text-small">後端以 JWT user id 覆蓋前端傳入的舊 user_id，避免 localStorage 或舊分頁冒用身分</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Participant、session、task attempt 與 conversation ownership<span class="function-note text-small">Learner 只能讀寫 JWT 所屬帳號的資料；Admin key 可進入管理與測試視角</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Admin key 環境變數強制設定<span class="function-note text-small">後端沒有預設 fallback；缺少 HISTOSPHERE_ADMIN_KEY 時拒絕啟動</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="accepted">
+          <span class="function-name">多管理員角色與個別撤銷</span>
+          <span class="status text-small"><span class="dot"></span>目前不需要</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>歷史事件與素材</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Supabase 事件清單、詳細資料與既有素材讀取</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Admin 建立與編輯事件；Learner 禁止建立</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">事件可逆封存與還原<span class="function-note text-small">Learner 清單排除封存事件，研究資料不刪除</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Wikipedia 中英來源擷取與來源列保存</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">自動建立素材的 task 格式<span class="function-note text-small">LLM 仍產生舊式 ____ 與寬鬆 evaluation payload，未保證符合現行 inline question contract</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">素材 readiness / publish 工作流與修改前後版本紀錄</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">事件背景圖重新生成<span class="function-note text-small">相容 endpoint 目前固定回傳 background_url=null</span></span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>2×2 實驗條件</span>
+        </span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">01：Standard Chat + 無 Role-play</span>
+          <span class="status text-small"><span class="dot"></span>已固定</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">02：Historical EBL + 無 Role-play</span>
+          <span class="status text-small"><span class="dot"></span>已固定</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">03：Standard Chat + Role-play</span>
+          <span class="status text-small"><span class="dot"></span>已固定</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">04：Historical EBL + Role-play</span>
+          <span class="status text-small"><span class="dot"></span>已固定</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">後端模型驗證固定因子；前端 Learner 僅顯示 01–04</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Participant Registry</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">受測者代號、Auth 綁定、condition list 與 active 狀態保存</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Admin 綁定 Auth user、編輯 condition list、查看目前階段</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">建立 session 前強制檢查綁定、active 與 condition assignment</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Participant 建立／封存的正式後台生命週期<span class="function-note text-small">目前只有更新既有 participants，新增仍依 migration 或手動 DB 管理</span></span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Session 與中斷恢復</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">事件 → Task → Chat 的 session 狀態與 condition snapshot</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">重新整理／重新登入後依 Supabase 狀態恢復 task、processing 或 chat</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">進入下一階段前確認視窗與長等待中轉畫面</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Admin 選配計時器；worker 與 runtime boundary 強制到期</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Learner 主動完成、Admin 強制完成、重新開啟與 Debrief 狀態機</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">同事件同條件的 session 冪等語意<span class="function-note text-small">前端會恢復進度，但初始化本身仍可建立新的 session</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Task 研究者編輯器</span>
+        </span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>主要完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">故事優先的可編輯文本與 inline 題目 badge</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">填空、選擇、是非插入；題目清單與單題 inspector</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">刪除題目同步移除 token、學生預覽、正解預覽與進階 JSON</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Undo / Redo 與前後端 token/question validation</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">結構化單題 CRUD API、排序操作歷程與 publish/readiness</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Learner Task 與評分</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Inline 填空、選擇、是非與 legacy short-answer fallback</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">草稿持久化、required 檢查、202 提交、polling 與 reload 恢復</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">客觀題 deterministic 比對 + LLM misconception/enrichment</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">每題正式計分語意<span class="function-note text-small">accepted answers、同義詞、錯字、人工覆核與答案版本尚未定案</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">背景工作耐久性<span class="function-note text-small">單機可由 polling 重掛 orphan；無 startup reconciliation、DB claim 或多 instance queue</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>LLM Prompt Pipeline</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">後端 canonical modules 與 2×2 factor composition</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">結構化 JSON output、schema repair、Gemini 主模型與 NVIDIA fallback</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Prompt preview、dry-run、prompt/profile hash 與 provider/model metadata</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Provider failure contract<span class="function-note text-small">已有 candidate fallback 與 schema repair；缺穩定錯誤分類、有限 transient retry、顯式 retry 狀態</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Latency、token usage、fallback reason、correlation id 與 attempt count 持久化</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Task judgement、opening、chat、persona generation 的個別模型參數政策</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Prompt 傳遞精簡<span class="function-note text-small">目前 user_message 同時存在 canonical module 與 provider 外層 user prompt</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Historical EBL 與 Disclosure</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Historical EBL 推理階段與 Disclosure D0–D4 分離</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">一次 structured completion 決定 learner progress、相鄰 Disclosure 與可見回覆</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">一次處理一個 task error；RESOLVED 後依 task 順序切下一個</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">02／04 pedagogical policy 一致<span class="function-note text-small">政策輸入相同；單次生成架構無法保證 persona 不影響最終內容與 state 判斷</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">答案與證據洩漏審查<span class="function-note text-small">有 transition、長度、問題數與字串掃描；無法可靠攔截同義改寫。當允許範圍含 D2 時，同次呼叫也會先看見 source_text</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Historical Thinking operator 與 evidence IDs<span class="function-note text-small">可從 judgement 帶入，但缺研究者 GUI、正式 success criteria 與資料完整性約束</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">D4 後「嘗試下一個錯誤」按鈕與 unresolved_after_max_support 紀錄</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">中性史料／證據卡介面<span class="function-note text-small">尚無獨立於 persona 的 learner-facing evidence surface</span></span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Historical Persona</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">第一人稱身分、事件場景、時空／知識邊界與人物語氣 contract</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">動態 LLM 開場與 persona completion validation／regeneration</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Persona prompt_profile 後台編輯與 runtime hash</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Persona 選擇一致性<span class="function-note text-small">後端鎖定 opening 人物，但前端仍顯示可切換人物／一般助教控制</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">人物圖片、情緒／情境變化與 avatar 生成<span class="function-note text-small">avatar_url 欄位存在，regenerate_avatar 目前是相容 no-op</span></span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">受控歷史錯誤與正式 Debrief</span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>多輪 Chat Runtime</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Supabase messages 為權威歷史；依 sequence_index 全部送入 prompt</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">長對話 context 管理<span class="function-note text-small">每則截斷 1600 字，但沒有總 token budget、摘要或壓縮策略</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">回覆等待 UX<span class="function-note text-small">有 optimistic message 與生成中提示，但 chat 仍是單一長連線 request</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">持久化 chat operation、polling、失敗重試與 duplicate/idempotency guard</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">LLM 失敗資料保留<span class="function-note text-small">候選輸出有本機 audit；本次 learner turn 在 AI 成功前不入 DB，失敗後重整會消失</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">同 conversation 並行控制與 learner/model 原子寫入</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Condition fail-closed<span class="function-note text-small">session／condition 缺失時目前會相容性 fallback 到 04，而非拒絕處理</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Dynamic context／related events<span class="function-note text-small">API 有回傳，dynamic context 進前端 state，但正式 UI 未呈現且未寫 message metadata</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Admin 後台</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">事件列表優先，再進入單一事件的 task／事件／persona 管理</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Participant dashboard、Auth 綁定、condition list、階段與 timer 控制</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">admin_mode 與 admin_testmode；可測試所有 01–04 condition</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Prompt preview 與不污染正式資料的 dry-run</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Research log 檢視<span class="function-note text-small">可看 action 與時間；缺欄位級 before/after diff、篩選與匯出</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>研究資料與可重現性</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Session、attempt、message、research_logs 與 prompt/profile hash 串接</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">實際 provider、model、prompt modules、history message IDs 與互動 metadata 保存</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">研究資料 CSV／JSON 匯出與 participant code 匿名化整併</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Prompt hash 可回查的 reviewed content registry</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">Event／Task／answer key／persona／prompt material version lock</span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">後測／測量工具的系統邊界<span class="function-note text-small">程式內沒有 post-test；若採外部量表，仍需文件化對應與資料合併方式</span></span>
+          <span class="status text-small"><span class="dot"></span>待決策</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Supabase 資料層</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">14 個 public tables、UUID PK、關聯索引與 service-role repository</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">事件封存、participant Auth mapping、timer 與 async task migration</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Schema 約束<span class="function-note text-small">多個 application-required FK 仍允許 NULL；目前靠 domain/service 驗證</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="accepted">
+          <span class="function-name">RLS<span class="function-note text-small">所有 public tables 目前 disabled；架構依 FastAPI + service role 保護</span></span>
+          <span class="status text-small"><span class="dot"></span>已知設計</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>測試與品質保證</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">本次執行 22/22 通過</span></span>
+          <span class="status text-small"><span class="dot"></span>已通過</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">測試檔完整存在；本次受 Windows runner 1312 阻擋，未能重跑</span></span>
+          <span class="status text-small"><span class="dot"></span>未重驗</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">真實 Supabase repository integration 與 disposable migration smoke tests</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Vue DOM/component tests 與完整瀏覽器 E2E</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Provider failure、chat concurrency、idempotency 與 recovery tests</span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>
+        <span class="summary-label">
+          <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <span>開發啟動與文件</span>
+        </span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+      </summary>
+      <div class="functions">
+        <div class="function" data-status="done">
+          <span class="function-name">pnpm dev:full 釋放 3000／8000、保留官方 Supabase ports、檢查 Docker 與 readiness</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">健康 Supabase stack 重用、log lock 重試與啟動時間輸出</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">文件與程式一致性<span class="function-note text-small">多份文件仍寫「最近 12 則」與舊 prompt module order；EBL 設計文件仍標示尚未實作</span></span>
+          <span class="status text-small"><span class="dot"></span>需更新</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Legacy routes／帳號頁<span class="function-note text-small">/task、/chat 與開放註冊頁仍保留；正式實驗是否對受測者開放尚未整理</span></span>
+          <span class="status text-small"><span class="dot"></span>需決策</span>
+        </div>
+        <div class="function" data-status="partial">
+          <span class="function-name">Compatibility endpoints<span class="function-note text-small">view-count、regenerate-background、regenerate-avatar 等仍保留部分 no-op 行為</span></span>
+          <span class="status text-small"><span class="dot"></span>需清理</span>
+        </div>
+      </div>
+    </details>
+  </div>
+</section>
+
+</body>
+</html>

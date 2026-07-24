@@ -1,6 +1,14 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
+# app.main 在匯入時會建立正式 app；測試必須在匯入前明確提供隔離設定。
+os.environ.setdefault("BACKEND_REPOSITORY", "in_memory")
+os.environ.setdefault("ALLOW_IN_MEMORY_REPOSITORY", "true")
+os.environ.setdefault("HISTOSPHERE_ADMIN_KEY", "test-admin")
+
+from app.core.auth import AuthenticatedUser
 from app.core.config import get_settings
 from app.main import create_app
 from app.models.domain import Event, EventTask, ExperimentCondition, Participant, Persona, RagSource, TaskAttempt, WikiSource
@@ -188,6 +196,13 @@ class FakeLLMProvider:
         )
 
 
+class FakeSupabaseJWTVerifier:
+    """Treat the bearer token as the verified Auth user id for API tests."""
+
+    async def verify(self, token: str) -> AuthenticatedUser:
+        return AuthenticatedUser(id=token)
+
+
 @pytest.fixture()
 def client(monkeypatch) -> TestClient:
     monkeypatch.setenv("BACKEND_REPOSITORY", "in_memory")
@@ -195,6 +210,7 @@ def client(monkeypatch) -> TestClient:
     monkeypatch.setenv("HISTOSPHERE_ADMIN_KEY", "test-admin")
     get_settings.cache_clear()
     app = create_app()
+    app.state.supabase_jwt_verifier = FakeSupabaseJWTVerifier()
     app.state.repository.save_participant(
         Participant(
             code="PTEST",
@@ -211,4 +227,4 @@ def client(monkeypatch) -> TestClient:
     app.state.opening_service.llm_provider = fake_llm
     app.state.chat_service.llm_provider = fake_llm
     app.state.task_service.llm_provider = fake_llm
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": "Bearer participant-001"})

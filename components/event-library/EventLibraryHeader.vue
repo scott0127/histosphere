@@ -14,7 +14,6 @@
 
       <div class="flex items-center gap-2">
         <AdminModeSwitch
-          :is-authenticated="isAuthenticated"
           :is-admin-mode="isAdminMode"
           :view-mode="adminViewMode"
           :display-name="displayName"
@@ -43,7 +42,6 @@ import type { AdminViewMode } from '~/utils/adminMode';
 
 defineProps<{
   isRefreshing: boolean;
-  isAuthenticated: boolean;
   isAdminMode: boolean;
   adminViewMode: AdminViewMode;
   displayName: string | null;

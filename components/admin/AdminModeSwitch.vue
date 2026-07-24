@@ -1,16 +1,7 @@
 <template>
   <div class="flex flex-wrap items-center justify-end gap-2">
-    <NuxtLink
-      v-if="!isAuthenticated"
-      to="/auth/login"
-      class="admin-mode-link"
-    >
-      <Icon name="mdi:login" class="h-4 w-4" />
-      管理員登入
-    </NuxtLink>
-
     <form
-      v-else-if="!isAdminMode"
+      v-if="!isAdminMode"
       class="admin-mode-key-form"
       @submit.prevent="submitAdminKey"
     >
@@ -104,7 +95,6 @@ import { ref, watch } from 'vue';
 import type { AdminViewMode } from '~/utils/adminMode';
 
 const props = defineProps<{
-  isAuthenticated: boolean;
   isAdminMode: boolean;
   viewMode: AdminViewMode;
   displayName: string | null;
