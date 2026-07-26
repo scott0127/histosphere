@@ -11,9 +11,7 @@ import type {
 import {
   buildTaskResponsePayload,
   isTaskAnswerComplete,
-  markStudentConditionProgress,
   normalizeTaskQuestions,
-  participantUuid,
 } from '~/composables/useStudentTask';
 import {
   fetchSessionState,
@@ -41,7 +39,6 @@ const answersFromAttempt = (payload?: Record<string, unknown> | null): TaskStude
 
 export const useTaskGate = (
   sessionId: Ref<string> | ComputedRef<string>,
-  participantId: Ref<string> | ComputedRef<string>,
   authUserId?: Ref<string | null> | ComputedRef<string | null>,
 ) => {
   const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
@@ -59,7 +56,8 @@ export const useTaskGate = (
   const taskQuestions = computed(() => taskData.value ? normalizeTaskQuestions(taskData.value.task) : []);
   const canSubmit = computed(() => isTaskAnswerComplete(taskQuestions.value, answers.value));
   const submitError = computed(() => error.value || draftError.value);
-  const userIdForRequest = computed(() => authUserId?.value || participantUuid(participantId.value));
+  // Learner 身分由 Authorization JWT 決定；只有 Admin test mode 會明確傳入測試 user id。
+  const userIdForRequest = computed(() => authUserId?.value || null);
 
   onMounted(async () => {
     if (sessionId.value) {
@@ -202,7 +200,6 @@ export const useTaskGate = (
 
   const finishSubmission = async (response: TaskSubmitResponse) => {
     judgement.value = response.judgement;
-    markStudentConditionProgress(participantId.value, response);
     const chatData = useState<TaskSubmitResponse | null>('chatData', () => null);
     chatData.value = response;
     await navigateTo({ path: `/conversations/${response.conversation_id}` });

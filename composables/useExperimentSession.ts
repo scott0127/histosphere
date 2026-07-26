@@ -12,7 +12,6 @@ import type {
   UserProgressResponse,
   UserProgressStatus,
 } from '~/types';
-import { participantUuid } from '~/composables/useStudentTask';
 import {
   fetchParticipantMe,
   fetchUserProgress,
@@ -30,7 +29,6 @@ export type LocalConditionProgress = {
 
 export type ExperimentStartOptions = {
   userId?: string;
-  participantId?: string;
   reuseProgress?: boolean;
   adminKey?: string;
 };
@@ -57,11 +55,7 @@ const progressItemsToLocalMap = (items: UserProgressItem[]) => {
   return next;
 };
 
-export const useExperimentSession = (
-  authStorageScope: ComputedRef<string>,
-  defaultParticipantId: ComputedRef<string>,
-) => {
-  const participantId = ref('scott-test');
+export const useExperimentSession = (authStorageScope: ComputedRef<string>) => {
   const participant = ref<Participant | null>(null);
   const progressByEvent = ref<Record<string, Partial<Record<ConditionKey, LocalConditionProgress>>>>({});
   const isInitializing = ref(false);
@@ -69,38 +63,27 @@ export const useExperimentSession = (
   const initializeError = ref<string | null>(null);
   const participantError = ref<string | null>(null);
 
-  const authUserId = computed(() => {
-    return authStorageScope.value !== 'guest'
-      ? authStorageScope.value
-      : participantUuid(participantId.value);
-  });
+  const authUserId = computed(() => authStorageScope.value !== 'guest' ? authStorageScope.value : null);
 
   const assignedConditionCodes = computed(() => {
     return participant.value?.condition_list?.length
       ? participant.value.condition_list
-      : ['01', '02', '03', '04'];
+      : [];
   });
 
-  const participantStorageKey = () => `histosphere-participant-id:${authStorageScope.value}`;
-  const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}:${participantId.value || defaultParticipantId.value}`;
-
-  const loadParticipantId = () => {
-    if (!import.meta.client) return defaultParticipantId.value;
-    return localStorage.getItem(participantStorageKey()) || defaultParticipantId.value;
-  };
-
-  const initializeParticipant = () => {
-    participantId.value = loadParticipantId();
-  };
+  const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}`;
 
   const resetForAuthScope = async () => {
     progressByEvent.value = {};
     participant.value = null;
     participantError.value = null;
-    participantId.value = loadParticipantId();
   };
 
   const loadProgressFromApi = async () => {
+    if (!authUserId.value) {
+      progressByEvent.value = {};
+      return;
+    }
     try {
       const response: UserProgressResponse = await fetchUserProgress(authUserId.value);
       progressByEvent.value = progressItemsToLocalMap(response.progress || []);
@@ -125,12 +108,8 @@ export const useExperimentSession = (
     try {
       const response = await fetchParticipantMe(trimmedAuthUserId);
       participant.value = response.participant;
-      participantId.value = response.participant.code;
       progressByEvent.value = progressItemsToLocalMap(response.progress || []);
       saveLocalProgress();
-      if (import.meta.client) {
-        localStorage.setItem(participantStorageKey(), response.participant.code);
-      }
       return response.participant;
     } catch (e: any) {
       participant.value = null;
@@ -144,6 +123,10 @@ export const useExperimentSession = (
 
   const loadLocalProgress = () => {
     if (!import.meta.client) return;
+    if (authStorageScope.value === 'guest') {
+      progressByEvent.value = {};
+      return;
+    }
     try {
       progressByEvent.value = JSON.parse(localStorage.getItem(progressStorageKey()) || '{}');
     } catch {
@@ -153,6 +136,7 @@ export const useExperimentSession = (
 
   const saveLocalProgress = () => {
     if (!import.meta.client) return;
+    if (authStorageScope.value === 'guest') return;
     localStorage.setItem(progressStorageKey(), JSON.stringify(progressByEvent.value));
   };
 
@@ -179,8 +163,11 @@ export const useExperimentSession = (
     const progress = options.reuseProgress === false
       ? null
       : progressForEvent(event.id, condition.condition_key);
-    const routeParticipantId = options.participantId || participantId.value;
     const requestUserId = options.userId || authUserId.value;
+    if (!requestUserId) {
+      initializeError.value = '請先登入受測者帳號。';
+      return;
+    }
     if (progress?.conversationId) {
       await navigateTo({
         path: `/conversations/${progress.conversationId}`,
@@ -190,15 +177,11 @@ export const useExperimentSession = (
     if (progress?.sessionId && progress.taskId) {
       await navigateTo({
         path: `/sessions/${progress.sessionId}/task`,
-        query: {
-          participantId: routeParticipantId,
-          authUserId: requestUserId,
-        },
+        query: options.userId ? { authUserId: requestUserId } : undefined,
       });
       return;
     }
     await initializeEvent(event.canonical_name, condition.condition_key, false, true, {
-      participantId: routeParticipantId,
       userId: requestUserId,
       reloadProgress: !options.userId,
       adminKey: options.adminKey,
@@ -211,7 +194,6 @@ export const useExperimentSession = (
     rebuild: boolean,
     navigateToTask: boolean,
     runtime: {
-      participantId?: string;
       userId?: string;
       reloadProgress?: boolean;
       adminKey?: string;
@@ -220,32 +202,33 @@ export const useExperimentSession = (
     isInitializing.value = true;
     initializeError.value = null;
     try {
+      const requestUserId = runtime.userId || authUserId.value;
+      if (!requestUserId) {
+        throw new Error('請先登入受測者帳號。');
+      }
       const response: EventInitializeResponse = await initializeEventMaterial({
         eventName: name,
         conditionKey,
         rebuild,
-        userId: runtime.userId || authUserId.value,
+        userId: requestUserId,
         adminKey: runtime.adminKey,
       });
 
       if (navigateToTask) {
-        markProgress(response.event_id, conditionKey, {
-          status: 'task_started',
-          sessionId: response.session_id,
-          taskId: response.task.id,
-          updatedAt: new Date().toISOString(),
-        });
         if (runtime.reloadProgress !== false) {
+          markProgress(response.event_id, conditionKey, {
+            status: 'task_started',
+            sessionId: response.session_id,
+            taskId: response.task.id,
+            updatedAt: new Date().toISOString(),
+          });
           await loadProgressFromApi();
         }
         const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
         taskData.value = response;
         await navigateTo({
           path: `/sessions/${response.session_id}/task`,
-          query: {
-            participantId: runtime.participantId || participantId.value,
-            authUserId: runtime.userId || authUserId.value,
-          },
+          query: runtime.userId ? { authUserId: runtime.userId } : undefined,
         });
       }
       return response;
@@ -260,14 +243,12 @@ export const useExperimentSession = (
   return {
     initializeError,
     initializeEvent,
-    initializeParticipant,
     isInitializing,
     isParticipantLoading,
     loadProgressFromApi,
     loadParticipantForAuthUser,
     participant,
     participantError,
-    participantId,
     authUserId,
     assignedConditionCodes,
     progressByEvent,

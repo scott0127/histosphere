@@ -27,12 +27,12 @@ onMounted(async () => {
     return;
   }
 
-  const participantId = typeof route.query.participantId === 'string' && route.query.participantId.trim()
-    ? route.query.participantId.trim()
-    : 'scott-test';
+  const authUserId = typeof route.query.authUserId === 'string' && route.query.authUserId.trim()
+    ? route.query.authUserId.trim()
+    : undefined;
   await navigateTo({
     path: `/sessions/${sessionId}/task`,
-    query: { participantId },
+    query: authUserId ? { authUserId } : undefined,
   }, { replace: true });
 });
 </script>

@@ -90,9 +90,9 @@ import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vu
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
 import ArchiveConfirmationModal from '~/components/modals/ArchiveConfirmationModal.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
-import { participantUuid, studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
+import { studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
-import { shouldExitAdminModeForAuthTransition } from '~/utils/adminMode';
+import { adminTestUserUuid, shouldExitAdminModeForAuthTransition } from '~/utils/adminMode';
 import {
   clearAdminSessionKey,
   getAdminSessionKey,
@@ -135,11 +135,7 @@ const {
   refreshEvents,
 } = useEventLibrary();
 const authStorageScope = computed(() => user.value?.id || 'guest');
-const defaultParticipantId = computed(() => {
-  const emailPrefix = user.value?.email?.split('@')[0]?.trim();
-  return emailPrefix || 'scott-test';
-});
-const adminTestUserId = computed(() => participantUuid(`admin-test:${user.value?.id || 'local'}`));
+const adminTestUserId = computed(() => adminTestUserUuid(`admin-test:${user.value?.id || 'local'}`));
 const canManageEvents = computed(() => isAdminMode.value && activityMode.value === 'admin');
 
 const storedAdminKey = () => {
@@ -148,7 +144,6 @@ const storedAdminKey = () => {
 const {
   initializeError,
   initializeEvent,
-  initializeParticipant,
   isInitializing,
   isParticipantLoading,
   loadParticipantForAuthUser,
@@ -158,7 +153,7 @@ const {
   progressByEvent,
   resetForAuthScope,
   startCondition: startExperimentCondition,
-} = useExperimentSession(authStorageScope, defaultParticipantId);
+} = useExperimentSession(authStorageScope);
 
 // 詳情彈窗只需要目前事件的 condition 進度，避免元件知道整包 localStorage 結構。
 const detailConditionProgress = computed(() => {
@@ -203,7 +198,6 @@ const startConfirmMessage = computed(() => {
 onMounted(async () => {
   initAdminMode();
   await initializeAuth();
-  initializeParticipant();
   await loadEventLibrary();
   if (user.value?.id && !isAdminMode.value) {
     await loadParticipantForAuthUser(user.value.id);
@@ -310,7 +304,6 @@ const confirmStartCondition = async () => {
     condition,
     isAdminMode.value
       ? {
-          participantId: 'ADMIN',
           userId: adminTestUserId.value,
           reuseProgress: false,
           adminKey: storedAdminKey(),

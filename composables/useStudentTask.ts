@@ -1,15 +1,12 @@
 // useStudentTask 集中管理受測者 task 頁會用到的純前端邏輯。
 // 這裡不直接操作 DOM；主要負責題目正規化、答案整理、活動名稱與本機進度紀錄。
 import type {
-  ConditionKey,
   EventTask,
   ExperimentCondition,
   TaskAnswerValue,
   TaskAttempt,
   TaskQuestion,
   TaskStudentAnswer,
-  TaskSubmitResponse,
-  UserProgressStatus,
 } from '~/types';
 import { experimentConditionCode } from '~/utils/experimentConditions';
 
@@ -18,15 +15,6 @@ export type TaskStorySegment =
   | { type: 'blank'; question: TaskQuestion };
 
 const createBlankPattern = () => /\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}/g;
-
-type LocalConditionProgress = {
-  status: 'not_started' | UserProgressStatus;
-  sessionId?: string;
-  taskId?: string;
-  attemptId?: string;
-  conversationId?: string;
-  updatedAt: string;
-};
 
 export const studentConditionCode = (condition: ExperimentCondition) => {
   return experimentConditionCode(condition);
@@ -230,43 +218,4 @@ export const buildTaskAnswerReviews = (task: EventTask, attempt: TaskAttempt): T
       status,
     };
   });
-};
-
-// 受測者代號目前是可讀字串；後端 user_id 用 UUID，因此先做 deterministic UUID。
-export const participantUuid = (value: string) => {
-  let hash = 2166136261;
-  for (const char of value || 'scott-test') {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  const hex = Math.abs(hash).toString(16).padStart(8, '0');
-  return `${hex}${hex}${hex}${hex}`.replace(
-    /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
-    '$1-$2-$3-$4-$5',
-  );
-};
-
-// 舊版相容快取仍寫入 localStorage；正式進度的權威來源是 sessions API。
-export const markStudentConditionProgress = (
-  participantId: string,
-  response: TaskSubmitResponse,
-) => {
-  if (!import.meta.client) return;
-  const conditionKey = response.condition.condition_key as ConditionKey;
-  const storageKey = `histosphere-progress:${participantId}`;
-  const current = JSON.parse(localStorage.getItem(storageKey) || '{}') as Record<
-    string,
-    Partial<Record<ConditionKey, LocalConditionProgress>>
-  >;
-  current[response.event.id] = {
-    ...(current[response.event.id] || {}),
-    [conditionKey]: {
-      status: 'chat_started',
-      sessionId: response.attempt.session_id || undefined,
-      taskId: response.task.id,
-      conversationId: response.conversation_id,
-      updatedAt: new Date().toISOString(),
-    },
-  };
-  localStorage.setItem(storageKey, JSON.stringify(current));
 };

@@ -19,3 +19,12 @@ test('admin access survives initial auth restore but exits on account changes', 
   assert.equal(adminMode.shouldExitAdminModeForAuthTransition('auth-user-a', 'auth-user-b'), true);
   assert.equal(adminMode.shouldExitAdminModeForAuthTransition('auth-user-a', 'guest'), true);
 });
+
+test('admin test mode uses an explicit deterministic UUID', () => {
+  const first = adminMode.adminTestUserUuid('admin-test:local');
+  const second = adminMode.adminTestUserUuid('admin-test:local');
+
+  assert.equal(first, second);
+  assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.throws(() => adminMode.adminTestUserUuid(''), /seed is required/);
+});

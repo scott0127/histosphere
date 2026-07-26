@@ -79,14 +79,8 @@ test('student task logic validates required answers and serializes response payl
   assert.match(payload.answer_text, /人數/);
 });
 
-test('student task logic keeps answer text and participant id deterministic', () => {
+test('student task logic keeps answer text stable', () => {
   assert.equal(taskLogic.taskAnswerValueToText(true), '是');
   assert.equal(taskLogic.taskAnswerValueToText(false), '否');
   assert.equal(taskLogic.taskAnswerValueToText(['A', 'B']), 'A, B');
-
-  const first = taskLogic.participantUuid('scott-test');
-  const second = taskLogic.participantUuid('scott-test');
-
-  assert.equal(first, second);
-  assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 });

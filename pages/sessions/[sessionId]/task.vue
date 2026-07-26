@@ -22,11 +22,6 @@ definePageMeta({
 
 const route = useRoute();
 const sessionId = computed(() => route.params.sessionId as string);
-const participantId = computed(() => {
-  return typeof route.query.participantId === 'string' && route.query.participantId.trim()
-    ? route.query.participantId.trim()
-    : 'scott-test';
-});
 const authUserId = computed(() => {
   return typeof route.query.authUserId === 'string' && route.query.authUserId.trim()
     ? route.query.authUserId.trim()
@@ -43,5 +38,5 @@ const {
   submitError,
   submitTask,
   taskData,
-} = useTaskGate(sessionId, participantId, authUserId);
+} = useTaskGate(sessionId, authUserId);
 </script>

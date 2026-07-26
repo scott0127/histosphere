@@ -17,3 +17,20 @@ export const shouldExitAdminModeForAuthTransition = (
   if (!previousScope || previousScope === 'guest') return false;
   return nextScope === 'guest' || previousScope !== nextScope;
 };
+
+// Admin test mode 需要可寫入 UUID 欄位的明確測試身分，但不能成為 learner 的預設身分。
+export const adminTestUserUuid = (value: string) => {
+  const seed = value.trim();
+  if (!seed) throw new Error('Admin test user seed is required');
+
+  let hash = 2166136261;
+  for (const char of seed) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hex = Math.abs(hash).toString(16).padStart(8, '0');
+  return `${hex}${hex}${hex}${hex}`.replace(
+    /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+    '$1-$2-$3-$4-$5',
+  );
+};
