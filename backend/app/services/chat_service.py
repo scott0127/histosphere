@@ -52,16 +52,27 @@ class ChatService:
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
-        session = self.repository.get_session(conversation.session_id) if conversation.session_id else None
-        if session:
-            session = expire_session_if_due(self.repository, session)
-            if session.status in {"completed", "archived"}:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
-        condition = self.repository.get_condition_by_key(session.condition_key_snapshot) if session else None
+        # Condition 是實驗操弄的一部分；缺少 session 或 snapshot 時必須停止，不能猜測預設模式。
+        if not conversation.session_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conversation is not bound to an experiment session",
+            )
+        session = self.repository.get_session(conversation.session_id)
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Experiment session is unavailable",
+            )
+        session = expire_session_if_due(self.repository, session)
+        if session.status in {"completed", "archived"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
+        condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
         if not condition:
-            condition = self.repository.get_condition_by_key("ebl_roleplay")
-        if not condition:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Experiment condition snapshot is unavailable",
+            )
 
         # task_attempt 讓 EBL 條件可以引用 learner 的 productive error / misconception。
         task_attempt = (

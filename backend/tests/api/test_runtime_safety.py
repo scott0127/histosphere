@@ -171,6 +171,43 @@ def test_chat_uses_database_backed_multi_turn_history(client):
     assert metadata["history_message_count"] >= 3
 
 
+def test_chat_rejects_missing_session_or_condition_without_falling_back(client):
+    initialized = admin_initialize(client, "Condition fail-closed 測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+    repository = client.app.state.repository
+    conversation = repository.get_conversation(submitted["conversation_id"])
+    original_session_id = conversation.session_id
+    prompt_count = len(client.app.state.llm_provider.chat_prompts)
+
+    conversation.session_id = None
+    repository.save_conversation(conversation)
+    missing_session = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": conversation.id,
+            "user_message": "這則訊息不應送進模型。",
+        },
+    )
+    assert missing_session.status_code == 409
+    assert "not bound to an experiment session" in missing_session.json()["detail"]
+
+    conversation.session_id = original_session_id
+    repository.save_conversation(conversation)
+    session = repository.get_session(original_session_id)
+    session.condition_key_snapshot = "missing-condition"
+    repository.save_session(session)
+    missing_condition = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": conversation.id,
+            "user_message": "這則訊息也不應送進模型。",
+        },
+    )
+    assert missing_condition.status_code == 409
+    assert "condition snapshot is unavailable" in missing_condition.json()["detail"]
+    assert len(client.app.state.llm_provider.chat_prompts) == prompt_count
+
+
 def test_admin_timer_is_opt_in_and_completes_due_session(client):
     initialized = admin_initialize(client, "計時器測試")
     session_id = initialized["session_id"]
