@@ -160,6 +160,14 @@ export const useExperimentSession = (authStorageScope: ComputedRef<string>) => {
     condition: ExperimentCondition,
     options: ExperimentStartOptions = {},
   ) => {
+    const eventProgress = progressByEvent.value[event.id] || {};
+    const eventAlreadyCompleted = Object.values(eventProgress).some(
+      (item) => item?.status === 'completed',
+    );
+    if (!options.adminKey && eventAlreadyCompleted) {
+      initializeError.value = '此歷史事件已完成，無法再次進行。若需重做，請由管理員封存舊 session 並重建。';
+      return;
+    }
     const progress = options.reuseProgress === false
       ? null
       : progressForEvent(event.id, condition.condition_key);
@@ -216,7 +224,7 @@ export const useExperimentSession = (authStorageScope: ComputedRef<string>) => {
 
       if (navigateToTask) {
         if (runtime.reloadProgress !== false) {
-          markProgress(response.event_id, conditionKey, {
+          markProgress(response.event_id, response.condition.condition_key, {
             status: 'task_started',
             sessionId: response.session_id,
             taskId: response.task.id,
@@ -233,7 +241,7 @@ export const useExperimentSession = (authStorageScope: ComputedRef<string>) => {
       }
       return response;
     } catch (e: any) {
-      initializeError.value = e.data?.detail || e.data?.message || '建立流程失敗，請稍後再試。';
+      initializeError.value = e.data?.detail || e.data?.message || e.message || '建立流程失敗，請稍後再試。';
       return null;
     } finally {
       isInitializing.value = false;

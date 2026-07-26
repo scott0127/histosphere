@@ -44,6 +44,7 @@ from app.schemas.responses import (
     AdminSnapshotResponse,
     EventListItem,
     PromptPreviewModule,
+    SessionRestartResponse,
 )
 from app.services import ChatService, PromptService, RagPipelineService, SessionService
 from app.services.task_payload_validator import validate_task_authoring_payload
@@ -546,6 +547,15 @@ def cancel_session_timer(
 ) -> ExperimentSession:
     """Disable a previously enabled timer without closing the session."""
     return service.cancel_timer(session_id)
+
+
+@router.post("/sessions/{session_id}/restart", response_model=SessionRestartResponse)
+def restart_session(
+    session_id: str,
+    service: SessionService = Depends(get_session_service),
+) -> SessionRestartResponse:
+    """封存舊 session 與對話，保留研究資料後建立同事件的新 session。"""
+    return service.restart_session(session_id)
 
 
 @router.patch("/conditions/{condition_id}", response_model=ExperimentCondition)

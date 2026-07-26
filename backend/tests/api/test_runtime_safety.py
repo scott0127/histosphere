@@ -17,6 +17,18 @@ def admin_initialize(client, event_name="法國大革命", condition_key="ebl_ro
     return response.json()
 
 
+def learner_initialize(client, event_name, condition_key="ebl_roleplay"):
+    response = client.post(
+        "/api/event/initialize",
+        json={
+            "event_name": event_name,
+            "condition_key": condition_key,
+            "rebuild": False,
+        },
+    )
+    return response
+
+
 def submit_and_poll(client, initialized):
     accepted = client.post(
         f"/api/tasks/{initialized['task']['id']}/submit",
@@ -231,6 +243,80 @@ def test_admin_timer_is_opt_in_and_completes_due_session(client):
     completed = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert completed["status"] == "completed"
     assert completed["completion_reason"] == "timer_elapsed"
+
+
+def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):
+    materials = admin_initialize(client, "同事件永久防重測試")
+
+    first = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
+    assert first.status_code == 200
+    first_payload = first.json()
+
+    resumed = learner_initialize(client, materials["event"]["canonical_name"], "no_ebl_roleplay")
+    assert resumed.status_code == 200
+    assert resumed.json()["session_id"] == first_payload["session_id"]
+    assert resumed.json()["condition"]["condition_key"] == "ebl_roleplay"
+
+    repository = client.app.state.repository
+    participant_sessions = repository.list_sessions_for_user("participant-001")
+    assert [session.id for session in participant_sessions] == [first_payload["session_id"]]
+
+    completed_session = repository.get_session(first_payload["session_id"])
+    completed_session.status = "completed"
+    completed_session.completed_at = utc_now()
+    completed_session.completion_reason = "learner"
+    repository.save_session(completed_session)
+
+    blocked = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
+    assert blocked.status_code == 409
+    assert "already been completed" in blocked.json()["detail"]
+    assert len(repository.list_sessions_for_user("participant-001")) == 1
+
+
+def test_admin_restart_archives_old_runtime_and_preserves_research_data(client):
+    materials = admin_initialize(client, "管理員重建 Session 測試")
+    learner = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
+    assert learner.status_code == 200
+    learner_payload = learner.json()
+    submitted = submit_and_poll(client, learner_payload)
+
+    repository = client.app.state.repository
+    old_session = repository.get_session(learner_payload["session_id"])
+    old_session.status = "completed"
+    old_session.completed_at = utc_now()
+    old_session.completion_reason = "learner"
+    repository.save_session(old_session)
+    old_conversation = repository.get_conversation(submitted["conversation_id"])
+    old_attempt = repository.get_task_attempt_for_session(old_session.id, learner_payload["task"]["id"])
+    old_messages = repository.list_messages(old_conversation.id)
+
+    restarted = client.post(
+        f"/api/admin/sessions/{old_session.id}/restart",
+        headers=ADMIN_HEADERS,
+    )
+    assert restarted.status_code == 200
+    payload = restarted.json()
+    assert payload["new_session"]["id"] != old_session.id
+    assert payload["new_session"]["status"] == "initialized"
+    assert payload["new_session"]["event_id"] == old_session.event_id
+    assert payload["new_session"]["condition_key_snapshot"] == old_session.condition_key_snapshot
+    assert payload["new_session"]["user_id"] == old_session.user_id
+
+    archived = repository.get_session(old_session.id)
+    assert archived.status == "archived"
+    assert archived.completion_reason == "admin_restart"
+    assert repository.get_conversation(old_conversation.id).status == "archived"
+    assert repository.get_task_attempt(old_attempt.id)
+    assert repository.list_messages(old_conversation.id) == old_messages
+
+    resumed = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
+    assert resumed.status_code == 200
+    assert resumed.json()["session_id"] == payload["new_session"]["id"]
+    assert any(
+        log.action_type == "session_restarted"
+        and log.payload["new_session_id"] == payload["new_session"]["id"]
+        for log in repository.list_research_logs()
+    )
 
 
 def test_persona_prompt_contract_and_dry_run_are_non_persistent(client):

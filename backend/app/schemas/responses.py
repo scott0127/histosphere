@@ -297,6 +297,13 @@ class SessionStateResponse(BaseModel):
     conversation_id: str | None = None
 
 
+class SessionRestartResponse(BaseModel):
+    """Admin 封存同事件的舊 session 並建立新 session 後的結果。"""
+
+    archived_sessions: list[ExperimentSession] = Field(default_factory=list)
+    new_session: ExperimentSession
+
+
 class UserProgressItem(BaseModel):
     """使用者進度清單項目。
 

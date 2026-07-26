@@ -103,6 +103,42 @@
             </div>
           </div>
         </div>
+
+        <div
+          v-if="row.currentSessions.length"
+          class="mt-4 border-t border-[var(--admin-border-soft)] pt-4"
+        >
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <p class="admin-kicker">有效 Session</p>
+            <span class="admin-caption text-xs font-bold">{{ row.currentSessions.length }} 筆</span>
+          </div>
+          <div class="divide-y divide-[var(--admin-border-soft)]">
+            <div
+              v-for="item in row.currentSessions"
+              :key="item.session.id"
+              class="grid min-h-12 gap-2 py-2 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_100px_130px] lg:items-center"
+            >
+              <span class="admin-copy text-sm font-black">{{ item.eventName }}</span>
+              <span class="admin-caption text-xs font-bold">
+                {{ item.conditionCode }} {{ item.conditionLabel }}
+              </span>
+              <span class="admin-caption text-xs font-bold">{{ sessionStatusLabel(item.session.status) }}</span>
+              <button
+                type="button"
+                class="admin-button-secondary inline-flex min-h-9 items-center justify-center gap-2 px-3 text-xs font-bold"
+                :disabled="restartingSessionId === item.session.id"
+                @click="restartTarget = item"
+              >
+                <Icon
+                  :name="restartingSessionId === item.session.id ? 'mdi:loading' : 'mdi:restart'"
+                  class="h-4 w-4"
+                  :class="{ 'animate-spin': restartingSessionId === item.session.id }"
+                />
+                封存並重建
+              </button>
+            </div>
+          </div>
+        </div>
       </article>
     </div>
 
@@ -198,11 +234,24 @@
         </article>
       </div>
     </Transition>
+
+    <ConfirmActionModal
+      :show="Boolean(restartTarget)"
+      title="重新建立 Session"
+      :message="restartConfirmationMessage"
+      eyebrow="受測者流程"
+      icon="mdi:restart-alert"
+      confirm-label="封存並重建"
+      cancel-label="取消"
+      @confirm="confirmRestart"
+      @cancel="restartTarget = null"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import type { AdminAuthUserSummary } from '~/types';
 import type { ParticipantUpdateInput } from '~/utils/histosphereApi';
 import {
@@ -211,6 +260,7 @@ import {
   participantConditionLabels,
   participantStageLabels,
   type ParticipantDashboardRow,
+  type ParticipantSessionSummary,
   type ParticipantStage,
 } from '~/utils/adminParticipantDashboard';
 
@@ -219,12 +269,14 @@ const props = defineProps<{
   authUsers: AdminAuthUserSummary[];
   savingParticipantId: string | null;
   updatingTimerSessionId: string | null;
+  restartingSessionId: string | null;
 }>();
 
 const emit = defineEmits<{
   (event: 'save', participantId: string, payload: ParticipantUpdateInput): void;
   (event: 'start-timer', sessionId: string, durationMinutes: number): void;
   (event: 'cancel-timer', sessionId: string): void;
+  (event: 'restart-session', sessionId: string): void;
 }>();
 
 const stages: ParticipantStage[] = ['not_started', 'task', 'chat', 'completed'];
@@ -232,6 +284,12 @@ const editingRow = ref<ParticipantDashboardRow | null>(null);
 const draftAuthUserId = ref('');
 const draftConditionCodes = ref<string[]>([]);
 const timerMinutes = ref<Record<string, number>>({});
+const restartTarget = ref<ParticipantSessionSummary | null>(null);
+
+const restartConfirmationMessage = computed(() => {
+  if (!restartTarget.value) return '';
+  return `這會封存「${restartTarget.value.eventName}」的舊 session 與對話，保留所有研究資料，再建立一筆新的 ${restartTarget.value.conditionCode} session。`;
+});
 
 const conditionOptions = computed(() => {
   return Object.keys(participantConditionLabels).map((code) => ({
@@ -287,5 +345,18 @@ const formatDate = (value: string) => {
 const setTimerMinutes = (participantId: string, event: Event) => {
   const value = Number((event.target as HTMLInputElement).value);
   timerMinutes.value[participantId] = Math.min(240, Math.max(1, Number.isFinite(value) ? value : 30));
+};
+
+const confirmRestart = () => {
+  if (!restartTarget.value) return;
+  emit('restart-session', restartTarget.value.session.id);
+  restartTarget.value = null;
+};
+
+const sessionStatusLabel = (status: string) => {
+  if (status === 'completed') return '已完成';
+  if (status === 'conversation_started') return 'Chat';
+  if (status === 'task_submitted') return 'Task 已提交';
+  return 'Task';
 };
 </script>

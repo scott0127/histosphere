@@ -242,6 +242,11 @@ export interface ExperimentSession {
   updated_at: string;
 }
 
+export interface SessionRestartResponse {
+  archived_sessions: ExperimentSession[];
+  new_session: ExperimentSession;
+}
+
 export interface SessionStateResponse {
   session: ExperimentSession;
   event: HistoricalEvent;

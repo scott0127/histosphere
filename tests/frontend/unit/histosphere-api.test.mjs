@@ -370,3 +370,27 @@ test('frontend api client starts and cancels optional session timers', async () 
     },
   ]);
 });
+
+test('frontend api client restarts a session through the protected admin endpoint', async () => {
+  const response = {
+    archived_sessions: [{ id: 'session-old', status: 'archived' }],
+    new_session: { id: 'session-new', status: 'initialized' },
+  };
+  const { calls, fetcher } = createFetchRecorder({
+    'POST /api/admin/sessions/session-old/restart': response,
+  });
+
+  assert.deepEqual(
+    await api.restartAdminSession('test-admin', 'session-old', fetcher),
+    response,
+  );
+  assert.deepEqual(calls, [
+    {
+      url: '/api/admin/sessions/session-old/restart',
+      options: {
+        method: 'POST',
+        headers: { 'x-admin-key': 'test-admin' },
+      },
+    },
+  ]);
+});

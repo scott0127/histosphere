@@ -15,6 +15,7 @@ from app.providers.wikipedia_provider import WikipediaProvider
 from app.schemas.requests import EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse
 from app.services.event_service import EventService
+from app.services.session_runtime import expire_session_if_due
 from app.utils.text_normalizer import normalize_display_text
 
 
@@ -58,9 +59,12 @@ class EventInitializationService:
             )
         rebuild_ignored = bool(existing and request.rebuild)
 
+        learner_session = None
         if existing:
             # 已存在事件可重用，但仍要補齊 task/primary persona，避免舊資料不完整。
             event = existing
+            if not admin_override:
+                learner_session = self._learner_session_for_event(request.user_id, event.id)
             sources = self.repository.list_wiki_sources(event.id)
             task = self._ensure_task(event, sources)
             personas = await self._ensure_personas(event, sources)
@@ -86,6 +90,36 @@ class EventInitializationService:
             task = self.repository.save_event_task(task)
 
             personas = await self._generate_primary_persona(event, sources)
+
+        if learner_session:
+            session_condition = self.repository.get_condition_by_key(learner_session.condition_key_snapshot)
+            if not session_condition:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The existing experiment session condition is unavailable. Ask an admin to review it.",
+                )
+            self.repository.log_research(
+                ResearchLog(
+                    user_id=request.user_id,
+                    session_id=learner_session.id,
+                    event_id=event.id,
+                    task_id=task.id,
+                    action_type="event_session_resumed",
+                    payload={
+                        "event_name": event_name,
+                        "condition_key": learner_session.condition_key_snapshot,
+                        "requested_condition_key": condition.condition_key,
+                    },
+                )
+            )
+            return EventInitializeResponse(
+                event_id=event.id,
+                session_id=learner_session.id,
+                event=event,
+                task=task,
+                personas=personas,
+                condition=session_condition,
+            )
 
         session = self.repository.save_session(
             ExperimentSession(
@@ -118,6 +152,34 @@ class EventInitializationService:
             task=task,
             personas=personas,
             condition=condition,
+        )
+
+    def _learner_session_for_event(
+        self,
+        user_id: str | None,
+        event_id: str,
+    ) -> ExperimentSession | None:
+        """接續同事件的有效 session；完成過的事件必須由管理員重建。"""
+        matching_sessions = [
+            expire_session_if_due(self.repository, session)
+            for session in self.repository.list_sessions_for_user((user_id or "").strip())
+            if session.event_id == event_id and session.status != "archived"
+        ]
+        if any(session.status == "completed" for session in matching_sessions):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This historical event has already been completed. "
+                    "An admin must archive the previous session and create a new one."
+                ),
+            )
+        return next(
+            (
+                session
+                for session in matching_sessions
+                if session.status in {"initialized", "task_submitted", "conversation_started"}
+            ),
+            None,
         )
 
     def _validate_participant_assignment(self, user_id: str | None, condition_key: str) -> None:

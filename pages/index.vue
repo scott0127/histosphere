@@ -285,6 +285,13 @@ const startCondition = async (condition: ExperimentCondition) => {
     await navigateTo('/auth/login');
     return;
   }
+  if (
+    !isAdminMode.value
+    && Object.values(detailConditionProgress.value).some((progress) => progress?.status === 'completed')
+  ) {
+    alert('此歷史事件已完成，無法再次進行。');
+    return;
+  }
   pendingStartCondition.value = condition;
   showStartConfirmDialog.value = true;
 };

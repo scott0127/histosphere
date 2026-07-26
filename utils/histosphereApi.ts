@@ -16,6 +16,7 @@ import type {
   ParticipantMeResponse,
   Participant,
   Persona,
+  SessionRestartResponse,
   SessionStateResponse,
   TaskDraftResponse,
   TaskSubmissionAcceptedResponse,
@@ -334,6 +335,17 @@ export const cancelAdminSessionTimer = (
 ) => {
   return fetcher<ExperimentSession>(`/api/admin/sessions/${sessionId}/timer`, {
     method: 'DELETE',
+    headers: adminHeaders(adminKey),
+  });
+};
+
+export const restartAdminSession = (
+  adminKey: string,
+  sessionId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<SessionRestartResponse>(`/api/admin/sessions/${sessionId}/restart`, {
+    method: 'POST',
     headers: adminHeaders(adminKey),
   });
 };

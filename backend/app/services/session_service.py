@@ -11,7 +11,12 @@ from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
-from app.schemas.responses import SessionStateResponse, UserProgressItem, UserProgressResponse
+from app.schemas.responses import (
+    SessionRestartResponse,
+    SessionStateResponse,
+    UserProgressItem,
+    UserProgressResponse,
+)
 from app.services.session_runtime import expire_session_if_due
 
 
@@ -117,6 +122,74 @@ class SessionService:
             )
         )
         return saved
+
+    def restart_session(self, session_id: str) -> SessionRestartResponse:
+        """封存同一受測者在同事件的有效 session，再建立一筆乾淨 session。"""
+        source_session = self.repository.get_session(session_id)
+        if not source_session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
+
+        event = self.repository.get_event(source_session.event_id)
+        if not event:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        if event.archived_at:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Restore the historical event before restarting its session.",
+            )
+
+        if source_session.user_id:
+            candidates = [
+                session
+                for session in self.repository.list_sessions_for_user(source_session.user_id)
+                if session.event_id == source_session.event_id and session.status != "archived"
+            ]
+        else:
+            candidates = [source_session] if source_session.status != "archived" else []
+
+        now = utc_now()
+        archived_sessions: list[ExperimentSession] = []
+        for session in candidates:
+            session.status = "archived"
+            session.completed_at = session.completed_at or now
+            session.completion_reason = "admin_restart"
+            session.timer_started_at = None
+            session.timer_ends_at = None
+            archived_sessions.append(self.repository.save_session(session))
+
+            # 對話一併停止寫入，但 task、訊息與研究紀錄全部保留。
+            conversation = self.repository.get_conversation_by_session(session.id)
+            if conversation and conversation.status != "archived":
+                conversation.status = "archived"
+                conversation.archived_at = now
+                self.repository.save_conversation(conversation)
+
+        new_session = self.repository.save_session(
+            ExperimentSession(
+                condition_id=source_session.condition_id,
+                condition_key_snapshot=source_session.condition_key_snapshot,
+                user_id=source_session.user_id,
+                event_id=source_session.event_id,
+            )
+        )
+        self.repository.log_research(
+            ResearchLog(
+                user_id=new_session.user_id,
+                session_id=new_session.id,
+                event_id=new_session.event_id,
+                action_type="session_restarted",
+                payload={
+                    "source_session_id": source_session.id,
+                    "archived_session_ids": [session.id for session in archived_sessions],
+                    "new_session_id": new_session.id,
+                    "condition_key": new_session.condition_key_snapshot,
+                },
+            )
+        )
+        return SessionRestartResponse(
+            archived_sessions=archived_sessions,
+            new_session=new_session,
+        )
 
     def expire_due_sessions(self) -> int:
         """Complete all due opt-in timers; used by the background worker."""

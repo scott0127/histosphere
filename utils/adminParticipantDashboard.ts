@@ -18,6 +18,13 @@ export type ParticipantConditionProgress = {
   latestActiveSession?: ExperimentSession;
 };
 
+export type ParticipantSessionSummary = {
+  session: ExperimentSession;
+  eventName: string;
+  conditionCode: string;
+  conditionLabel: string;
+};
+
 export type ParticipantDashboardRow = {
   participant: Participant;
   authUser: AdminAuthUserSummary | null;
@@ -27,6 +34,7 @@ export type ParticipantDashboardRow = {
   currentStage: ParticipantStage;
   updatedAt?: string;
   latestActiveSession?: ExperimentSession;
+  currentSessions: ParticipantSessionSummary[];
 };
 
 export const participantConditionLabels: Record<ExperimentConditionCode, string> = experimentConditionLabels;
@@ -69,10 +77,16 @@ export const buildParticipantDashboardRows = (
   authUsers: AdminAuthUserSummary[],
 ) => {
   const authUsersById = new Map(authUsers.map((user) => [user.id, user]));
+  const eventNamesById = new Map(snapshot.events.map((event) => [event.id, event.canonical_name]));
   const sessionsByUserAndCode = new Map<string, ExperimentSession[]>();
+  const sessionsByUser = new Map<string, ExperimentSession[]>();
 
   for (const session of snapshot.sessions) {
     if (!session.user_id) continue;
+    sessionsByUser.set(
+      session.user_id,
+      [...(sessionsByUser.get(session.user_id) || []), session],
+    );
     const code = experimentConditionCodeByKey[session.condition_key_snapshot];
     if (!code) continue;
     const key = `${session.user_id}:${code}`;
@@ -115,6 +129,20 @@ export const buildParticipantDashboardRows = (
           session && session.status !== 'completed' && session.status !== 'archived',
         ))
         .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+      const currentSessions = participant.auth_user_id
+        ? [...(sessionsByUser.get(participant.auth_user_id) || [])]
+            .filter((session) => session.status !== 'archived')
+            .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+            .map((session) => {
+              const code = experimentConditionCodeByKey[session.condition_key_snapshot] || '??';
+              return {
+                session,
+                eventName: eventNamesById.get(session.event_id) || '未知事件',
+                conditionCode: code,
+                conditionLabel: conditionName(code),
+              };
+            })
+        : [];
 
       return {
         participant,
@@ -128,6 +156,7 @@ export const buildParticipantDashboardRows = (
         currentStage,
         updatedAt,
         latestActiveSession,
+        currentSessions,
       };
     });
 };

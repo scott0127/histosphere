@@ -100,9 +100,11 @@
               :auth-users="authUsers"
               :saving-participant-id="savingParticipantId"
               :updating-timer-session-id="updatingTimerSessionId"
+              :restarting-session-id="restartingSessionId"
               @save="saveParticipant"
               @start-timer="startSessionTimer"
               @cancel-timer="cancelSessionTimer"
+              @restart-session="restartSession"
             />
           </div>
         </section>
@@ -502,6 +504,8 @@ const {
   promptPreviewMessage,
   promptConditions,
   resetWorkspace,
+  restartSession,
+  restartingSessionId,
   restoreStoredAdminKey,
   runPromptDryRun,
   saveCondition,

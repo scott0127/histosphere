@@ -31,6 +31,7 @@ import {
   fetchAdminSnapshot,
   fetchAdminPromptPreview,
   restoreAdminEvent,
+  restartAdminSession,
   runAdminPromptDryRun,
   startAdminSessionTimer,
   updateAdminCondition,
@@ -53,6 +54,7 @@ export const useAdminWorkspace = () => {
   const selectedEventId = ref<string | null>(null);
   const savingParticipantId = ref<string | null>(null);
   const updatingTimerSessionId = ref<string | null>(null);
+  const restartingSessionId = ref<string | null>(null);
   const promptPreview = ref<AdminPromptPreviewResponse | null>(null);
   const promptDryRun = ref<AdminPromptDryRunResponse | null>(null);
   const promptDryRunLoading = ref(false);
@@ -271,6 +273,19 @@ export const useAdminWorkspace = () => {
     }
   };
 
+  const restartSession = async (sessionId: string) => {
+    restartingSessionId.value = sessionId;
+    error.value = null;
+    try {
+      await restartAdminSession(adminKey.value, sessionId);
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, 'Session 無法重新建立。');
+    } finally {
+      restartingSessionId.value = null;
+    }
+  };
+
   const loadPromptPreview = async (event: EventWithPersonas, condition: ExperimentCondition) => {
     promptPreviewLoading.value = true;
     error.value = null;
@@ -333,6 +348,8 @@ export const useAdminWorkspace = () => {
     promptPreviewMessage,
     promptConditions,
     resetWorkspace,
+    restartSession,
+    restartingSessionId,
     restoreStoredAdminKey,
     runPromptDryRun,
     saveCondition,
