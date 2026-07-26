@@ -455,7 +455,7 @@ class RepositoryProtocol(Protocol):
         ...
 
     def add_message(self, message: ChatMessage) -> ChatMessage:
-        """新增一則訊息到 conversation。
+        """新增或更新一則 conversation 訊息。
 
         Args:
             message: ChatMessage 實例（需含 conversation_id）。

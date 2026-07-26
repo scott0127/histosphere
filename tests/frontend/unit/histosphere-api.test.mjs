@@ -394,3 +394,78 @@ test('frontend api client restarts a session through the protected admin endpoin
     },
   ]);
 });
+
+test('frontend chat stream parses split SSE frames and keeps learner authentication', async () => {
+  const completeResponse = {
+    response: '這是一段已驗證的回覆。',
+    assistant_name: 'AI Assistant',
+    message: {
+      id: 'message-ai',
+      conversation_id: 'conversation-1',
+      speaker_type: 'assistant',
+      speaker_name: 'AI Assistant',
+      sequence_index: 2,
+      content: '這是一段已驗證的回覆。',
+      metadata: { generation_status: 'completed', delivery_mode: 'validated_stream' },
+    },
+  };
+  const sse = [
+    `event: user_message\ndata: ${JSON.stringify({
+      type: 'user_message',
+      message: {
+        id: 'message-user',
+        speaker_type: 'learner',
+        speaker_name: 'learner',
+        sequence_index: 1,
+        content: '請回答。',
+      },
+    })}\n\n`,
+    `event: status\ndata: ${JSON.stringify({
+      type: 'status',
+      stage: 'generating',
+      message: '正在整理史料與回覆…',
+    })}\n\n`,
+    `event: delta\ndata: ${JSON.stringify({ type: 'delta', content: '這是一段' })}\n\n`,
+    `event: delta\ndata: ${JSON.stringify({ type: 'delta', content: '已驗證的回覆。' })}\n\n`,
+    `event: complete\ndata: ${JSON.stringify({ type: 'complete', response: completeResponse })}\n\n`,
+  ].join('');
+  const encoded = new TextEncoder().encode(sse);
+  const splitAt = Math.floor(encoded.length / 2);
+  const calls = [];
+  const fetcher = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoded.slice(0, splitAt));
+          controller.enqueue(encoded.slice(splitAt));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    );
+  };
+  const eventTypes = [];
+
+  const result = await api.sendChatMessageStream(
+    {
+      conversationId: 'conversation-1',
+      userMessage: '請回答。',
+      history: [],
+    },
+    (event) => eventTypes.push(event.type),
+    fetcher,
+  );
+
+  assert.deepEqual(result, completeResponse);
+  assert.deepEqual(eventTypes, ['user_message', 'status', 'delta', 'delta', 'complete']);
+  assert.equal(calls[0].url, '/api/chat/stream');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer participant-jwt');
+  assert.equal(calls[0].options.headers.Accept, 'text/event-stream');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    conversation_id: 'conversation-1',
+    user_message: '請回答。',
+    history: [],
+    target_persona_id: null,
+  });
+});

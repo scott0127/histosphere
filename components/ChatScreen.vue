@@ -61,12 +61,27 @@
               </div>
 
               <div class="text-sm leading-7 md:text-base">
-                <div v-if="message.content === '...'" class="flex items-center gap-2 text-[var(--admin-soft)]">
+                <div
+                  v-if="isPendingMessage(message)"
+                  class="flex items-center gap-2 text-[var(--admin-soft)]"
+                  role="status"
+                  aria-live="polite"
+                >
                   <Icon name="mdi:loading" class="h-5 w-5 animate-spin" />
-                  回應生成中
+                  {{ replyStatus || '正在回應…' }}
                 </div>
+                <p
+                  v-else-if="isStreamingMessage(message)"
+                  class="whitespace-pre-wrap"
+                >
+                  {{ message.content }}<span aria-hidden="true" class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />
+                </p>
                 <Typewriter
-                  v-else-if="message.speaker_type !== 'learner' && index === history.length - 1"
+                  v-else-if="
+                    message.speaker_type !== 'learner'
+                    && index === history.length - 1
+                    && !wasValidatedStream(message)
+                  "
                   :text="message.content"
                   :annotations="message.annotations"
                 />
@@ -180,6 +195,8 @@ const props = defineProps<{
   taskAttempt?: TaskAttempt | null;
   dynamicContext: string;
   session?: ExperimentSession | null;
+  isReplying: boolean;
+  replyStatus?: string;
 }>();
 
 const emit = defineEmits<{
@@ -203,11 +220,16 @@ const sessionClosed = computed(() => {
 onMounted(() => { sessionTimerId = setInterval(() => { now.value = Date.now(); }, 1000); });
 onBeforeUnmount(() => { if (sessionTimerId) clearInterval(sessionTimerId); });
 
-// 最後一則內容為 "..." 時代表後端正在生成回覆，避免連續送出造成 history index 混亂。
-const isReplying = computed(() => {
-  const lastMessage = props.history[props.history.length - 1];
-  return lastMessage?.content === '...';
-});
+const messageMetadata = (message: ChatMessage) => message.metadata || {};
+const isPendingMessage = (message: ChatMessage) => {
+  return messageMetadata(message).generation_status === 'pending' && !message.content;
+};
+const isStreamingMessage = (message: ChatMessage) => {
+  return messageMetadata(message).generation_status === 'streaming';
+};
+const wasValidatedStream = (message: ChatMessage) => {
+  return messageMetadata(message).delivery_mode === 'validated_stream';
+};
 
 // 學生端只顯示實驗代號，不揭露實際 treatment。
 const activityTitle = computed(() => {
@@ -233,7 +255,7 @@ const selectorClass = (active: boolean) => [
 
 const handleSendMessage = () => {
   const trimmed = userInput.value.trim();
-  if (!trimmed || isReplying.value) return;
+  if (!trimmed || props.isReplying) return;
   emit('send-message', trimmed, selectedPersonaId.value || undefined);
   userInput.value = '';
 };

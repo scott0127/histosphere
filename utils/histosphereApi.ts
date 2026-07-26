@@ -5,6 +5,7 @@ import type {
   AdminPromptPreviewResponse,
   ChatMessage,
   ChatResponse,
+  ChatStreamEvent,
   ConditionKey,
   ConversationLoadResponse,
   EventInitializeResponse,
@@ -93,15 +94,15 @@ export type ParticipantUpdateInput = Partial<Pick<
 >>;
 
 const adminHeaders = (adminKey: string) => ({ 'x-admin-key': adminKey });
-const learnerAuthOptions = () => {
+const learnerAuthHeaders = (): Record<string, string> => {
   const adminKey = getAdminSessionKey();
-  if (adminKey) {
-    return { headers: adminHeaders(adminKey) };
-  }
+  if (adminKey) return adminHeaders(adminKey);
   const accessToken = getCurrentAccessToken();
-  return accessToken
-    ? { headers: { Authorization: `Bearer ${accessToken}` } }
-    : {};
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+};
+const learnerAuthOptions = (): { headers?: Record<string, string> } => {
+  const headers = learnerAuthHeaders();
+  return Object.keys(headers).length > 0 ? { headers } : {};
 };
 
 export const fetchConditions = (fetcher: FrontendFetcher = $fetch) => {
@@ -248,6 +249,77 @@ export const sendChatMessage = (input: ChatMessageInput, fetcher: FrontendFetche
       target_persona_id: input.targetPersonaId || null,
     },
   });
+};
+
+export const parseChatStreamFrame = (frame: string): ChatStreamEvent | null => {
+  const data = frame
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n');
+  if (!data) return null;
+  return JSON.parse(data) as ChatStreamEvent;
+};
+
+export const sendChatMessageStream = async (
+  input: ChatMessageInput,
+  onEvent: (event: ChatStreamEvent) => void | Promise<void>,
+  fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+) => {
+  const response = await fetcher('/api/chat/stream', {
+    method: 'POST',
+    headers: {
+      ...learnerAuthHeaders(),
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      conversation_id: input.conversationId,
+      user_message: input.userMessage,
+      history: input.history,
+      target_persona_id: input.targetPersonaId || null,
+    }),
+  });
+
+  if (!response.ok) {
+    const rawError = await response.text();
+    let detail = `聊天請求失敗（${response.status}）`;
+    try {
+      const parsed = JSON.parse(rawError) as { detail?: string };
+      detail = parsed.detail || detail;
+    } catch {
+      if (rawError.trim()) detail = rawError.trim();
+    }
+    throw new Error(detail);
+  }
+  if (!response.body) throw new Error('瀏覽器不支援串流回覆。');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completedResponse: ChatResponse | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer = (buffer + decoder.decode(value, { stream: !done })).replace(/\r\n/g, '\n');
+
+    let separatorIndex = buffer.indexOf('\n\n');
+    while (separatorIndex >= 0) {
+      const frame = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      const event = parseChatStreamFrame(frame);
+      if (event) {
+        await onEvent(event);
+        if (event.type === 'complete') completedResponse = event.response;
+        if (event.type === 'error') throw new Error(event.detail);
+      }
+      separatorIndex = buffer.indexOf('\n\n');
+    }
+    if (done) break;
+  }
+
+  if (!completedResponse) throw new Error('串流在完成前中斷，訊息已由後端保存。');
+  return completedResponse;
 };
 
 export const updateAdminEvent = (

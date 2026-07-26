@@ -288,6 +288,13 @@ export interface ChatResponse {
   rag_sources?: RagSource[];
 }
 
+export type ChatStreamEvent =
+  | { type: 'user_message'; message: ChatMessage }
+  | { type: 'status'; stage: 'generating' | 'streaming'; message: string }
+  | { type: 'delta'; content: string }
+  | { type: 'complete'; response: ChatResponse }
+  | { type: 'error'; detail: string; retryable: boolean };
+
 export interface AdminSnapshotResponse {
   events: EventWithPersonas[];
   conditions: ExperimentCondition[];

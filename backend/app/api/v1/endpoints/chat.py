@@ -7,15 +7,57 @@ Routes:
     POST /api/chat: 處理單次 learner 對話訊息，回傳 AI 回覆與附加標注。
 """
 
-from fastapi import APIRouter, Depends
+import asyncio
+import json
+from collections.abc import AsyncIterator
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_chat_service, require_authenticated_actor
 from app.core.auth import AuthenticatedActor
+from app.models.domain import ChatMessage
 from app.schemas.requests import ChatRequest
 from app.schemas.responses import ChatResponse
 from app.services import ChatService
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+
+def _require_conversation_access(
+    request: ChatRequest,
+    actor: AuthenticatedActor,
+    service: ChatService,
+) -> None:
+    """確認 conversation 屬於目前 Auth user；admin mode 保留既有覆寫權限。"""
+    conversation = service.repository.get_conversation(request.conversation_id)
+    if not conversation:
+        return
+    owner_user_id = conversation.user_id
+    if not owner_user_id and conversation.session_id:
+        session = service.repository.get_session(conversation.session_id)
+        owner_user_id = session.user_id if session else None
+    actor.require_owner(owner_user_id)
+
+
+def _sse_event(payload: dict) -> str:
+    """將單一事件編碼成 SSE frame。"""
+    event_type = str(payload.get("type", "message"))
+    serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event_type}\ndata: {serialized}\n\n"
+
+
+def _response_chunks(content: str, size: int = 16) -> list[str]:
+    """模型回覆通過完整審查後，再切成小段傳給前端。"""
+    return [content[index:index + size] for index in range(0, len(content), size)]
+
+
+def _consume_task_result(task: asyncio.Task) -> None:
+    """讀取消失連線後的背景結果，避免未處理例外警告。"""
+    try:
+        task.result()
+    except (asyncio.CancelledError, Exception):
+        pass
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -40,12 +82,119 @@ async def chat(
             ChatMessage 紀錄、annotations、related_events、
             dynamic_context 以及 rag_sources。
     """
-    conversation = service.repository.get_conversation(request.conversation_id)
-    if not conversation:
-        return await service.chat(request)
-    owner_user_id = conversation.user_id
-    if not owner_user_id and conversation.session_id:
-        session = service.repository.get_session(conversation.session_id)
-        owner_user_id = session.user_id if session else None
-    actor.require_owner(owner_user_id)
+    _require_conversation_access(request, actor, service)
     return await service.chat(request)
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    service: ChatService = Depends(get_chat_service),
+) -> StreamingResponse:
+    """用 SSE 回傳保存狀態、等待狀態、已驗證文字片段與最終訊息。"""
+    _require_conversation_access(request, actor, service)
+
+    async def events() -> AsyncIterator[str]:
+        persisted_messages: asyncio.Queue[ChatMessage] = asyncio.Queue(maxsize=1)
+        message_was_persisted = False
+
+        async def on_user_persisted(message: ChatMessage) -> None:
+            await persisted_messages.put(message)
+
+        chat_task = asyncio.create_task(
+            service.chat(request, on_user_persisted=on_user_persisted)
+        )
+        persisted_waiter = asyncio.create_task(persisted_messages.get())
+
+        try:
+            done, _ = await asyncio.wait(
+                {chat_task, persisted_waiter},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if persisted_waiter not in done:
+                # 代表請求在保存 learner 訊息前就被 session/condition 驗證拒絕。
+                await chat_task
+                return
+
+            persisted_message = persisted_waiter.result()
+            message_was_persisted = True
+            yield _sse_event(
+                {
+                    "type": "user_message",
+                    "message": persisted_message.model_dump(mode="json"),
+                }
+            )
+            yield _sse_event(
+                {
+                    "type": "status",
+                    "stage": "generating",
+                    "message": "正在整理史料與回覆…",
+                }
+            )
+
+            # LLM 仍在生成時定期送出狀態，避免畫面看起來像停止回應。
+            while not chat_task.done():
+                completed, _ = await asyncio.wait({chat_task}, timeout=2.0)
+                if completed:
+                    break
+                yield _sse_event(
+                    {
+                        "type": "status",
+                        "stage": "generating",
+                        "message": "仍在整理脈絡，請稍候…",
+                    }
+                )
+
+            response = await chat_task
+            yield _sse_event(
+                {
+                    "type": "status",
+                    "stage": "streaming",
+                    "message": "回覆已通過檢查，正在顯示…",
+                }
+            )
+            for chunk in _response_chunks(response.response):
+                yield _sse_event({"type": "delta", "content": chunk})
+                await asyncio.sleep(0)
+            yield _sse_event(
+                {
+                    "type": "complete",
+                    "response": response.model_dump(mode="json"),
+                }
+            )
+        except HTTPException as exc:
+            yield _sse_event(
+                {
+                    "type": "error",
+                    "detail": str(exc.detail),
+                    "retryable": exc.status_code >= 500,
+                }
+            )
+        except Exception:
+            yield _sse_event(
+                {
+                    "type": "error",
+                    "detail": (
+                        "AI 回覆失敗，但你的訊息已保留。"
+                        if message_was_persisted
+                        else "聊天請求失敗，訊息尚未保存。"
+                    ),
+                    "retryable": True,
+                }
+            )
+        finally:
+            if not persisted_waiter.done():
+                persisted_waiter.cancel()
+            # 瀏覽器中途離線時仍讓後端完成生成與持久化。
+            if not chat_task.done():
+                chat_task.add_done_callback(_consume_task_result)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -11,6 +11,8 @@
     :task-attempt="taskAttempt"
     :dynamic-context="dynamicContext"
     :session="session"
+    :is-replying="isSending"
+    :reply-status="streamStatus"
     @reset="handleReset"
     @send-message="sendMessage"
   />
@@ -36,11 +38,13 @@ const {
   chatState,
   dynamicContext,
   history,
+  isSending,
   loadConversation,
   loadError,
   resetConversationState,
   sendMessage,
   session,
+  streamStatus,
   task,
   taskAttempt,
 } = useConversationSession(conversationId);

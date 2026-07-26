@@ -183,6 +183,99 @@ def test_chat_uses_database_backed_multi_turn_history(client):
     assert metadata["history_message_count"] >= 3
 
 
+def test_chat_persists_learner_message_when_llm_generation_fails(client):
+    initialized = admin_initialize(client, "聊天失敗持久化測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+
+    async def fail_generation(**kwargs):
+        raise TimeoutError("simulated provider timeout")
+
+    client.app.state.llm_provider.generate_chat_response = fail_generation
+    failed = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": submitted["conversation_id"],
+            "user_message": "即使模型失敗也要保存這則訊息。",
+        },
+    )
+    assert failed.status_code == 502
+    assert "訊息已保存" in failed.json()["detail"]
+
+    loaded = client.get(f"/api/conversations/{submitted['conversation_id']}").json()
+    learner_messages = [
+        message
+        for message in loaded["messages"]
+        if message["content"] == "即使模型失敗也要保存這則訊息。"
+    ]
+    assert len(learner_messages) == 1
+    assert learner_messages[0]["metadata"]["response_status"] == "failed"
+    assert learner_messages[0]["metadata"]["failure_type"] == "TimeoutError"
+
+
+def test_chat_stream_reports_persistence_status_deltas_and_completion(client):
+    initialized = admin_initialize(client, "聊天串流測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={
+            "conversation_id": submitted["conversation_id"],
+            "user_message": "請以串流方式回覆。",
+        },
+    ) as streamed:
+        assert streamed.status_code == 200
+        body = "".join(streamed.iter_text())
+
+    assert "event: user_message" in body
+    assert "event: status" in body
+    assert "event: delta" in body
+    assert "event: complete" in body
+
+    loaded = client.get(f"/api/conversations/{submitted['conversation_id']}").json()
+    learner_message = next(
+        message for message in loaded["messages"] if message["content"] == "請以串流方式回覆。"
+    )
+    assert learner_message["metadata"]["response_status"] == "completed"
+    response_message = next(
+        message
+        for message in loaded["messages"]
+        if message["id"] == learner_message["metadata"]["response_message_id"]
+    )
+    assert response_message["metadata"]["generation_status"] == "completed"
+    assert response_message["metadata"]["delivery_mode"] == "validated_stream"
+
+
+def test_chat_stream_reports_failure_after_learner_message_is_saved(client):
+    initialized = admin_initialize(client, "聊天串流失敗測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+
+    async def fail_generation(**kwargs):
+        raise TimeoutError("simulated stream timeout")
+
+    client.app.state.llm_provider.generate_chat_response = fail_generation
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={
+            "conversation_id": submitted["conversation_id"],
+            "user_message": "請保留這則失敗串流訊息。",
+        },
+    ) as streamed:
+        body = "".join(streamed.iter_text())
+
+    assert "event: user_message" in body
+    assert "event: error" in body
+    assert "訊息已保存" in body
+    loaded = client.get(f"/api/conversations/{submitted['conversation_id']}").json()
+    learner_message = next(
+        message
+        for message in loaded["messages"]
+        if message["content"] == "請保留這則失敗串流訊息。"
+    )
+    assert learner_message["metadata"]["response_status"] == "failed"
+
+
 def test_chat_rejects_missing_session_or_condition_without_falling_back(client):
     initialized = admin_initialize(client, "Condition fail-closed 測試", "no_ebl_no_roleplay")
     submitted = submit_and_poll(client, initialized)

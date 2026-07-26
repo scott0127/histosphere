@@ -531,21 +531,29 @@ class InMemoryRepository(RepositoryProtocol):
         return len(self.messages.get(conversation_id, []))
 
     def add_message(self, message: ChatMessage) -> ChatMessage:
-        """新增訊息到 conversation 並依 sequence_index 排序。
+        """新增或更新訊息，並依 sequence_index 排序。
 
         Args:
             message: ChatMessage 實例（需含 conversation_id）。
 
         Returns:
-            ChatMessage: 已新增的訊息。
+            ChatMessage: 已儲存的訊息。
 
         Raises:
             ValueError: 當 message.conversation_id 為空時。
         """
         if not message.conversation_id:
             raise ValueError("message.conversation_id is required")
-        self.messages.setdefault(message.conversation_id, []).append(message)
-        self.messages[message.conversation_id].sort(key=lambda item: item.sequence_index)
+        messages = self.messages.setdefault(message.conversation_id, [])
+        existing_index = next(
+            (index for index, item in enumerate(messages) if item.id == message.id),
+            None,
+        )
+        if existing_index is None:
+            messages.append(message)
+        else:
+            messages[existing_index] = message
+        messages.sort(key=lambda item: item.sequence_index)
         return message
 
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:

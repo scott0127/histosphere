@@ -7,6 +7,7 @@
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -26,6 +27,7 @@ from app.services.session_runtime import expire_session_if_due
 
 
 MAX_CHAT_GENERATION_ATTEMPTS = 3
+MessagePersistedCallback = Callable[[ChatMessage], Awaitable[None]]
 
 
 class ChatService:
@@ -43,8 +45,12 @@ class ChatService:
         self.prompt_service = prompt_service
         self.rag_pipeline = rag_pipeline
 
-    async def chat(self, request: ChatRequest) -> ChatResponse:
-        """依照 2x2 condition 產生回覆，並保存完整對話與研究紀錄。"""
+    async def chat(
+        self,
+        request: ChatRequest,
+        on_user_persisted: MessagePersistedCallback | None = None,
+    ) -> ChatResponse:
+        """先保存 learner 訊息，再依照 2x2 condition 產生並保存 AI 回覆。"""
         conversation = self.repository.get_conversation(request.conversation_id)
         if not conversation:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -106,18 +112,8 @@ class ChatService:
             interaction_runtime=interaction_runtime,
         )
         prompt = self.prompt_service.render_modules(modules)
-        generation, interaction_metadata = await self.generate_validated_response(
-            event=event,
-            selected=selected,
-            condition=condition,
-            task_attempt=task_attempt,
-            user_message=request.user_message,
-            base_prompt=prompt,
-            rag_sources=rag_sources,
-            interaction_runtime=interaction_runtime,
-        )
 
-        # Store the learner turn only after a deliverable AI response exists.
+        # learner 訊息必須先落盤。即使模型逾時或驗證失敗，重新載入仍能看到原始輸入。
         user_message = self.repository.add_message(
             ChatMessage(
                 conversation_id=conversation.id,
@@ -125,7 +121,11 @@ class ChatService:
                 speaker_name="learner",
                 sequence_index=self.repository.next_message_sequence(conversation.id),
                 content=request.user_message,
-                metadata={"condition_key": condition.condition_key},
+                metadata={
+                    "condition_key": condition.condition_key,
+                    "response_status": "pending",
+                    "target_persona_id": request.target_persona_id,
+                },
             )
         )
         self.repository.log_research(
@@ -141,38 +141,144 @@ class ChatService:
             )
         )
 
-        assistant_name = self._assistant_name(condition, selected)
-        # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
-        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-        profile_payload = selected.prompt_profile if selected else {}
-        profile_hash = hashlib.sha256(
-            json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        model_message = ChatMessage(
-            conversation_id=conversation.id,
-            speaker_type="persona" if selected else "assistant",
-            speaker_name=assistant_name,
-            persona_id=selected.id if selected else None,
-            sequence_index=self.repository.next_message_sequence(conversation.id),
-            content=generation.response,
-            annotations=generation.annotations,
-            rag_sources=rag_sources,
-            metadata={
-                "condition_key": condition.condition_key,
-                "response_policy": condition.response_policy,
-                "prompt_preview": prompt[:500],
-                "prompt_hash": prompt_hash,
-                "prompt_modules": [module.name for module in modules],
-                "history_message_ids": [message.id for message in prior_messages],
-                "history_message_count": len(prior_messages),
-                "persona_profile_contract": profile_payload.get("contract_version") if selected else None,
-                "persona_profile_hash": profile_hash if selected else None,
-                **interaction_metadata,
-                **self._llm_metadata(),
-            },
-        )
-        model_message = self.repository.add_message(model_message)
+        try:
+            if on_user_persisted:
+                await on_user_persisted(user_message)
 
+            generation, interaction_metadata = await self.generate_validated_response(
+                event=event,
+                selected=selected,
+                condition=condition,
+                task_attempt=task_attempt,
+                user_message=request.user_message,
+                base_prompt=prompt,
+                rag_sources=rag_sources,
+                interaction_runtime=interaction_runtime,
+            )
+
+            assistant_name = self._assistant_name(condition, selected)
+            # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
+            prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            profile_payload = selected.prompt_profile if selected else {}
+            profile_hash = hashlib.sha256(
+                json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            model_message = ChatMessage(
+                conversation_id=conversation.id,
+                speaker_type="persona" if selected else "assistant",
+                speaker_name=assistant_name,
+                persona_id=selected.id if selected else None,
+                sequence_index=self.repository.next_message_sequence(conversation.id),
+                content=generation.response,
+                annotations=generation.annotations,
+                rag_sources=rag_sources,
+                metadata={
+                    "condition_key": condition.condition_key,
+                    "response_policy": condition.response_policy,
+                    "generation_status": "completed",
+                    "delivery_mode": "validated_stream",
+                    "prompt_preview": prompt[:500],
+                    "prompt_hash": prompt_hash,
+                    "prompt_modules": [module.name for module in modules],
+                    "history_message_ids": [message.id for message in prior_messages],
+                    "history_message_count": len(prior_messages),
+                    "persona_profile_contract": profile_payload.get("contract_version") if selected else None,
+                    "persona_profile_hash": profile_hash if selected else None,
+                    **interaction_metadata,
+                    **self._llm_metadata(),
+                },
+            )
+            model_message = self.repository.add_message(model_message)
+
+            self.repository.log_research(
+                ResearchLog(
+                    user_id=conversation.user_id,
+                    session_id=conversation.session_id,
+                    event_id=event.id,
+                    attempt_id=conversation.task_attempt_id,
+                    conversation_id=conversation.id,
+                    message_id=model_message.id,
+                    action_type="persona_response_generated" if selected else "assistant_response_generated",
+                    payload={
+                        "condition_key": condition.condition_key,
+                        "speaker_name": assistant_name,
+                        "response_policy": condition.response_policy,
+                        "target_question_id": interaction_metadata.get("target_question_id"),
+                        "dialogue_state": interaction_metadata.get("dialogue_state"),
+                        "dialogue_move": interaction_metadata.get("dialogue_move"),
+                        "disclosure_level": interaction_metadata.get("disclosure_level"),
+                        "allowed_disclosure_levels": interaction_metadata.get("allowed_disclosure_levels", []),
+                        "learner_progress": interaction_metadata.get("learner_progress"),
+                        "disclosure_reason": interaction_metadata.get("disclosure_reason"),
+                        "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
+                        "fidelity_retry_count": interaction_metadata.get("generation_retry_count", 0),
+                    },
+                )
+            )
+
+            completed_user_message = user_message.model_copy(
+                update={
+                    "metadata": {
+                        **user_message.metadata,
+                        "response_status": "completed",
+                        "response_message_id": model_message.id,
+                    }
+                }
+            )
+            self.repository.add_message(completed_user_message)
+
+            return ChatResponse(
+                response=generation.response,
+                selected_persona=selected,
+                assistant_name=assistant_name,
+                message=model_message,
+                annotations=generation.annotations,
+                related_events=generation.related_events,
+                dynamic_context=generation.dynamic_context,
+                rag_sources=rag_sources,
+            )
+        except HTTPException as exc:
+            self._record_generation_failure(
+                conversation=conversation,
+                event=event,
+                condition=condition,
+                user_message=user_message,
+                failure_type=f"http_{exc.status_code}",
+            )
+            raise
+        except Exception as exc:
+            self._record_generation_failure(
+                conversation=conversation,
+                event=event,
+                condition=condition,
+                user_message=user_message,
+                failure_type=type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="AI 回覆產生失敗，但 learner 訊息已保存。",
+            ) from exc
+
+    def _record_generation_failure(
+        self,
+        *,
+        conversation,
+        event: Event,
+        condition: ExperimentCondition,
+        user_message: ChatMessage,
+        failure_type: str,
+    ) -> None:
+        """保存失敗狀態，但不把例外內容或密鑰寫入研究資料。"""
+        failed_user_message = user_message.model_copy(
+            update={
+                "metadata": {
+                    **user_message.metadata,
+                    "response_status": "failed",
+                    "failure_type": failure_type,
+                }
+            }
+        )
+        self.repository.add_message(failed_user_message)
         self.repository.log_research(
             ResearchLog(
                 user_id=conversation.user_id,
@@ -180,34 +286,13 @@ class ChatService:
                 event_id=event.id,
                 attempt_id=conversation.task_attempt_id,
                 conversation_id=conversation.id,
-                message_id=model_message.id,
-                action_type="persona_response_generated" if selected else "assistant_response_generated",
+                message_id=user_message.id,
+                action_type="response_generation_failed",
                 payload={
                     "condition_key": condition.condition_key,
-                    "speaker_name": assistant_name,
-                    "response_policy": condition.response_policy,
-                    "target_question_id": interaction_metadata.get("target_question_id"),
-                    "dialogue_state": interaction_metadata.get("dialogue_state"),
-                    "dialogue_move": interaction_metadata.get("dialogue_move"),
-                    "disclosure_level": interaction_metadata.get("disclosure_level"),
-                    "allowed_disclosure_levels": interaction_metadata.get("allowed_disclosure_levels", []),
-                    "learner_progress": interaction_metadata.get("learner_progress"),
-                    "disclosure_reason": interaction_metadata.get("disclosure_reason"),
-                    "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
-                    "fidelity_retry_count": interaction_metadata.get("generation_retry_count", 0),
+                    "failure_type": failure_type,
                 },
             )
-        )
-
-        return ChatResponse(
-            response=generation.response,
-            selected_persona=selected,
-            assistant_name=assistant_name,
-            message=model_message,
-            annotations=generation.annotations,
-            related_events=generation.related_events,
-            dynamic_context=generation.dynamic_context,
-            rag_sources=rag_sources,
         )
 
     def _select_persona(

@@ -2,14 +2,14 @@
 // Nuxt page 只負責 route binding，ChatScreen 只負責畫面與互動事件。
 import type {
   ChatMessage,
-  ChatResponse,
+  ChatStreamEvent,
   ConversationLoadResponse,
   TaskSubmitResponse,
 } from '~/types';
 import type { ComputedRef, Ref } from 'vue';
 import {
   fetchConversation,
-  sendChatMessage as requestChatMessage,
+  sendChatMessageStream as requestChatMessageStream,
 } from '~/utils/histosphereApi';
 
 type ConversationState = (TaskSubmitResponse | ConversationLoadResponse) & {
@@ -29,7 +29,9 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
   const history = ref<ChatMessage[]>([]);
   const dynamicContext = ref('Conversation ready.');
   const isLoading = ref(false);
+  const isSending = ref(false);
   const loadError = ref<string | null>(null);
+  const streamStatus = ref('');
 
   const taskAttempt = computed(() => chatState.value?.attempt || chatState.value?.task_attempt || null);
   const task = computed(() => chatState.value?.task || null);
@@ -64,14 +66,18 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
 
   const sendMessage = async (userInput: string, targetPersonaId?: string) => {
     const currentConversationId = conversationId.value;
-    if (!currentConversationId || !chatState.value) return;
+    if (!currentConversationId || !chatState.value || isSending.value) return;
 
-    const nextIndex = history.value.length;
+    const learnerIndex = history.value.length;
+    const assistantIndex = learnerIndex + 1;
+    const localRequestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}`;
     history.value.push({
+      id: `local-${localRequestId}-learner`,
       speaker_type: 'learner',
       speaker_name: 'learner',
-      sequence_index: nextIndex,
+      sequence_index: learnerIndex,
       content: userInput,
+      metadata: { response_status: 'pending' },
     });
 
     const thinkingSpeaker = chatState.value.condition?.roleplay_enabled ? 'persona' : 'assistant';
@@ -79,37 +85,100 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
       ? chatState.value.personas.find((persona) => persona.id === targetPersonaId)
       : null;
     history.value.push({
+      id: `local-${localRequestId}-assistant`,
       speaker_type: thinkingSpeaker,
       speaker_name: targetPersona?.name || (thinkingSpeaker === 'persona' ? '歷史人物' : 'AI Assistant'),
       persona_id: targetPersona?.id,
-      sequence_index: nextIndex + 1,
-      content: '...',
+      sequence_index: assistantIndex,
+      content: '',
+      metadata: { generation_status: 'pending', delivery_mode: 'validated_stream' },
     });
 
+    isSending.value = true;
+    streamStatus.value = '訊息正在保存…';
     try {
-      const response: ChatResponse = await requestChatMessage({
+      const response = await requestChatMessageStream({
         conversationId: currentConversationId,
         userMessage: userInput,
-        history: history.value.slice(0, -1),
+        history: history.value.slice(0, learnerIndex),
         targetPersonaId,
+      }, async (event: ChatStreamEvent) => {
+        if (event.type === 'user_message') {
+          history.value[learnerIndex] = event.message;
+          streamStatus.value = '訊息已保存，正在產生回覆…';
+          return;
+        }
+        if (event.type === 'status') {
+          streamStatus.value = event.message;
+          return;
+        }
+        if (event.type === 'delta') {
+          const currentMessage = history.value[assistantIndex];
+          if (!currentMessage) return;
+          history.value[assistantIndex] = {
+            ...currentMessage,
+            content: `${currentMessage.content}${event.content}`,
+            metadata: {
+              ...currentMessage.metadata,
+              generation_status: 'streaming',
+              delivery_mode: 'validated_stream',
+            },
+          };
+          return;
+        }
+        if (event.type === 'complete') {
+          history.value[assistantIndex] = event.response.message;
+          const currentLearnerMessage = history.value[learnerIndex];
+          if (currentLearnerMessage) {
+            history.value[learnerIndex] = {
+              ...currentLearnerMessage,
+              metadata: {
+                ...currentLearnerMessage.metadata,
+                response_status: 'completed',
+                response_message_id: event.response.message.id,
+              },
+            };
+          }
+          if (event.response.dynamic_context) dynamicContext.value = event.response.dynamic_context;
+          streamStatus.value = '';
+          return;
+        }
+        streamStatus.value = event.detail;
       });
 
-      history.value[history.value.length - 1] = response.message;
+      history.value[assistantIndex] = response.message;
       if (response.dynamic_context) dynamicContext.value = response.dynamic_context;
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to send message:', e);
-      history.value[history.value.length - 1] = {
+      const currentLearnerMessage = history.value[learnerIndex];
+      if (currentLearnerMessage) {
+        history.value[learnerIndex] = {
+          ...currentLearnerMessage,
+          metadata: {
+            ...currentLearnerMessage.metadata,
+            response_status: 'failed',
+          },
+        };
+      }
+      history.value[assistantIndex] = {
+        id: `local-${localRequestId}-error`,
         speaker_type: 'assistant',
         speaker_name: 'System',
-        sequence_index: nextIndex + 1,
-        content: '回應失敗，請稍後再試。',
+        sequence_index: assistantIndex,
+        content: e?.message || '回應失敗。你的訊息若已送達後端，重新整理後仍會保留。',
+        metadata: { generation_status: 'failed' },
       };
+    } finally {
+      isSending.value = false;
+      streamStatus.value = '';
     }
   };
 
   const resetConversationState = () => {
     chatState.value = null;
     history.value = [];
+    isSending.value = false;
+    streamStatus.value = '';
   };
 
   return {
@@ -117,11 +186,13 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     dynamicContext,
     history,
     isLoading,
+    isSending,
     loadConversation,
     loadError,
     resetConversationState,
     sendMessage,
     session,
+    streamStatus,
     task,
     taskAttempt,
   };
