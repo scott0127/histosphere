@@ -13,7 +13,7 @@ Routes:
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_event_initialization_service, get_event_service, require_authenticated_actor
+from app.api.deps import get_event_initialization_service, get_event_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
 from app.schemas.requests import EventCheckRequest, EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse, EventListItem
@@ -45,7 +45,7 @@ def check_event(
 @router.post("/event/initialize", response_model=EventInitializeResponse)
 async def initialize_event(
     request: EventInitializeRequest,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: EventInitializationService = Depends(get_event_initialization_service),
 ) -> EventInitializeResponse:
     """建立事件學習工作區，但不直接建立 conversation。

@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_conversation_service, require_authenticated_actor
+from app.api.deps import get_conversation_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
 from app.schemas.requests import ConversationCreateRequest
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 @router.post("", response_model=ConversationCreateResponse)
 async def create_conversation(
     request: ConversationCreateRequest,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationCreateResponse:
     """相容性建立 conversation；新版 learner flow 通常不直接呼叫。
@@ -54,7 +54,7 @@ async def create_conversation(
 @router.get("/{conversation_id}", response_model=ConversationLoadResponse)
 def load_conversation(
     conversation_id: UUID,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationLoadResponse:
     """載入聊天頁回放所需的完整 conversation 狀態。

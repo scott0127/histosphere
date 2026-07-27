@@ -247,6 +247,18 @@ class ExperimentConditionUpdateRequest(BaseModel):
     active: bool | None = None
 
 
+class ParticipantCreateRequest(BaseModel):
+    """建立受測者 registry 紀錄；Auth 帳號可稍後再綁定。"""
+
+    code: str = Field(..., min_length=1)
+    auth_user_id: str | None = None
+    display_name: str | None = None
+    cohort: str | None = None
+    condition_list: list[Literal["01", "02", "03", "04"]] = Field(default_factory=list)
+    notes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ParticipantUpdateRequest(BaseModel):
     """Participant registry 更新請求（Admin PATCH）。
 

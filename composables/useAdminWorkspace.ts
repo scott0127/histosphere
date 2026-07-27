@@ -10,6 +10,7 @@ import type {
   EventTask,
   EventWithPersonas,
   ExperimentCondition,
+  Participant,
   Persona,
 } from '~/types';
 import {
@@ -26,11 +27,14 @@ import {
 } from '~/utils/adminSession';
 import {
   archiveAdminEvent,
+  archiveAdminParticipant,
   cancelAdminSessionTimer,
+  createAdminParticipant,
   fetchAdminAuthUsers,
   fetchAdminSnapshot,
   fetchAdminPromptPreview,
   restoreAdminEvent,
+  restoreAdminParticipant,
   restartAdminSession,
   runAdminPromptDryRun,
   startAdminSessionTimer,
@@ -39,6 +43,7 @@ import {
   updateAdminParticipant,
   updateAdminPersona,
   updateAdminTask,
+  type ParticipantCreateInput,
   type ParticipantUpdateInput,
 } from '~/utils/histosphereApi';
 
@@ -52,6 +57,8 @@ export const useAdminWorkspace = () => {
   const personaJson = ref<Record<string, string>>({});
   const selectedConditionId = ref<string | null>(null);
   const selectedEventId = ref<string | null>(null);
+  const creatingParticipant = ref(false);
+  const changingParticipantStatusId = ref<string | null>(null);
   const savingParticipantId = ref<string | null>(null);
   const updatingTimerSessionId = ref<string | null>(null);
   const restartingSessionId = ref<string | null>(null);
@@ -249,6 +256,36 @@ export const useAdminWorkspace = () => {
     }
   };
 
+  const createParticipant = async (body: ParticipantCreateInput) => {
+    creatingParticipant.value = true;
+    error.value = null;
+    try {
+      await createAdminParticipant(adminKey.value, body);
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '受測者建立失敗。');
+    } finally {
+      creatingParticipant.value = false;
+    }
+  };
+
+  const setParticipantArchived = async (participant: Participant, archived: boolean) => {
+    changingParticipantStatusId.value = participant.id;
+    error.value = null;
+    try {
+      if (archived) {
+        await archiveAdminParticipant(adminKey.value, participant.id);
+      } else {
+        await restoreAdminParticipant(adminKey.value, participant.id);
+      }
+      await loadSnapshot();
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, archived ? '受測者封存失敗。' : '受測者恢復失敗。');
+    } finally {
+      changingParticipantStatusId.value = null;
+    }
+  };
+
   const startSessionTimer = async (sessionId: string, durationMinutes: number) => {
     updatingTimerSessionId.value = sessionId;
     try {
@@ -333,8 +370,11 @@ export const useAdminWorkspace = () => {
     authUsers,
     authUsersError,
     cancelSessionTimer,
+    changingParticipantStatusId,
     conditionModeLabel,
     conditionOrdinal,
+    createParticipant,
+    creatingParticipant,
     error,
     eventYearRange,
     loadSnapshot,
@@ -357,6 +397,7 @@ export const useAdminWorkspace = () => {
     setEventArchived,
     savePersona,
     saveParticipant,
+    setParticipantArchived,
     saveTask,
     startSessionTimer,
     updatingTimerSessionId,

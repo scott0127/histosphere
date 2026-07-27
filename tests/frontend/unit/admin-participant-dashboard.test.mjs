@@ -74,3 +74,21 @@ test('participant dashboard marks a completed non-archived session as completed'
   assert.equal(rows[0].currentStage, 'completed');
   assert.equal(rows[0].currentSessions[0].session.status, 'completed');
 });
+
+test('participant dashboard hides archived participants until the admin requests them', () => {
+  const activeRow = {
+    participant,
+  };
+  const archivedRow = {
+    participant: { ...participant, id: 'participant-2', code: 'P002', status: 'archived' },
+  };
+
+  assert.deepEqual(
+    dashboard.filterParticipantDashboardRows([activeRow, archivedRow], false),
+    [activeRow],
+  );
+  assert.deepEqual(
+    dashboard.filterParticipantDashboardRows([activeRow, archivedRow], true),
+    [activeRow, archivedRow],
+  );
+});

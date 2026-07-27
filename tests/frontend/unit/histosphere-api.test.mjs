@@ -185,6 +185,52 @@ test('frontend api client archives and restores events through protected admin e
   ]);
 });
 
+test('frontend api client creates, archives, and restores participants through admin endpoints', async () => {
+  const participant = {
+    id: 'participant-6',
+    code: 'P006',
+    auth_user_id: 'auth-6',
+    condition_list: ['01', '04'],
+    status: 'active',
+  };
+  const { calls, fetcher } = createFetchRecorder({
+    'POST /api/admin/participants': participant,
+    'POST /api/admin/participants/participant-6/archive': { ...participant, status: 'archived' },
+    'POST /api/admin/participants/participant-6/restore': participant,
+  });
+
+  await api.createAdminParticipant('test-admin', {
+    code: 'P006',
+    auth_user_id: 'auth-6',
+    condition_list: ['01', '04'],
+  }, fetcher);
+  await api.archiveAdminParticipant('test-admin', 'participant-6', fetcher);
+  await api.restoreAdminParticipant('test-admin', 'participant-6', fetcher);
+
+  assert.deepEqual(calls, [
+    {
+      url: '/api/admin/participants',
+      options: {
+        method: 'POST',
+        headers: { 'x-admin-key': 'test-admin' },
+        body: {
+          code: 'P006',
+          auth_user_id: 'auth-6',
+          condition_list: ['01', '04'],
+        },
+      },
+    },
+    {
+      url: '/api/admin/participants/participant-6/archive',
+      options: { method: 'POST', headers: { 'x-admin-key': 'test-admin' } },
+    },
+    {
+      url: '/api/admin/participants/participant-6/restore',
+      options: { method: 'POST', headers: { 'x-admin-key': 'test-admin' } },
+    },
+  ]);
+});
+
 test('prompt dry-run uses a deterministic sample message when none is supplied', async () => {
   const { calls, fetcher } = createFetchRecorder();
 

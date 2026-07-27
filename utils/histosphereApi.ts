@@ -93,6 +93,11 @@ export type ParticipantUpdateInput = Partial<Pick<
   'auth_user_id' | 'display_name' | 'cohort' | 'condition_list' | 'status' | 'notes' | 'metadata'
 >>;
 
+export type ParticipantCreateInput = Pick<Participant, 'code'> & Partial<Pick<
+  Participant,
+  'auth_user_id' | 'display_name' | 'cohort' | 'condition_list' | 'notes' | 'metadata'
+>>;
+
 const adminHeaders = (adminKey: string) => ({ 'x-admin-key': adminKey });
 const learnerAuthHeaders = (): Record<string, string> => {
   const adminKey = getAdminSessionKey();
@@ -384,6 +389,40 @@ export const updateAdminParticipant = (
     method: 'PATCH',
     headers: adminHeaders(adminKey),
     body,
+  });
+};
+
+export const createAdminParticipant = (
+  adminKey: string,
+  body: ParticipantCreateInput,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<Participant>('/api/admin/participants', {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+    body,
+  });
+};
+
+export const archiveAdminParticipant = (
+  adminKey: string,
+  participantId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<Participant>(`/api/admin/participants/${participantId}/archive`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+  });
+};
+
+export const restoreAdminParticipant = (
+  adminKey: string,
+  participantId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<Participant>(`/api/admin/participants/${participantId}/restore`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
   });
 };
 

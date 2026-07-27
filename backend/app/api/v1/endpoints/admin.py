@@ -32,6 +32,7 @@ from app.schemas.requests import (
     EventUpdateRequest,
     EventTaskUpdateRequest,
     ExperimentConditionUpdateRequest,
+    ParticipantCreateRequest,
     ParticipantUpdateRequest,
     PersonaUpdateRequest,
     SessionTimerStartRequest,
@@ -480,6 +481,112 @@ def update_admin_persona(
     for key, value in updates.items():
         setattr(persona, key, value)
     return repository.save_persona(persona)
+
+
+@router.post("/participants", response_model=Participant, status_code=status.HTTP_201_CREATED)
+def create_participant(
+    request: ParticipantCreateRequest,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Participant:
+    """建立受測者代號，可選擇立即綁定 Auth 帳號與實驗條件。"""
+    code = request.code.strip().upper()
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Participant code is required",
+        )
+    if any(participant.code.upper() == code for participant in repository.list_participants()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Participant code {code} already exists",
+        )
+
+    auth_user_id = request.auth_user_id.strip() if request.auth_user_id else None
+    if auth_user_id:
+        existing = repository.get_participant_by_auth_user(auth_user_id)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Auth user already bound to participant {existing.code}",
+            )
+
+    participant = Participant(
+        code=code,
+        auth_user_id=auth_user_id,
+        display_name=request.display_name,
+        cohort=request.cohort,
+        condition_list=sort_condition_codes(request.condition_list),
+        status="active",
+        notes=request.notes,
+        metadata=request.metadata,
+    )
+    saved = repository.save_participant(participant)
+    repository.log_research(
+        ResearchLog(
+            action_type="participant_created",
+            payload={
+                "participant_id": saved.id,
+                "participant_code": saved.code,
+                "auth_user_id": saved.auth_user_id,
+                "condition_list": saved.condition_list,
+            },
+        )
+    )
+    return saved
+
+
+@router.post("/participants/{participant_id}/archive", response_model=Participant)
+def archive_participant(
+    participant_id: str,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Participant:
+    """停止受測者的實驗存取，保留 Auth 綁定與全部研究資料。"""
+    participant = repository.get_participant(participant_id)
+    if not participant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+    if participant.status == "archived":
+        return participant
+
+    participant.status = "archived"
+    saved = repository.save_participant(participant)
+    repository.log_research(
+        ResearchLog(
+            action_type="participant_archived",
+            payload={
+                "participant_id": saved.id,
+                "participant_code": saved.code,
+                "auth_user_id": saved.auth_user_id,
+            },
+        )
+    )
+    return saved
+
+
+@router.post("/participants/{participant_id}/restore", response_model=Participant)
+def restore_participant(
+    participant_id: str,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Participant:
+    """恢復受測者的實驗存取，不建立新帳號或新研究資料。"""
+    participant = repository.get_participant(participant_id)
+    if not participant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+    if participant.status == "active":
+        return participant
+
+    participant.status = "active"
+    saved = repository.save_participant(participant)
+    repository.log_research(
+        ResearchLog(
+            action_type="participant_restored",
+            payload={
+                "participant_id": saved.id,
+                "participant_code": saved.code,
+                "auth_user_id": saved.auth_user_id,
+            },
+        )
+    )
+    return saved
 
 
 @router.patch("/participants/{participant_id}", response_model=Participant)

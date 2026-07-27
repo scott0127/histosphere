@@ -98,9 +98,14 @@
             <AdminParticipantDashboard
               :rows="participantRows"
               :auth-users="authUsers"
+              :creating-participant="creatingParticipant"
+              :changing-participant-status-id="changingParticipantStatusId"
               :saving-participant-id="savingParticipantId"
               :updating-timer-session-id="updatingTimerSessionId"
               :restarting-session-id="restartingSessionId"
+              @create="createParticipant"
+              @archive="(participant) => setParticipantArchived(participant, true)"
+              @restore="(participant) => setParticipantArchived(participant, false)"
               @save="saveParticipant"
               @start-timer="startSessionTimer"
               @cancel-timer="cancelSessionTimer"
@@ -490,6 +495,9 @@ const {
   authUsers,
   authUsersError,
   cancelSessionTimer,
+  changingParticipantStatusId,
+  createParticipant,
+  creatingParticipant,
   conditionModeLabel,
   conditionOrdinal,
   error,
@@ -513,6 +521,7 @@ const {
   setEventArchived,
   savePersona,
   saveParticipant,
+  setParticipantArchived,
   saveTask,
   startSessionTimer,
   savingParticipantId,

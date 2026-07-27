@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import get_chat_service, require_authenticated_actor
+from app.api.deps import get_chat_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
 from app.models.domain import ChatMessage
 from app.schemas.requests import ChatRequest
@@ -63,7 +63,7 @@ def _consume_task_result(task: asyncio.Task) -> None:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: ChatService = Depends(get_chat_service),
 ) -> ChatResponse:
     """處理單次對話訊息，實際政策判斷與訊息儲存由 ChatService 負責。
@@ -89,7 +89,7 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """用 SSE 回傳保存狀態、等待狀態、已驗證文字片段與最終訊息。"""

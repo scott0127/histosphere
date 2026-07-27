@@ -96,3 +96,29 @@ async def require_authenticated_actor(
 
     user = await request.app.state.supabase_jwt_verifier.verify(credentials.credentials)
     return AuthenticatedActor(user_id=user.id)
+
+
+async def require_active_participant_actor(
+    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> AuthenticatedActor:
+    """限制正式 learner 流程只能由 active participant 使用。
+
+    Admin key 保留管理與測試權限；封存 participant 時只停止實驗存取，
+    不解除 Auth 綁定，也不更動既有 session、task 或 conversation 資料。
+    """
+    if actor.is_admin:
+        return actor
+
+    participant = repository.get_participant_by_auth_user(actor.user_id or "")
+    if not participant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Participant mapping not found for this Auth user",
+        )
+    if participant.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Participant {participant.code} is not active",
+        )
+    return actor

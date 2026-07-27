@@ -1,8 +1,35 @@
 <template>
   <section class="space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--admin-border-soft)] pb-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="admin-caption text-sm font-bold">
+          啟用 {{ activeCount }} 位
+        </span>
+        <span class="admin-caption text-sm font-bold">
+          封存 {{ archivedCount }} 位
+        </span>
+        <label class="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm font-bold text-[var(--admin-copy)]">
+          <input
+            v-model="showArchived"
+            type="checkbox"
+            class="h-4 w-4 accent-[var(--admin-coffee)]"
+          />
+          顯示封存
+        </label>
+      </div>
+      <button
+        type="button"
+        class="admin-button-primary inline-flex min-h-10 items-center justify-center gap-2 px-4 text-sm font-bold"
+        @click="openCreateForm"
+      >
+        <Icon name="mdi:account-plus-outline" class="h-4 w-4" />
+        新增受測者
+      </button>
+    </div>
+
     <div class="grid gap-3">
       <article
-        v-for="row in rows"
+        v-for="row in visibleRows"
         :key="row.participant.id"
         class="admin-panel-inner p-4"
       >
@@ -10,6 +37,34 @@
           <div>
             <p class="admin-kicker">受測者</p>
             <h3 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ row.participant.code }}</h3>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <span
+                class="inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-black"
+                :class="row.participant.status === 'active'
+                  ? 'border-[var(--admin-line)] bg-[var(--admin-coffee)] text-white'
+                  : 'border-[var(--admin-border)] bg-[var(--admin-surface-muted)] text-[var(--admin-copy)]'"
+              >
+                {{ participantStatusLabel(row.participant.status) }}
+              </span>
+              <button
+                v-if="row.participant.status === 'archived'"
+                type="button"
+                class="admin-button-secondary min-h-8 px-3 text-xs font-bold"
+                :disabled="changingParticipantStatusId === row.participant.id"
+                @click="$emit('restore', row.participant)"
+              >
+                恢復
+              </button>
+              <button
+                v-else
+                type="button"
+                class="admin-button-secondary min-h-8 px-3 text-xs font-bold"
+                :disabled="changingParticipantStatusId === row.participant.id"
+                @click="archiveTarget = row"
+              >
+                封存
+              </button>
+            </div>
           </div>
 
           <div class="space-y-3">
@@ -142,9 +197,93 @@
       </article>
     </div>
 
-    <div v-if="!rows.length" class="admin-empty-state p-5">
-      目前沒有受測者資料。
+    <div v-if="!visibleRows.length" class="admin-empty-state p-5">
+      {{ rows.length ? '目前沒有符合篩選條件的受測者。' : '目前沒有受測者資料。' }}
     </div>
+
+    <Transition
+      enter-active-class="transition-opacity duration-150"
+      leave-active-class="transition-opacity duration-150"
+      enter-from-class="opacity-0"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="showCreateForm"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(47,41,36,0.5)] p-4 backdrop-blur-sm"
+        @click.self="closeCreateForm"
+      >
+        <article class="w-full max-w-2xl rounded-[12px] border-2 border-[var(--admin-line)] bg-[var(--admin-page)] p-5 shadow-[0_30px_90px_rgba(47,41,36,0.3)]">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="admin-kicker">Participant registry</p>
+              <h3 class="admin-heading mt-1 font-serif text-2xl font-bold">新增受測者</h3>
+            </div>
+            <button type="button" class="admin-button-secondary px-3 py-2 text-xs font-bold" @click="closeCreateForm">
+              關閉
+            </button>
+          </div>
+
+          <div class="mt-5 grid gap-5">
+            <label class="block">
+              <span class="admin-label">受測者代號</span>
+              <input
+                v-model="createCode"
+                class="admin-field mt-1 w-full px-3 py-2 text-sm font-bold uppercase"
+                placeholder="例如 P006"
+              />
+            </label>
+
+            <label class="block">
+              <span class="admin-label">Auth 帳號（可稍後綁定）</span>
+              <select v-model="createAuthUserId" class="admin-field mt-1 w-full px-3 py-2 text-sm font-bold">
+                <option value="">暫不綁定</option>
+                <option
+                  v-for="user in unboundAuthUsers"
+                  :key="user.id"
+                  :value="user.id"
+                >
+                  {{ user.email || shortId(user.id) }}
+                </option>
+              </select>
+            </label>
+
+            <fieldset>
+              <legend class="admin-label">分派模式</legend>
+              <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                <label
+                  v-for="condition in conditionOptions"
+                  :key="condition.code"
+                  class="flex min-h-12 items-center gap-3 rounded-[9px] border border-[var(--admin-border)] bg-[var(--admin-surface)] px-3 text-sm font-black text-[var(--admin-text)]"
+                >
+                  <input
+                    v-model="createConditionCodes"
+                    type="checkbox"
+                    :value="condition.code"
+                    class="h-4 w-4 accent-[var(--admin-coffee)]"
+                  />
+                  {{ condition.code }} {{ condition.label }}
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="admin-button-secondary px-4 py-2 text-sm font-bold" @click="closeCreateForm">
+              取消
+            </button>
+            <button
+              type="button"
+              class="admin-button-primary inline-flex min-h-10 items-center gap-2 px-4 text-sm font-bold"
+              :disabled="creatingParticipant || !createCode.trim()"
+              @click="submitCreateForm"
+            >
+              <Icon :name="creatingParticipant ? 'mdi:loading' : 'mdi:account-plus-outline'" class="h-4 w-4" :class="{ 'animate-spin': creatingParticipant }" />
+              建立
+            </button>
+          </div>
+        </article>
+      </div>
+    </Transition>
 
     <Transition
       enter-active-class="transition-opacity duration-150"
@@ -246,17 +385,30 @@
       @confirm="confirmRestart"
       @cancel="restartTarget = null"
     />
+
+    <ConfirmActionModal
+      :show="Boolean(archiveTarget)"
+      title="封存受測者"
+      :message="archiveConfirmationMessage"
+      eyebrow="Participant registry"
+      icon="mdi:archive-arrow-down-outline"
+      confirm-label="封存"
+      cancel-label="取消"
+      @confirm="confirmArchive"
+      @cancel="archiveTarget = null"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
-import type { AdminAuthUserSummary } from '~/types';
-import type { ParticipantUpdateInput } from '~/utils/histosphereApi';
+import type { AdminAuthUserSummary, Participant } from '~/types';
+import type { ParticipantCreateInput, ParticipantUpdateInput } from '~/utils/histosphereApi';
 import {
   conditionDisplayLabel,
   conditionName,
+  filterParticipantDashboardRows,
   participantConditionLabels,
   participantStageLabels,
   type ParticipantDashboardRow,
@@ -267,12 +419,17 @@ import {
 const props = defineProps<{
   rows: ParticipantDashboardRow[];
   authUsers: AdminAuthUserSummary[];
+  creatingParticipant: boolean;
+  changingParticipantStatusId: string | null;
   savingParticipantId: string | null;
   updatingTimerSessionId: string | null;
   restartingSessionId: string | null;
 }>();
 
 const emit = defineEmits<{
+  (event: 'create', payload: ParticipantCreateInput): void;
+  (event: 'archive', participant: Participant): void;
+  (event: 'restore', participant: Participant): void;
   (event: 'save', participantId: string, payload: ParticipantUpdateInput): void;
   (event: 'start-timer', sessionId: string, durationMinutes: number): void;
   (event: 'cancel-timer', sessionId: string): void;
@@ -280,11 +437,27 @@ const emit = defineEmits<{
 }>();
 
 const stages: ParticipantStage[] = ['not_started', 'task', 'chat', 'completed'];
+const showArchived = ref(false);
+const showCreateForm = ref(false);
+const createCode = ref('');
+const createAuthUserId = ref('');
+const createConditionCodes = ref<string[]>([]);
 const editingRow = ref<ParticipantDashboardRow | null>(null);
 const draftAuthUserId = ref('');
 const draftConditionCodes = ref<string[]>([]);
 const timerMinutes = ref<Record<string, number>>({});
 const restartTarget = ref<ParticipantSessionSummary | null>(null);
+const archiveTarget = ref<ParticipantDashboardRow | null>(null);
+
+const visibleRows = computed(() => filterParticipantDashboardRows(props.rows, showArchived.value));
+const activeCount = computed(() => props.rows.filter((row) => row.participant.status === 'active').length);
+const archivedCount = computed(() => props.rows.filter((row) => row.participant.status === 'archived').length);
+const unboundAuthUsers = computed(() => props.authUsers.filter((user) => !user.bound_participant_id));
+
+const archiveConfirmationMessage = computed(() => {
+  if (!archiveTarget.value) return '';
+  return `封存 ${archiveTarget.value.participant.code} 後將停止其實驗存取；Auth 綁定、Session、Task、Chat 與研究紀錄都會保留。`;
+});
 
 const restartConfirmationMessage = computed(() => {
   if (!restartTarget.value) return '';
@@ -307,6 +480,31 @@ const selectableAuthUsers = computed(() => {
       || user.id === currentAuthId;
   });
 });
+
+const openCreateForm = () => {
+  createCode.value = '';
+  createAuthUserId.value = '';
+  createConditionCodes.value = [];
+  showCreateForm.value = true;
+};
+
+const closeCreateForm = () => {
+  showCreateForm.value = false;
+  createCode.value = '';
+  createAuthUserId.value = '';
+  createConditionCodes.value = [];
+};
+
+const submitCreateForm = () => {
+  const code = createCode.value.trim().toUpperCase();
+  if (!code) return;
+  emit('create', {
+    code,
+    auth_user_id: createAuthUserId.value || null,
+    condition_list: [...createConditionCodes.value],
+  });
+  closeCreateForm();
+};
 
 const openEditor = (row: ParticipantDashboardRow) => {
   editingRow.value = row;
@@ -351,6 +549,19 @@ const confirmRestart = () => {
   if (!restartTarget.value) return;
   emit('restart-session', restartTarget.value.session.id);
   restartTarget.value = null;
+};
+
+const confirmArchive = () => {
+  if (!archiveTarget.value) return;
+  emit('archive', archiveTarget.value.participant);
+  archiveTarget.value = null;
+};
+
+const participantStatusLabel = (status: Participant['status']) => {
+  if (status === 'archived') return '已封存';
+  if (status === 'completed') return '已完成';
+  if (status === 'excluded') return '已排除';
+  return '使用中';
 };
 
 const sessionStatusLabel = (status: string) => {

@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
-from app.api.deps import get_task_service, require_authenticated_actor
+from app.api.deps import get_task_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
 from app.schemas.responses import (
@@ -52,7 +52,7 @@ def _schedule_processing(
 def save_task_draft(
     task_id: UUID,
     request: TaskDraftRequest,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskDraftResponse:
     """保存 task 草稿，供 learner 重新整理或換帳號後恢復作答。
@@ -85,7 +85,7 @@ async def submit_task(
     payload: TaskSubmitRequest,
     http_request: Request,
     background_tasks: BackgroundTasks,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskSubmissionAcceptedResponse:
     """Queue task judgement and return a persistent polling id immediately.
@@ -118,7 +118,7 @@ def task_submission_status(
     attempt_id: UUID,
     request: Request,
     background_tasks: BackgroundTasks,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskSubmissionStatusResponse:
     """Return queued task processing state and the final navigation payload."""

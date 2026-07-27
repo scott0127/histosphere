@@ -37,6 +37,15 @@ export type ParticipantDashboardRow = {
   currentSessions: ParticipantSessionSummary[];
 };
 
+export const filterParticipantDashboardRows = (
+  rows: ParticipantDashboardRow[],
+  showArchived: boolean,
+) => {
+  return showArchived
+    ? rows
+    : rows.filter((row) => row.participant.status !== 'archived');
+};
+
 export const participantConditionLabels: Record<ExperimentConditionCode, string> = experimentConditionLabels;
 
 export const participantStageLabels: Record<ParticipantStage, string> = {

@@ -6,7 +6,7 @@ pre-created Supabase Auth users mapped to research participants.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import get_repository, get_session_service, require_authenticated_actor
+from app.api.deps import get_repository, get_session_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
 from app.crud.protocols import RepositoryProtocol
 from app.schemas.responses import ParticipantMeResponse
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/participants", tags=["participants"])
 @router.get("/me", response_model=ParticipantMeResponse)
 def participant_me(
     auth_user_id: str | None = None,
-    actor: AuthenticatedActor = Depends(require_authenticated_actor),
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
     repository: RepositoryProtocol = Depends(get_repository),
     session_service: SessionService = Depends(get_session_service),
 ) -> ParticipantMeResponse:
