@@ -84,6 +84,46 @@ def test_jwt_identity_overrides_stale_request_user_ids_and_blocks_cross_account_
     assert client.get(f"/api/tasks/attempts/{attempt_id}", headers=other_user_headers).status_code == 403
 
 
+def test_jwt_blocks_cross_account_conversation_reads_and_chat_writes(client):
+    material = _admin_initialize(client, "JWT 對話 ownership 測試")
+    initialized = client.post(
+        "/api/event/initialize",
+        json={
+            "event_name": material["event"]["canonical_name"],
+            "condition_key": "ebl_roleplay",
+            "rebuild": False,
+        },
+    )
+    assert initialized.status_code == 200
+
+    submitted = client.post(
+        f"/api/tasks/{initialized.json()['task']['id']}/submit",
+        json={
+            "session_id": initialized.json()["session_id"],
+            "response_payload": {"answer_text": "測試回答"},
+        },
+    )
+    assert submitted.status_code == 202
+    completed = client.get(submitted.json()["poll_url"])
+    assert completed.status_code == 200
+    conversation_id = completed.json()["result"]["conversation_id"]
+
+    other_user_headers = {"Authorization": "Bearer participant-002"}
+    assert client.get(
+        f"/api/conversations/{conversation_id}",
+        headers=other_user_headers,
+    ).status_code == 403
+    assert client.post(
+        "/api/chat",
+        headers=other_user_headers,
+        json={
+            "conversation_id": conversation_id,
+            "user_message": "嘗試寫入其他帳號的對話",
+            "history": [],
+        },
+    ).status_code == 403
+
+
 def test_admin_key_bypasses_supabase_login_for_management_and_test_mode(client):
     admin_only = TestClient(client.app)
     initialized = admin_only.post(

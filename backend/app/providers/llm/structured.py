@@ -9,7 +9,9 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.task_payload_validator import validate_task_authoring_payload
 
 
 class EventProfilePayload(BaseModel):
@@ -44,14 +46,32 @@ class GeneratedTaskPayload(BaseModel):
     Attributes:
         title: Task 標題。
         story_text: 完整正確故事文字。
-        display_text: 含空格「____」的顯示用文字。
-        evaluation_payload: 評量結構（rubric、expected_points 等）。
+        display_text: 含 ``{{blank:qNN}}`` 題目 token 的顯示用文字。
+        evaluation_payload: 含 ``questions[]`` 的評量結構。
     """
 
-    title: str
-    story_text: str
-    display_text: str
+    title: str = Field(min_length=1)
+    story_text: str = Field(min_length=1)
+    display_text: str = Field(min_length=1)
     evaluation_payload: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_current_task_contract(self) -> "GeneratedTaskPayload":
+        """拒絕舊式空格與鬆散 payload，讓 runner 自動要求 LLM 修復。"""
+        questions = self.evaluation_payload.get("questions")
+        if not isinstance(questions, list) or not questions:
+            raise ValueError("evaluation_payload.questions must contain at least one question")
+        if "____" in self.display_text:
+            raise ValueError("display_text must use {{blank:qNN}} tokens instead of ____")
+
+        issues = validate_task_authoring_payload(
+            display_text=self.display_text,
+            evaluation_payload=self.evaluation_payload,
+        )
+        if issues:
+            details = "; ".join(f"{issue['field']}: {issue['message']}" for issue in issues)
+            raise ValueError(details)
+        return self
 
 
 class GeneratedPersonaPayload(BaseModel):

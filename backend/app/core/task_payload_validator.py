@@ -1,8 +1,7 @@
-"""Validation for admin-edited task story tokens and questions.
+"""Validation for task story tokens and questions.
 
-The admin UI still saves `display_text` and `evaluation_payload` as a whole
-payload. This module protects that compatibility layer from raw token mistakes
-before the data reaches Supabase.
+Admin 編輯與 LLM 自動生成共用同一份驗證規則，避免兩條資料流產生
+不同的 task 格式後才在 Supabase 或 learner 頁面出錯。
 """
 
 from __future__ import annotations
@@ -21,12 +20,10 @@ def validate_task_authoring_payload(
     display_text: str,
     evaluation_payload: dict[str, Any] | Any,
 ) -> list[dict[str, str]]:
-    """Return field-level validation issues for story-first task authoring.
+    """回傳 story-first task 的欄位級驗證問題。
 
-    The validator is strict only for structured task payloads: when
-    `evaluation_payload.questions` exists or story token markup exists. This
-    keeps old LLM-generated tasks editable until a researcher converts them to
-    structured questions.
+    只有 ``evaluation_payload.questions`` 或 story token 已存在時才進入
+    strict mode，讓既有舊資料仍可由研究員打開後逐步轉換。
     """
 
     if not isinstance(evaluation_payload, dict):

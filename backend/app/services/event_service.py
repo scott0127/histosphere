@@ -6,7 +6,7 @@
 
 from fastapi import HTTPException, status
 
-from app.models.domain import Event
+from app.models.domain import Event, EventTask
 from app.schemas.responses import EventListItem
 from app.crud.protocols import RepositoryProtocol
 from app.utils.text_normalizer import normalize_display_text
@@ -24,14 +24,31 @@ class EventService:
         return self.repository.find_event_by_name(normalized_name) is not None
 
     def list_events(self) -> list[EventListItem]:
-        """列出事件，並附上最新 task 與 personas 給首頁使用。"""
+        """列出事件與非敏感 task 摘要，避免首頁回應提前暴露答案。"""
         items: list[EventListItem] = []
         for event in self.repository.list_events():
             payload = event.model_dump()
             payload["personas"] = self.repository.list_personas(event.id)
-            payload["latest_task"] = self.repository.get_latest_event_task(event.id)
+            payload["latest_task"] = self._learner_task_summary(
+                self.repository.get_latest_event_task(event.id)
+            )
             items.append(EventListItem(**payload))
         return items
+
+    @staticmethod
+    def _learner_task_summary(task: EventTask | None) -> EventTask | None:
+        """保留列表判斷所需 metadata，不回傳故事原文、題目與答案。"""
+        if not task:
+            return None
+        raw_questions = task.evaluation_payload.get("questions")
+        question_count = len(raw_questions) if isinstance(raw_questions, list) else 0
+        return task.model_copy(
+            update={
+                "story_text": "",
+                "display_text": "",
+                "evaluation_payload": {"question_count": question_count},
+            }
+        )
 
     def archive_event(self, event_id: str) -> Event:
         """Hide an event from learner selection without deleting research data."""

@@ -37,6 +37,7 @@
         :creating-event="isInitializing"
         :create-error="initializeError"
         :can-create-event="canManageEvents"
+        :show-event-introduction="showEventIntroduction"
         @create="handleCreateEvent"
         @open="openEventDetail"
       />
@@ -93,6 +94,7 @@ import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import { studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import { adminTestUserUuid, shouldExitAdminModeForAuthTransition } from '~/utils/adminMode';
+import { shouldShowEventIntroduction } from '~/utils/eventVisibility';
 import {
   clearAdminSessionKey,
   getAdminSessionKey,
@@ -137,6 +139,7 @@ const {
 const authStorageScope = computed(() => user.value?.id || 'guest');
 const adminTestUserId = computed(() => adminTestUserUuid(`admin-test:${user.value?.id || 'local'}`));
 const canManageEvents = computed(() => isAdminMode.value && activityMode.value === 'admin');
+const showEventIntroduction = computed(() => shouldShowEventIntroduction(activityMode.value));
 
 const storedAdminKey = () => {
   return getAdminSessionKey();

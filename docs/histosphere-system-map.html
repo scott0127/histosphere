@@ -1108,7 +1108,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Learner Supabase Auth 登入、登出、密碼重設與帳號切換狀態清理</span>
+          <span class="function-name">Learner Supabase Auth 登入、登出、密碼重設與帳號切換狀態清理<span class="function-note text-small">明確登入 learner 會清除既有 Admin mode；登出請求失敗時仍清除本機狀態</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1120,7 +1120,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Participant、session、task attempt 與 conversation ownership<span class="function-note text-small">Learner 只能讀寫 JWT 所屬帳號的資料；Admin key 可進入管理與測試視角</span></span>
+          <span class="function-name">Participant、session、task attempt 與 conversation ownership<span class="function-note text-small">Learner 只能讀寫 JWT 所屬帳號的資料；跨帳號 conversation 讀取與 chat 寫入皆回覆 403；Admin key 可進入管理與測試視角</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1144,7 +1144,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Supabase 事件清單、詳細資料與既有素材讀取</span>
+          <span class="function-name">Supabase 事件清單、詳細資料與既有素材讀取<span class="function-note text-small">Learner 清單只取得去除故事、題目與答案的 task 摘要；Admin snapshot 保留完整素材</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">受測者端事件介紹文字隱藏<span class="function-note text-small">首頁與事件詳情維持原本版面，保留年代、分類、事件插圖、人物與 task 狀態；受測者端只隱藏事件介紹文字，Admin 管理視角仍顯示完整介紹。研究設計註記：是否在受測者端顯示事件介紹，想想是否影響受測</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1159,17 +1163,17 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">Wikipedia 中英來源擷取與來源列保存</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">自動建立素材的 task 格式<span class="function-note text-small">LLM 仍產生舊式 ____ 與寬鬆 evaluation payload，未保證符合現行 inline question contract</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">自動建立素材的 task 格式<span class="function-note text-small">LLM structured schema 與缺漏 fallback 均強制使用 {{blank:qNN}} + evaluation_payload.questions[]</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">素材 readiness / publish 工作流與修改前後版本紀錄</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="deferred">
+          <span class="function-name">素材 readiness / publish 工作流與修改前後版本紀錄<span class="function-note text-small">指事件介紹、task、題目答案與 persona 是否齊全並鎖定成正式實驗素材；目前決定暫緩</span></span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">事件背景圖重新生成<span class="function-note text-small">相容 endpoint 目前固定回傳 background_url=null</span></span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="deferred">
+          <span class="function-name">事件背景圖重新生成<span class="function-note text-small">相容 endpoint 目前固定回傳 background_url=null；依研究需求決定暫緩</span></span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
       </div>
     </details>

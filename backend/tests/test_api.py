@@ -1,4 +1,5 @@
 from app.providers.llm.base import ChatGenerationResult
+from app.models.domain import Event
 
 
 CONDITIONS = [
@@ -218,7 +219,45 @@ def test_event_check_and_list_events(client):
     assert len(payload) == 1
     assert payload[0]["id"] == initialized["event_id"]
     assert payload[0]["personas"]
-    assert payload[0]["latest_task"]
+    public_task = payload[0]["latest_task"]
+    assert public_task
+    assert public_task["story_text"] == ""
+    assert public_task["display_text"] == ""
+    assert public_task["evaluation_payload"] == {"question_count": 1}
+
+    snapshot = client.get("/api/admin/snapshot", headers={"x-admin-key": "test-admin"})
+    assert snapshot.status_code == 200
+    admin_task = snapshot.json()["events"][0]["latest_task"]
+    assert admin_task["story_text"] == initialized["task"]["story_text"]
+    assert admin_task["evaluation_payload"]["questions"][0]["correct_answer"] == "原因"
+
+
+def test_existing_event_without_task_gets_structured_fallback(client):
+    repository = client.app.state.repository
+    repository.save_event(
+        Event(
+            canonical_name="缺少任務的事件",
+            context="缺少任務的事件用來測試系統建立可編輯的保守題目。",
+        )
+    )
+
+    initialized = initialize_event(client, "缺少任務的事件")
+    task = initialized["task"]
+
+    assert task["display_text"].count("{{blank:q01}}") == 1
+    assert "____" not in task["display_text"]
+    assert task["evaluation_payload"]["questions"] == [
+        {
+            "id": "q01",
+            "blank_id": "q01",
+            "type": "cloze",
+            "prompt": "請填入這個歷史事件的名稱。",
+            "placeholder": "請輸入事件名稱",
+            "source_text": "缺少任務的事件",
+            "correct_answer": "缺少任務的事件",
+            "required": True,
+        }
+    ]
 
 
 def test_task_submit_creates_attempt_conversation_messages_and_logs(client):

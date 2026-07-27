@@ -216,13 +216,31 @@ class EventInitializationService:
         if task:
             return task
         fallback_text = event.context or event.description or event.canonical_name
+        if event.canonical_name in fallback_text:
+            display_text = fallback_text.replace(event.canonical_name, "{{blank:q01}}", 1)
+        else:
+            display_text = f"本次歷史事件為「{{{{blank:q01}}}}」。{fallback_text}"
         return self.repository.save_event_task(
             EventTask(
                 event_id=event.id,
                 title=f"{event.canonical_name}：歷史故事挖洞",
                 story_text=fallback_text,
-                display_text=f"{event.canonical_name} 的核心脈絡包含「____」、「____」與「____」。",
-                evaluation_payload={"rubric": "Teacher review required."},
+                display_text=display_text,
+                evaluation_payload={
+                    "rubric": "此為系統 fallback 題目，正式實驗前需由研究員確認。",
+                    "questions": [
+                        {
+                            "id": "q01",
+                            "blank_id": "q01",
+                            "type": "cloze",
+                            "prompt": "請填入這個歷史事件的名稱。",
+                            "placeholder": "請輸入事件名稱",
+                            "source_text": event.canonical_name,
+                            "correct_answer": event.canonical_name,
+                            "required": True,
+                        }
+                    ],
+                },
                 revision_state="manual",
             )
         )

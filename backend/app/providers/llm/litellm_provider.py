@@ -115,10 +115,11 @@ class LiteLLMProvider:
         return result
 
     async def generate_task(self, event: Event, sources: list[WikiSource]) -> EventTask:
-        """產生 prototype task；正式實驗可由教師手動改成 manual/teacher_modified。
+        """產生符合現行 inline question contract 的 prototype task。
 
-        生成含 story_text、display_text（含「____」空格）與
-        evaluation_payload（rubric、expected_points 等）的 task。
+        ``display_text`` 必須使用 ``{{blank:qNN}}``，且每個 token 都要對應
+        ``evaluation_payload.questions[]`` 的單一題目。Structured schema 會拒絕
+        舊式 ``____`` 或不完整的題目資料，讓 runner 自動修復後再儲存。
 
         Args:
             event: 目標事件。
@@ -134,9 +135,17 @@ class LiteLLMProvider:
             user_prompt=(
                 "Create one prototype historical thinking task for this event.\n"
                 "The task must be historically strict, suitable for a master's thesis prototype, and editable by a teacher.\n"
-                "For now, story_text should be the accurate complete story; display_text should include visible blanks using 「____」.\n"
-                "evaluation_payload must include: rubric, expected_points, historical_thinking_targets, source_basis, "
-                "and prototype_item_types. Include possible item types: cloze, multiple_choice, true_false.\n"
+                "story_text must be the complete accurate source text without question tokens.\n"
+                "display_text must be a learner-facing version of that text with 3 to 5 inline question tokens. "
+                "Use only the exact token format {{blank:q01}}, {{blank:q02}}, and so on; never use ____.\n"
+                "evaluation_payload must contain rubric, historical_thinking_targets, source_basis, and questions.\n"
+                "Each questions item must contain id, blank_id, type, prompt, required, source_text, and correct_answer. "
+                "id and blank_id must be the same qNN value and must appear exactly once in display_text.\n"
+                "Use cloze, multiple_choice, and true_false questions. A multiple_choice question must contain at least "
+                "two options with id, label, value, and its correct_answer must equal one option value. "
+                "A true_false correct_answer must be a JSON boolean.\n"
+                "Questions should collectively exercise historical context, evidence, causation, perspective, or change "
+                "over time instead of testing isolated trivia.\n"
                 "Use Traditional Chinese only, except English proper nouns when necessary.\n"
                 "Return JSON with keys: title, story_text, display_text, evaluation_payload.\n\n"
                 f"Event:\n{event.model_dump()}\n\n"

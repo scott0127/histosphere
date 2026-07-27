@@ -47,7 +47,7 @@ from app.schemas.responses import (
     SessionRestartResponse,
 )
 from app.services import ChatService, PromptService, RagPipelineService, SessionService
-from app.services.task_payload_validator import validate_task_authoring_payload
+from app.core.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
     prefix="/api/admin",

@@ -65,7 +65,10 @@
         <p class="mt-3 font-semibold">載入事件...</p>
       </div>
 
-      <div v-else-if="events.length" class="grid gap-6 overflow-y-auto pr-2 md:grid-cols-2 lg:flex-1 lg:content-start">
+      <div
+        v-else-if="events.length"
+        class="grid gap-6 overflow-y-auto pr-2 md:grid-cols-2 lg:flex-1 lg:auto-rows-[minmax(240px,1fr)]"
+      >
         <button
           v-for="event in events"
           :key="event.id"
@@ -73,7 +76,12 @@
           class="group relative overflow-hidden rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] bg-[linear-gradient(135deg,rgba(255,255,255,0.46),transparent_38%),radial-gradient(circle_at_82%_18%,rgba(168,141,123,0.14),transparent_28%)] p-1.5 text-left shadow-md transition-all duration-300 hover:-translate-y-1 hover:border-[var(--admin-line)] hover:bg-[var(--admin-surface-muted)] hover:shadow-lg"
           @click="$emit('open', event)"
         >
-          <div class="pointer-events-none absolute bottom-0 right-0 top-0 w-[45%] select-none overflow-hidden rounded-r-xl opacity-[0.16]">
+          <div
+            :class="[
+              'pointer-events-none absolute bottom-0 right-0 top-0 w-[45%] select-none overflow-hidden rounded-r-xl',
+              showEventIntroduction ? 'opacity-[0.16]' : 'opacity-50',
+            ]"
+          >
             <img
               :src="getEventSketch(event)"
               class="h-full w-full object-cover object-right mix-blend-multiply contrast-[1.25] brightness-[1.08] [mask-image:linear-gradient(to_left,black_15%,transparent_95%)] [-webkit-mask-image:linear-gradient(to_left,black_15%,transparent_95%)]"
@@ -94,7 +102,10 @@
               <h3 class="mt-5 font-serif text-3xl font-bold leading-tight text-[var(--admin-text)]">
                 {{ event.canonical_name }}
               </h3>
-              <p class="mt-4 line-clamp-3 max-w-[85%] text-sm font-medium leading-relaxed text-[var(--admin-copy)]">
+              <p
+                v-if="showEventIntroduction"
+                class="mt-4 line-clamp-3 max-w-[85%] text-sm font-medium leading-relaxed text-[var(--admin-copy)]"
+              >
                 {{ event.description || event.context || '此事件尚未補上描述。' }}
               </p>
             </div>
@@ -135,6 +146,7 @@ defineProps<{
   creatingEvent: boolean;
   createError: string | null;
   canCreateEvent: boolean;
+  showEventIntroduction: boolean;
 }>();
 
 const emit = defineEmits<{

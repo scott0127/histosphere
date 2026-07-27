@@ -34,7 +34,10 @@
               </span>
             </div>
             <h3 class="mt-4 font-serif text-2xl font-black text-[var(--admin-text)]">{{ event.canonical_name }}</h3>
-            <p class="mt-3 line-clamp-3 text-sm font-medium leading-7 text-[var(--admin-copy)]">
+            <p
+              v-if="showEventIntroduction"
+              class="mt-3 line-clamp-3 text-sm font-medium leading-7 text-[var(--admin-copy)]"
+            >
               {{ event.description || event.context || '此事件尚未補上描述。' }}
             </p>
 
@@ -111,9 +114,11 @@
 <script setup lang="ts">
 // EventDetailModal 是事件素材與活動入口的組合元件。
 // 它不直接呼叫 API；封存與活動啟動都交回 page 控制。
+import { computed } from 'vue';
 import type { ConditionKey, EventWithPersonas, ExperimentCondition, Participant, UserProgressStatus } from '~/types';
 import ActivityConditionGrid from '~/components/event-library/ActivityConditionGrid.vue';
 import { eventMotif, formatYears } from '~/utils/eventPresentation';
+import { shouldShowEventIntroduction } from '~/utils/eventVisibility';
 
 type LocalConditionProgress = {
   status: 'not_started' | UserProgressStatus;
@@ -124,7 +129,7 @@ type LocalConditionProgress = {
   updatedAt: string;
 };
 
-defineProps<{
+const props = defineProps<{
   event: EventWithPersonas;
   participant?: Participant | null;
   participantError?: string | null;
@@ -135,6 +140,8 @@ defineProps<{
   activityMode: 'admin' | 'learner';
   adminAccess: boolean;
 }>();
+
+const showEventIntroduction = computed(() => shouldShowEventIntroduction(props.activityMode));
 
 defineEmits<{
   (event: 'close'): void;

@@ -105,7 +105,6 @@ export function useAuth() {
 
     error.value = null
     loading.value = true
-    const previousUserId = user.value?.id || null
 
     try {
       const { data, error: authError } = await client.auth.signInWithPassword({
@@ -121,9 +120,8 @@ export function useAuth() {
       user.value = data.user
       session.value = data.session
       setCurrentAccessToken(data.session?.access_token)
-      if (previousUserId && data.user?.id && previousUserId !== data.user.id) {
-        clearSharedBrowserSessionState()
-      }
+      // 明確登入 learner 時一律離開既有 Admin mode，避免後續 API 誤用 admin key。
+      clearSharedBrowserSessionState()
       return { success: true }
     } catch (e: any) {
       error.value = e.message
@@ -180,13 +178,18 @@ export function useAuth() {
    * 登出
    */
   async function signOut() {
-    if (!client) return
-
-    await client.auth.signOut()
-    user.value = null
-    session.value = null
-    setCurrentAccessToken(null)
-    clearSharedBrowserSessionState()
+    try {
+      if (client) {
+        await client.auth.signOut()
+      }
+    } catch (e) {
+      console.warn('[useAuth] Sign out request failed; local session was still cleared:', e)
+    } finally {
+      user.value = null
+      session.value = null
+      setCurrentAccessToken(null)
+      clearSharedBrowserSessionState()
+    }
   }
 
   /**
