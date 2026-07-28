@@ -3,7 +3,7 @@
   <p class="whitespace-pre-wrap">
     <template v-for="(segment, index) in segments" :key="index">
       <span v-if="segment.isAnnotation" class="group relative mx-0.5 inline-block align-baseline">
-        <span class="inline-block cursor-help rounded-md border border-history-accent/50 bg-history-accent/40 px-1.5 py-0.5 font-semibold leading-[1.4] text-history-dark transition-colors hover:bg-history-accent/60">
+        <span class="inline-block cursor-help rounded-md border border-[var(--admin-border)] bg-[var(--admin-coffee-soft)] px-1.5 py-0.5 font-semibold leading-[1.4] text-[var(--admin-text)] transition-colors hover:border-[var(--admin-coffee-muted)] hover:bg-[var(--admin-surface-sunken)]">
           {{ segment.text }}
         </span>
         <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs bg-history-dark text-history-paper text-xs rounded-lg py-2 px-3 z-20 border border-history-brown shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">

@@ -33,6 +33,7 @@
 
         <div class="mt-6 flex justify-end gap-3">
           <button
+            v-if="cancelLabel"
             type="button"
             class="inline-flex h-14 min-w-24 items-center justify-center rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-6 text-base font-black leading-none text-[var(--admin-copy)] transition hover:bg-[var(--admin-surface-muted)]"
             @click="$emit('cancel')"
