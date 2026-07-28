@@ -95,6 +95,25 @@ def test_standard_chat_cells_do_not_force_task_correction():
         assert metadata["historical_ebl_policy_version"] == HISTORICAL_EBL_POLICY_VERSION
 
 
+def test_standard_chat_records_off_topic_redirect_without_changing_mode():
+    for code in ("01", "03"):
+        runtime = build_interaction_runtime(_condition(code), _attempt(), [])
+        metadata = resolve_interaction_metadata(
+            runtime,
+            {
+                "dialogue_state": "STANDARD_CHAT",
+                "dialogue_move": "natural_response",
+                "off_topic_redirect": True,
+            },
+            "這不屬於目前事件的討論範圍，讓我們回到法國大革命。",
+        )
+
+        assert metadata["condition_code"] == code
+        assert metadata["interaction_mode"] == "standard_chat"
+        assert metadata["dialogue_state"] == "STANDARD_CHAT"
+        assert metadata["off_topic_redirect"] is True
+
+
 def test_ebl_cells_share_the_same_state_contract():
     metadata_by_code = {}
     for code in ("02", "04"):
@@ -133,6 +152,52 @@ def test_ebl_cells_share_the_same_state_contract():
         == metadata_by_code["04"]["primary_historical_thinking_move"]
         == "inspect_source_or_task_evidence"
     )
+
+
+def test_ebl_off_topic_redirect_preserves_state_disclosure_and_attempt_count():
+    for code in ("02", "04"):
+        condition = _condition(code)
+        previous = ChatMessage(
+            conversation_id="conversation-1",
+            speaker_type="persona" if condition.roleplay_enabled else "assistant",
+            speaker_name="歷史人物" if condition.roleplay_enabled else "AI Tutor",
+            content="先說明你原先判斷的理由。",
+            metadata={
+                "interaction_policy_version": INTERACTION_POLICY_VERSION,
+                "target_question_id": "q01",
+                "dialogue_state": "ELICIT_REASONING",
+                "dialogue_move": "reasoning_probe",
+                "disclosure_level": "D1",
+                "attempts_in_state": 2,
+                "completion_status": "continue",
+            },
+        )
+        runtime = build_interaction_runtime(condition, _attempt(), [previous])
+        enforced = enforce_interaction_response(
+            runtime,
+            {
+                "dialogue_state": "INSPECT_EVIDENCE",
+                "dialogue_move": "evidence_probe",
+                "disclosure_level": "D2",
+                "learner_progress": "clear_progress",
+                "learner_revision_status": "revised",
+                "off_topic_redirect": True,
+            },
+            "這個疑問與眼前事件無關；讓我們回到第三等級的代表權爭議。",
+        )
+
+        assert enforced.retry_required is False
+        assert enforced.metadata["condition_code"] == code
+        assert enforced.metadata["off_topic_redirect"] is True
+        assert enforced.metadata["dialogue_state"] == "ELICIT_REASONING"
+        assert enforced.metadata["dialogue_move"] == "reasoning_probe"
+        assert enforced.metadata["disclosure_level"] == "D1"
+        assert enforced.metadata["learner_progress"] == "no_progress"
+        assert enforced.metadata["learner_revision_status"] == "not_yet"
+        assert enforced.metadata["attempts_in_state"] == 2
+        assert enforced.metadata["completion_status"] == "continue"
+        assert enforced.metadata["next_target_started"] is False
+        assert enforced.metadata["fidelity_flags"] == []
 
 
 def test_invalid_ebl_transition_is_blocked_and_flagged():

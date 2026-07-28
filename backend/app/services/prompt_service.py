@@ -16,7 +16,11 @@ GENERAL_PROMPT = (
     "You are the response engine for a controlled master's thesis experiment. "
     "Reply in Traditional Chinese. Historical accuracy and explicit uncertainty take priority over fluency. "
     "Never fabricate quotations, sources, private thoughts, eyewitness experience, or unsupported facts. "
-    "Do not collapse a complex event into one cause or one viewpoint. Keep chronology, geography, and cultural context consistent."
+    "Do not collapse a complex event into one cause or one viewpoint. Keep chronology, geography, and cultural context consistent. "
+    "The shared conversation scope for every condition is the selected historical event, including its actors, chronology, "
+    "context, evidence, and historical reasoning. If the latest learner message is clearly unrelated, set "
+    "off_topic_redirect=true, provide no substantive answer, code, steps, definition, or partial solution to that unrelated "
+    "request, and briefly redirect to the selected event. If relevance is uncertain, treat the message as related."
 )
 
 RETRY_REMEDIATION: dict[str, str] = {
@@ -163,7 +167,8 @@ class PromptService:
             return (
                 "Identity mode: generic assistant. Never impersonate a historical figure or claim first-person participation. "
                 "Explain history as an AI tutor. Identity is a renderer only: do not change the pedagogical act, evidence "
-                "budget, question count, or disclosure content selected by interaction_runtime."
+                "budget, question count, or disclosure content selected by interaction_runtime. When off_topic_redirect=true, "
+                "briefly state that the request is outside the current event discussion and redirect without answering it."
             )
         return (
             f"Identity mode: historical persona. Speak in first person as {persona.name}. "
@@ -171,7 +176,10 @@ class PromptService:
             "The persona_event_context module defines the event situation and knowledge boundaries. Role-play is a renderer "
             "only: convert the already selected pedagogical act into the persona's first-person wording, but do not add a "
             "historical fact, evidence clue, comparison result, correction, or extra question. This content budget must be "
-            "identical to generic mode; only identity, address, and voice may change."
+            "identical to generic mode; only identity, address, and voice may change. When off_topic_redirect=true, remain in "
+            "first person and naturally convey that the unrelated request is unclear or outside what this historical person "
+            "understands, using person-specific and period-appropriate voice. Do not use a fixed refusal phrase or modern "
+            "policy language; redirect to the selected event without answering the unrelated request."
         )
 
     @staticmethod
@@ -189,11 +197,11 @@ class PromptService:
                 "never authorizes giving the answer."
             )
         return (
-            "Interaction mode: standard historical chat. Respond as a normal conversational assistant: answer the "
-            "learner's actual question, ask a natural clarification or follow-up when useful, and maintain terminology "
-            "and conversational consistency. Do not run the Historical EBL state sequence, deliberately withhold an "
-            "answer, or force reason-evidence-revision-reflection steps. Do not automatically announce a task answer "
-            "when the learner has not asked for it."
+            "Interaction mode: standard historical chat. Respond as a normal conversational assistant: when the learner's "
+            "actual question is within the shared event scope, answer it, ask a natural clarification or follow-up when "
+            "useful, and maintain terminology and conversational consistency. Do not run the Historical EBL state sequence, "
+            "deliberately withhold an answer, or force reason-evidence-revision-reflection steps. Do not automatically announce "
+            "a task answer when the learner has not asked for it."
         )
 
     @staticmethod
@@ -333,9 +341,10 @@ class PromptService:
             "or chain-of-thought. "
             "Return one learner-facing response with no fabricated citations. The structured JSON must also include "
             "dialogue_state, dialogue_move, disclosure_level, learner_progress, disclosure_reason, "
-            "learner_revision_status, completion_status, and fidelity_flags. These fields are hidden from the learner "
+            "learner_revision_status, completion_status, off_topic_redirect, and fidelity_flags. These fields are hidden from "
+            "the learner "
             "and must match the interaction_runtime module. On the opening turn, use learner_progress=not_assessed and "
-            "the initial disclosure level required by interaction_runtime."
+            "the initial disclosure level required by interaction_runtime, and set off_topic_redirect=false."
         )
 
     @staticmethod

@@ -8,7 +8,10 @@ import pytest
 from pydantic import BaseModel
 
 from app.core.config import Settings
+from app.models.domain import Event
 from app.providers.llm.json_runner import LLMJsonRunner
+from app.providers.llm.litellm_provider import LiteLLMProvider
+from app.providers.llm.structured import ChatOutputPayload
 from app.services.llm_generation_audit import record_rejected_generation
 
 
@@ -35,6 +38,18 @@ def test_rejected_generation_audit_retains_raw_output(monkeypatch, tmp_path) -> 
     assert record["raw_output"] == "未通過的原始回覆"
     assert record["reasons"] == ["early_answer_exposure"]
     assert record["context"]["condition_key"] == "ebl_roleplay"
+
+
+def test_chat_structured_output_preserves_off_topic_redirect_metadata() -> None:
+    result = LiteLLMProvider._chat_generation_result(
+        ChatOutputPayload(
+            response="讓我們回到目前的歷史事件。",
+            off_topic_redirect=True,
+        ),
+        Event(canonical_name="法國大革命"),
+    )
+
+    assert result.interaction_metadata["off_topic_redirect"] is True
 
 
 def test_json_runner_audits_initial_and_repair_schema_failures(monkeypatch, tmp_path) -> None:

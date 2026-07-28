@@ -96,6 +96,25 @@ def test_prompt_modules_change_only_on_their_assigned_factor():
     assert "zero to two tightly related questions" not in matrix["01"]["independent_2_prompt"]
 
 
+def test_all_conditions_share_the_event_scope_redirect_policy():
+    matrix = {code: _modules(code) for code in ("01", "02", "03", "04")}
+
+    for modules in matrix.values():
+        assert "off_topic_redirect=true" in modules["general_prompt"]
+        assert "If relevance is uncertain, treat the message as related" in modules["general_prompt"]
+        assert "off_topic_redirect" in modules["runtime_policy"]
+
+    assert "outside the current event discussion" in matrix["01"]["independent_1_prompt"]
+    assert "outside the current event discussion" in matrix["02"]["independent_1_prompt"]
+    assert "person-specific and period-appropriate voice" in matrix["03"]["independent_1_prompt"]
+    assert "person-specific and period-appropriate voice" in matrix["04"]["independent_1_prompt"]
+    assert "fixed refusal phrase" in matrix["04"]["independent_1_prompt"]
+    assert "within the shared event scope" in matrix["01"]["independent_2_prompt"]
+    assert "within the shared event scope" in matrix["03"]["independent_2_prompt"]
+    assert "off_topic_redirect=true" in matrix["02"]["interaction_runtime"]
+    assert "off_topic_redirect=true" in matrix["04"]["interaction_runtime"]
+
+
 def test_prompt_exposes_only_the_runtime_selected_task_error():
     condition = _condition("02")
     attempt = _attempt()

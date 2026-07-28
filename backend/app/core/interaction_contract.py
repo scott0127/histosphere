@@ -29,9 +29,10 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v4"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v5"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v4",
     "2x2-interaction-v3",
 }
 EBL_INITIAL_STATE: DialogueState = "ELICIT_REASONING"
@@ -266,6 +267,9 @@ class InteractionRuntime:
             "revealing its answer. Before RESOLVED, do not reveal the complete expected answer at any disclosure "
             "level. The dialogue state and disclosure level are separate decisions: progress may advance the reasoning "
             "state without mechanically changing disclosure. "
+            "If off_topic_redirect=true, only redirect to the selected event: keep the current target, dialogue state, "
+            "and disclosure level unchanged, use learner_progress=no_progress, and do not treat the off-topic message as "
+            "another failed scaffold attempt. "
             "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
             "not invent a source ID or quotation."
         )
@@ -588,6 +592,7 @@ def resolve_interaction_metadata(
         }
     )
     flags: set[str] = set()
+    off_topic_redirect = raw.get("off_topic_redirect") is True
     target_metadata = runtime.target.as_metadata() if runtime.target else {
         "target_question_id": None,
         "target_correctness": None,
@@ -627,17 +632,25 @@ def resolve_interaction_metadata(
             "completion_status": "continue",
             "learner_progress": "not_assessed",
             "disclosure_reason": None,
+            "off_topic_redirect": off_topic_redirect,
             "fidelity_flags": sorted(flags),
             "provider_fidelity_flags": provider_flags,
             **target_metadata,
         }
 
     proposed_state = raw.get("dialogue_state")
-    if proposed_state not in runtime.allowed_states:
+    if off_topic_redirect:
+        # 離題只做範圍重新導向，不視為學習進展，也不推進 EBL 階段。
+        proposed_state = (
+            runtime.previous_state
+            if runtime.previous_state in runtime.allowed_states
+            else runtime.allowed_states[0]
+        )
+    elif proposed_state not in runtime.allowed_states:
         flags.add("invalid_state_transition")
         proposed_state = runtime.previous_state if runtime.previous_state in runtime.allowed_states else runtime.allowed_states[0]
     expected_move = DIALOGUE_MOVE_BY_STATE[proposed_state]
-    if raw.get("dialogue_move") not in {None, expected_move}:
+    if not off_topic_redirect and raw.get("dialogue_move") not in {None, expected_move}:
         flags.add("invalid_dialogue_move")
 
     question_count = response_text.count("？") + response_text.count("?")
@@ -645,12 +658,19 @@ def resolve_interaction_metadata(
         flags.add("excessive_scaffold_questions")
     if len(response_text) > 700:
         flags.add("overlong_scaffold_response")
-    resolved_disclosure_level, disclosure_transition_valid = _disclosure_level(
-        runtime,
-        raw.get("disclosure_level") or raw.get("scaffold_level"),
-    )
-    if not disclosure_transition_valid:
-        flags.add("invalid_disclosure_transition")
+    if off_topic_redirect:
+        resolved_disclosure_level = (
+            runtime.previous_disclosure_level
+            if runtime.previous_disclosure_level in runtime.allowed_disclosure_levels
+            else runtime.allowed_disclosure_levels[0]
+        )
+    else:
+        resolved_disclosure_level, disclosure_transition_valid = _disclosure_level(
+            runtime,
+            raw.get("disclosure_level") or raw.get("scaffold_level"),
+        )
+        if not disclosure_transition_valid:
+            flags.add("invalid_disclosure_transition")
     expected_answer = runtime.target.expected_answer if runtime.target else None
     if (
         proposed_state != "RESOLVED"
@@ -660,7 +680,11 @@ def resolve_interaction_metadata(
         flags.add("early_answer_exposure")
 
     same_state = proposed_state == runtime.previous_state
-    attempts_in_state = runtime.previous_attempts_in_state + 1 if same_state else 0
+    attempts_in_state = (
+        runtime.previous_attempts_in_state
+        if off_topic_redirect
+        else runtime.previous_attempts_in_state + 1 if same_state else 0
+    )
     completion_status = "resolved" if proposed_state == "RESOLVED" else "continue"
     next_target_started = bool(proposed_state == "RESOLVED" and runtime.next_target)
     if (
@@ -680,6 +704,9 @@ def resolve_interaction_metadata(
         "resolved",
     }:
         learner_progress = "resolved" if proposed_state == "RESOLVED" else "not_assessed"
+    if off_topic_redirect:
+        learner_progress = "no_progress"
+        revision_status = "not_yet"
     disclosure_reason = raw.get("disclosure_reason")
     if not isinstance(disclosure_reason, str) or not disclosure_reason.strip():
         disclosure_reason = None
@@ -695,6 +722,7 @@ def resolve_interaction_metadata(
         "allowed_disclosure_levels": list(runtime.allowed_disclosure_levels),
         "learner_progress": learner_progress,
         "disclosure_reason": disclosure_reason,
+        "off_topic_redirect": off_topic_redirect,
         "attempts_in_state": attempts_in_state,
         "learner_revision_status": revision_status,
         "completion_status": completion_status,

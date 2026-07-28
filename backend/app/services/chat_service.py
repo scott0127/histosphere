@@ -210,6 +210,7 @@ class ChatService:
                         "allowed_disclosure_levels": interaction_metadata.get("allowed_disclosure_levels", []),
                         "learner_progress": interaction_metadata.get("learner_progress"),
                         "disclosure_reason": interaction_metadata.get("disclosure_reason"),
+                        "off_topic_redirect": interaction_metadata.get("off_topic_redirect", False),
                         "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
                         "fidelity_retry_count": interaction_metadata.get("generation_retry_count", 0),
                     },
