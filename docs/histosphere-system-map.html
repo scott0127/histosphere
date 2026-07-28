@@ -1499,6 +1499,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">答案與證據洩漏審查<span class="function-note text-small">有 transition、長度、問題數與字串掃描；無法可靠攔截同義改寫。當允許範圍含 D2 時，同次呼叫也會先看見 source_text</span></span>
           <span class="status text-small"><span class="dot"></span>部分完成</span>
         </div>
+        <div class="function" data-status="missing">
+          <span class="function-name">Annotation hover 提示納入答案揭露審查<span class="function-note text-small">目前只檢查 AI 主回覆；標記的 explanation 仍可能繞過 Disclosure，直接顯示正解或關鍵證據</span></span>
+          <span class="status text-small"><span class="dot"></span>未完成</span>
+        </div>
         <div class="function" data-status="partial">
           <span class="function-name">Historical Thinking operator 與 evidence IDs<span class="function-note text-small">可從 judgement 帶入，但缺研究者 GUI、正式 success criteria 與資料完整性約束</span></span>
           <span class="status text-small"><span class="dot"></span>部分完成</span>
@@ -1994,6 +1998,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       ["答案與證據洩漏審查", [
         "已檢查狀態轉換、長度、問題數與直接字串，但無法可靠攔截答案的同義改寫。",
         "可攔截直接輸出「財政危機」，卻可能漏掉「國庫已無力支應開銷」這類近義提示。"
+      ]],
+      ["Annotation hover 提示納入答案揭露審查", [
+        "AI 回覆中的術語標記可在 hover 時顯示說明，但這些說明目前沒有和主要回覆一起接受答案揭露檢查。",
+        "例如正文避開「培里」，標記說明仍可能直接寫出「培里率艦抵達浦賀」，因而提前揭露題目答案。"
       ]],
       ["Historical Thinking operator 與 evidence IDs", [
         "評分結果可指定歷史思考操作與證據編號，但尚無研究者 GUI、正式成功條件與完整性驗證。",
