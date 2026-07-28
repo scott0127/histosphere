@@ -1104,7 +1104,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>帳號與存取控制</span>
         </span>
-        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1128,7 +1128,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="accepted">
-          <span class="function-name">多管理員角色與個別撤銷</span>
+          <span class="function-name">多管理員角色與個別撤銷<span class="function-note text-small">受控實驗目前採研究者共用 Admin key，此項暫不開發</span></span>
           <span class="status text-small"><span class="dot"></span>目前不需要</span>
         </div>
       </div>
@@ -1140,7 +1140,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>歷史事件與素材</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1216,7 +1216,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Participant Registry</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1231,9 +1231,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">建立 session 前強制檢查綁定、active 與 condition assignment</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Participant 建立／封存的正式後台生命週期<span class="function-note text-small">目前只有更新既有 participants，新增仍依 migration 或手動 DB 管理</span></span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Participant 建立、封存與恢復的正式後台生命週期<span class="function-note text-small">封存只停止 learner 實驗存取；Auth 綁定、condition list、session、task、conversation 與研究紀錄均保留，恢復後可沿用原帳號</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
       </div>
     </details>
