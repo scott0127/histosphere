@@ -14,6 +14,13 @@ type ParsedTaskPayload = {
   error: string | null;
 };
 
+export type TaskEditorHistoryEntry = {
+  title: string;
+  displayText: string;
+  storyText: string;
+  evaluationJson: string;
+};
+
 const defaultQuestionType: TaskQuestionType = 'short_answer';
 const inlineQuestionTypes = new Set<TaskQuestionType>(['cloze', 'multiple_choice', 'true_false']);
 const blankPattern = /\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}/g;
@@ -31,6 +38,38 @@ export const parseTaskEvaluationJson = (jsonText: string): ParsedTaskPayload => 
 // 將 payload 穩定格式化，避免儲存時產生難讀的一行 JSON。
 export const stringifyTaskEvaluationPayload = (payload: TaskEvaluationPayload) => {
   return JSON.stringify(payload || {}, null, 2);
+};
+
+export const sameTaskHistoryEntry = (
+  current: TaskEditorHistoryEntry | undefined,
+  next: TaskEditorHistoryEntry,
+) => {
+  return Boolean(
+    current
+    && current.title === next.title
+    && current.displayText === next.displayText
+    && current.storyText === next.storyText
+    && current.evaluationJson === next.evaluationJson,
+  );
+};
+
+export const appendTaskHistoryEntry = (
+  entries: TaskEditorHistoryEntry[],
+  currentIndex: number,
+  next: TaskEditorHistoryEntry,
+  limit = 80,
+) => {
+  if (sameTaskHistoryEntry(entries[currentIndex], next)) {
+    return { entries, index: currentIndex };
+  }
+
+  const nextEntries = entries.slice(0, currentIndex + 1);
+  nextEntries.push(next);
+  if (nextEntries.length > limit) nextEntries.shift();
+  return {
+    entries: nextEntries,
+    index: nextEntries.length - 1,
+  };
 };
 
 // 取得研究者可編輯題目；舊 task 沒有 questions 時會用學生端同一套 fallback。

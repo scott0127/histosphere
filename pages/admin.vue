@@ -107,8 +107,7 @@
               @archive="(participant) => setParticipantArchived(participant, true)"
               @restore="(participant) => setParticipantArchived(participant, false)"
               @save="saveParticipant"
-              @start-timer="startSessionTimer"
-              @cancel-timer="cancelSessionTimer"
+              @reset-timer="resetSessionTimer"
               @restart-session="restartSession"
             />
           </div>
@@ -232,6 +231,8 @@
                 <TaskControlEditor
                   :evaluation-json="taskJson[selectedEvent.latest_task.id] || '{}'"
                   class="mt-5"
+                  :dirty="isTaskDirty(selectedEvent.latest_task)"
+                  :saving="savingTaskId === selectedEvent.latest_task.id"
                   :task="selectedEvent.latest_task"
                   @update:evaluation-json="taskJson[selectedEvent.latest_task.id] = $event"
                   @save="saveTask(selectedEvent.latest_task)"
@@ -472,7 +473,7 @@
 <script setup lang="ts">
 // 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { buildParticipantDashboardRows } from '~/utils/adminParticipantDashboard';
 
 definePageMeta({
@@ -494,7 +495,6 @@ const {
   adminKey,
   authUsers,
   authUsersError,
-  cancelSessionTimer,
   changingParticipantStatusId,
   createParticipant,
   creatingParticipant,
@@ -502,6 +502,8 @@ const {
   conditionOrdinal,
   error,
   eventYearRange,
+  hasUnsavedTaskChanges,
+  isTaskDirty,
   loadSnapshot,
   loadPromptPreview,
   personaJson,
@@ -523,7 +525,8 @@ const {
   saveParticipant,
   setParticipantArchived,
   saveTask,
-  startSessionTimer,
+  savingTaskId,
+  resetSessionTimer,
   savingParticipantId,
   selectedCondition,
   selectedConditionId,
@@ -539,12 +542,34 @@ const participantRows = computed(() => {
   return snapshot.value ? buildParticipantDashboardRows(snapshot.value, authUsers.value) : [];
 });
 
+const allowRouteLeave = ref(false);
+const confirmDiscardTaskDrafts = () => {
+  if (!hasUnsavedTaskChanges.value || !import.meta.client) return true;
+  return window.confirm('Task 尚有未儲存變更。確定要離開並放棄這些變更嗎？');
+};
+
+const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!hasUnsavedTaskChanges.value) return;
+  event.preventDefault();
+  event.returnValue = '';
+};
+
 onMounted(async () => {
+  window.addEventListener('beforeunload', handleBeforeUnload);
   initAdminMode();
   restoreStoredAdminKey();
   if (adminKey.value && await loadSnapshot()) {
     enterAdminMode();
   }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload);
+});
+
+onBeforeRouteLeave(() => {
+  if (allowRouteLeave.value) return true;
+  return confirmDiscardTaskDrafts();
 });
 
 const handleLoadSnapshot = async () => {
@@ -554,12 +579,16 @@ const handleLoadSnapshot = async () => {
 };
 
 const enterAdminTestMode = async () => {
+  if (!confirmDiscardTaskDrafts()) return;
+  allowRouteLeave.value = true;
   enterAdminMode();
   setAdminViewMode('admin_testmode');
   await navigateTo('/');
 };
 
 const leaveAdminMode = async () => {
+  if (!confirmDiscardTaskDrafts()) return;
+  allowRouteLeave.value = true;
   resetWorkspace();
   exitAdminMode();
   await navigateTo('/');

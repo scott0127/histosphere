@@ -28,7 +28,11 @@
 
     <main class="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <section class="flex min-h-0 flex-col rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-soft)]">
-        <SessionTimerBanner :session="session" class="m-4 mb-0" />
+        <SessionTimerBanner
+          :session="session"
+          class="m-4 mb-0"
+          @next-stage="$emit('next-stage')"
+        />
         <TaskAttemptReview
           v-if="task && taskAttempt"
           :task="task"
@@ -118,7 +122,7 @@
             </button>
           </div>
 
-          <form class="flex items-end gap-2" @submit.prevent="handleSendMessage">
+          <form v-if="!sessionClosed" class="flex items-end gap-2" @submit.prevent="handleSendMessage">
             <textarea
               v-model="userInput"
               rows="1"
@@ -134,6 +138,9 @@
               <Icon name="mdi:send" class="h-5 w-5" />
             </button>
           </form>
+          <p v-else class="text-center text-sm font-semibold text-[var(--admin-soft)]">
+            本階段已結束，請使用上方按鈕進入下一階段。
+          </p>
         </footer>
       </section>
 
@@ -201,6 +208,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'reset'): void;
+  (event: 'next-stage'): void;
+  (event: 'session-expired'): void;
   (event: 'send-message', userInput: string, targetPersonaId?: string): void;
 }>();
 
@@ -211,11 +220,40 @@ const chatContainerRef = ref<HTMLDivElement | null>(null);
 const showExitConfirmDialog = ref(false);
 const now = ref(Date.now());
 let sessionTimerId: ReturnType<typeof setInterval> | null = null;
+const expirationReported = ref(false);
 const sessionClosed = computed(() => {
   return props.session?.status === 'completed'
     || props.session?.status === 'archived'
     || Boolean(props.session?.timer_ends_at && Date.parse(props.session.timer_ends_at) <= now.value);
 });
+
+watch(
+  () => props.session?.timer_ends_at,
+  () => {
+    expirationReported.value = false;
+    now.value = Date.now();
+  },
+);
+
+watch(
+  sessionClosed,
+  (closed) => {
+    if (!closed) {
+      expirationReported.value = false;
+      return;
+    }
+    if (
+      !expirationReported.value
+      && props.session?.timer_ends_at
+      && props.session.status !== 'completed'
+      && props.session.status !== 'archived'
+    ) {
+      expirationReported.value = true;
+      emit('session-expired');
+    }
+  },
+  { immediate: true },
+);
 
 onMounted(() => { sessionTimerId = setInterval(() => { now.value = Date.now(); }, 1000); });
 onBeforeUnmount(() => { if (sessionTimerId) clearInterval(sessionTimerId); });

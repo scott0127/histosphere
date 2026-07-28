@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from app.models.domain import utc_now
 from app.schemas.requests import TaskSubmitRequest
@@ -313,19 +313,33 @@ def test_chat_rejects_missing_session_or_condition_without_falling_back(client):
     assert len(client.app.state.llm_provider.chat_prompts) == prompt_count
 
 
-def test_admin_timer_is_opt_in_and_completes_due_session(client):
+def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client):
     initialized = admin_initialize(client, "計時器測試")
     session_id = initialized["session_id"]
     original = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert original["timer_ends_at"] is None
 
-    started = client.post(
+    submitted = submit_and_poll(client, initialized)
+    assert submitted["conversation_id"]
+    started = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
+    assert started["status"] == "conversation_started"
+    assert started["timer_started_at"]
+    assert started["timer_ends_at"]
+    started_at = datetime.fromisoformat(started["timer_started_at"].replace("Z", "+00:00"))
+    ends_at = datetime.fromisoformat(started["timer_ends_at"].replace("Z", "+00:00"))
+    assert (ends_at - started_at).total_seconds() == 300
+
+    # 重整只讀取同一截止時間，不能重新給受測者五分鐘。
+    reloaded = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
+    assert reloaded["timer_started_at"] == started["timer_started_at"]
+    assert reloaded["timer_ends_at"] == started["timer_ends_at"]
+
+    invalid_duration = client.post(
         f"/api/admin/sessions/{session_id}/timer",
         headers=ADMIN_HEADERS,
-        json={"duration_minutes": 1},
+        json={"duration_minutes": 30},
     )
-    assert started.status_code == 200
-    assert started.json()["timer_ends_at"]
+    assert invalid_duration.status_code == 422
 
     repository = client.app.state.repository
     session = repository.get_session(session_id)
@@ -336,6 +350,18 @@ def test_admin_timer_is_opt_in_and_completes_due_session(client):
     completed = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert completed["status"] == "completed"
     assert completed["completion_reason"] == "timer_elapsed"
+
+    reset = client.post(
+        f"/api/admin/sessions/{session_id}/timer",
+        headers=ADMIN_HEADERS,
+        json={"duration_minutes": 5},
+    )
+    assert reset.status_code == 200
+    reset_session = reset.json()
+    assert reset_session["status"] == "conversation_started"
+    assert reset_session["completed_at"] is None
+    assert reset_session["completion_reason"] is None
+    assert reset_session["timer_ends_at"] != completed["timer_ends_at"]
 
 
 def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):

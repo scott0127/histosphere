@@ -1,4 +1,4 @@
-import type { AdminSnapshotResponse, EventWithPersonas, ExperimentCondition } from '../types';
+import type { AdminSnapshotResponse, EventTask, EventWithPersonas, ExperimentCondition } from '../types';
 
 export const conditionModeOrder: ExperimentCondition['condition_key'][] = [
   'no_ebl_no_roleplay',
@@ -28,6 +28,15 @@ export const buildAdminEditableJson = (snapshot: AdminSnapshotResponse) => {
   }
 
   return { taskJson, personaJson };
+};
+
+export const taskAuthoringSignature = (task: EventTask, evaluationJson: string) => {
+  return JSON.stringify({
+    title: task.title || '',
+    story_text: task.story_text || '',
+    display_text: task.display_text || '',
+    evaluation_json: evaluationJson || '{}',
+  });
 };
 
 export const sortPromptConditions = (conditions: ExperimentCondition[]) => {

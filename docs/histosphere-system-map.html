@@ -1316,7 +1316,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Session 與中斷恢復</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1332,16 +1332,24 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Admin 選配計時器；worker 與 runtime boundary 強制到期</span>
+          <span class="function-name">Chat 就緒自動啟動固定 05:00；重新整理沿用原截止時間</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Learner 主動完成、Admin 強制完成、重新開啟與 Debrief 狀態機</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">倒數歸零顯示「本階段已結束」；確認後進入下一階段</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">同事件同條件的 session 冪等語意<span class="function-note text-small">目前實作會接續既有 active session，完成後也會阻止 Learner 重做；待本節點討論後正式改標完成</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">只有 Admin 可重置固定倒數；Learner 不提供手動完成</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">同事件同條件的 session 冪等語意</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">Admin 強制完成、重新開啟原 Session 與 Debrief<span class="function-note text-small">目前五分鐘實驗流程不需要；如需重做，由 Admin 封存舊 Session 後建立新 Session</span></span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
       </div>
     </details>
@@ -1352,7 +1360,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Task 研究者編輯器</span>
         </span>
-        <span class="status text-small" data-status="done"><span class="dot"></span>主要完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1371,9 +1379,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">Undo / Redo 與前後端 token/question validation</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">結構化單題 CRUD API、排序操作歷程與 publish/readiness</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">解析／研究者備註欄位與完整資料保存</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">未儲存提示、離頁保護、儲存狀態與切換題目資料安全</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">題目資料轉換、Undo / Redo 與 dirty state 單元測試</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">逐題 CRUD API、持久化操作歷程與完整 publish/readiness<span class="function-note text-small">目前整包 Task 儲存、validation 與本機 Undo / Redo 已足夠；複雜發布平台暫不實作</span></span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
       </div>
     </details>
@@ -1855,17 +1875,25 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "階段切換前要求受測者明確確認；需要等待 LLM 時顯示中轉畫面，避免被誤認為當機。",
         "Task 送出前顯示「點選是進入下一階段」，送出後顯示「正在回到明治維新的時代」。"
       ]],
-      ["Admin 選配計時器；worker 與 runtime boundary 強制到期", [
-        "計時器預設不啟用，Admin 可為指定 Session 開啟；到期時背景工作與 API 都會把 Session 標為完成。",
-        "Admin 為 P001 啟動 20 分鐘計時，時間到後即使頁面仍開著，也不能繼續該次實驗。"
+      ["Chat 就緒自動啟動固定 05:00；重新整理沿用原截止時間", [
+        "開場訊息與聊天資料完成保存後，系統自動開始五分鐘倒數；重整或重新登入都沿用原本截止時間，不會重新獲得五分鐘。",
+        "P001 剩下 02:14 時關閉頁面，重新登入後會從實際剩餘時間繼續，而不是回到 05:00。"
       ]],
-      ["Learner 主動完成、Admin 強制完成、重新開啟與 Debrief 狀態機", [
-        "尚缺 Learner 主動結束、Admin 直接強制結束與正式 Debrief。現有 restart 是封存舊 Session 後另建新 Session，不是重新開啟原資料。",
-        "受測者提早完成對話時，目前沒有正式的「完成實驗」按鈕；研究者也不能直接把該 Session 標成 admin-completed。"
+      ["倒數歸零顯示「本階段已結束」；確認後進入下一階段", [
+        "時間到後停止輸入並顯示清楚的結束狀態，受測者按下按鈕才離開目前畫面。",
+        "倒數到 00:00 後畫面顯示「本階段已結束」，受測者點「進入下一階段」返回後續流程。"
+      ]],
+      ["只有 Admin 可重置固定倒數；Learner 不提供手動完成", [
+        "本研究採固定五分鐘，不讓受測者自行提早結束或重設時間；只有 Admin 能在後台把已到期的 Session 重置為新的五分鐘。",
+        "受測者誤關頁面不會重設倒數；若設備異常造成測試作廢，Admin 才能點「重置 05:00」。"
       ]],
       ["同事件同條件的 session 冪等語意", [
-        "同一受測者重複初始化同一事件時應接續既有 Session，不重複建立；目前程式已做到，但心智圖的部分完成註記仍待後續確認更新。",
+        "同一受測者重複初始化同一事件時會接續既有 Session，不重複建立，也不改變已固定的 Condition。",
         "P001 先以 01 開始，再誤送 03 初始化請求，後端仍回傳原 Session 與原本的 01。"
+      ]],
+      ["Admin 強制完成、重新開啟原 Session 與 Debrief", [
+        "目前五分鐘倒數已負責正式結束，因此不額外建立受測者手動完成或重新開啟原 Session 的複雜狀態。",
+        "若 P001 需要重做，Admin 會封存舊 Session 並建立新 Session；正式 Debrief 待研究流程確定後再加入。"
       ]],
       ["故事優先的可編輯文本與 inline 題目 badge", [
         "研究者直接編輯完整故事，題目在文中顯示為 badge，不必手動操作原始 token 字串。",
@@ -1883,9 +1911,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "編輯器支援上一步與下一步，前後端也會檢查題目 ID、token、選項與答案是否一致。",
         "誤刪 Q03 可立即 Undo；若 JSON 有重複 blank ID，儲存時會被檢查出來。"
       ]],
-      ["結構化單題 CRUD API、排序操作歷程與 publish/readiness", [
-        "目前以整包 Task payload 儲存，沒有每題獨立 API、持久化排序歷程或正式發布鎖定；單題 CRUD 並非目前必要功能。",
-        "修改 Q02 會連同完整故事及 questions[] 一起儲存，不能單獨呼叫 PATCH /questions/q02。"
+      ["解析／研究者備註欄位與完整資料保存", [
+        "每題可保存只給研究者看的解析與備註，切換題目或儲存後仍會保留，不會顯示給受測者。",
+        "Q02 可記錄「此題檢查代表權衝突」，供研究者日後理解出題目的。"
+      ]],
+      ["未儲存提示、離頁保護、儲存狀態與切換題目資料安全", [
+        "編輯器會標示尚未儲存的變更；離開 Admin、切換頁面或關閉分頁前會提醒，切換不同題目也不會殘留上一題的選填欄位。",
+        "研究者修改 Q01 後誤按退出 Admin，系統會先詢問是否放棄尚未儲存的內容。"
+      ]],
+      ["題目資料轉換、Undo / Redo 與 dirty state 單元測試", [
+        "自動測試會檢查插入、刪除、備註保存、Undo / Redo 分支與未儲存狀態，避免編輯器更新後破壞既有 Task。",
+        "Undo 後重新輸入會清除舊的 Redo 分支；超過歷程上限時只保留最近 80 個版本。"
+      ]],
+      ["逐題 CRUD API、持久化操作歷程與完整 publish/readiness", [
+        "目前以整包 Task 儲存，搭配 validation 與本機 Undo / Redo 已足夠；每題獨立 API、跨日操作歷程與發布平台暫不建立。",
+        "修改 Q02 會連同完整故事及 questions[] 一起儲存，不另外建立 PATCH /questions/q02。"
       ]],
       ["Inline 填空、選擇、是非與 legacy short-answer fallback", [
         "學生可直接在故事中完成三種主要題型；尚未轉換的舊格式 Task 仍能退回簡答欄。",

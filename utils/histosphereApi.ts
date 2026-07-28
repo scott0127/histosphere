@@ -426,27 +426,15 @@ export const restoreAdminParticipant = (
   });
 };
 
-export const startAdminSessionTimer = (
+export const resetAdminSessionTimer = (
   adminKey: string,
   sessionId: string,
-  durationMinutes: number,
   fetcher: FrontendFetcher = $fetch,
 ) => {
   return fetcher<ExperimentSession>(`/api/admin/sessions/${sessionId}/timer`, {
     method: 'POST',
     headers: adminHeaders(adminKey),
-    body: { duration_minutes: durationMinutes },
-  });
-};
-
-export const cancelAdminSessionTimer = (
-  adminKey: string,
-  sessionId: string,
-  fetcher: FrontendFetcher = $fetch,
-) => {
-  return fetcher<ExperimentSession>(`/api/admin/sessions/${sessionId}/timer`, {
-    method: 'DELETE',
-    headers: adminHeaders(adminKey),
+    body: { duration_minutes: 5 },
   });
 };
 

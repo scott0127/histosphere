@@ -35,7 +35,7 @@ from app.schemas.requests import (
     ParticipantCreateRequest,
     ParticipantUpdateRequest,
     PersonaUpdateRequest,
-    SessionTimerStartRequest,
+    SessionTimerResetRequest,
 )
 from app.schemas.responses import (
     AdminAuthUserSummary,
@@ -638,22 +638,13 @@ def update_participant(
 
 
 @router.post("/sessions/{session_id}/timer", response_model=ExperimentSession)
-def start_session_timer(
+def reset_session_timer(
     session_id: str,
-    request: SessionTimerStartRequest,
+    request: SessionTimerResetRequest,
     service: SessionService = Depends(get_session_service),
 ) -> ExperimentSession:
-    """Opt in one active experiment session to automatic timed completion."""
-    return service.start_timer(session_id, request.duration_minutes)
-
-
-@router.delete("/sessions/{session_id}/timer", response_model=ExperimentSession)
-def cancel_session_timer(
-    session_id: str,
-    service: SessionService = Depends(get_session_service),
-) -> ExperimentSession:
-    """Disable a previously enabled timer without closing the session."""
-    return service.cancel_timer(session_id)
+    """Reset a Chat-ready session to the fixed five-minute countdown."""
+    return service.reset_timer(session_id)
 
 
 @router.post("/sessions/{session_id}/restart", response_model=SessionRestartResponse)

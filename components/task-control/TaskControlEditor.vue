@@ -22,8 +22,18 @@
         <Icon name="mdi:redo-variant" class="h-4 w-4" />
         下一步
       </button>
-      <button class="admin-button-primary px-3 py-2 text-xs font-bold" @click="$emit('save')">
-        儲存任務
+      <button
+        class="admin-button-primary inline-flex min-w-28 items-center justify-center gap-2 px-3 py-2 text-xs font-bold"
+        :disabled="saving || !dirty || validationIssues.length > 0"
+        :title="validationIssues.length ? '請先修正下方檢查問題' : undefined"
+        @click="$emit('save')"
+      >
+        <Icon
+          :name="saving ? 'mdi:loading' : dirty ? 'mdi:content-save-outline' : 'mdi:check'"
+          class="h-4 w-4"
+          :class="{ 'animate-spin': saving }"
+        />
+        {{ saving ? '儲存中' : dirty ? '儲存任務' : '已儲存' }}
       </button>
     </template>
 
@@ -185,6 +195,7 @@ import TaskControlShell from '~/components/task-control/TaskControlShell.vue';
 import TaskControlValidation from '~/components/task-control/TaskControlValidation.vue';
 import TaskStoryComposer from '~/components/task-control/TaskStoryComposer.vue';
 import {
+  appendTaskHistoryEntry,
   blankIdsInDisplayText,
   createTaskQuestion,
   insertQuestionToken,
@@ -195,11 +206,14 @@ import {
   taskControlQuestions,
   updateTaskControlQuestion,
   validateTaskControlPayload,
+  type TaskEditorHistoryEntry,
 } from '~/composables/useTaskControl';
 
 const props = defineProps<{
   task: EventTask;
   evaluationJson: string;
+  dirty?: boolean;
+  saving?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -214,13 +228,6 @@ const storySelection = ref({
 });
 const isRestoringHistory = ref(false);
 const historyIndex = ref(-1);
-
-type TaskEditorHistoryEntry = {
-  title: string;
-  displayText: string;
-  storyText: string;
-  evaluationJson: string;
-};
 
 const historyEntries = ref<TaskEditorHistoryEntry[]>([]);
 
@@ -289,6 +296,16 @@ watch(
   },
 );
 
+watch(
+  () => props.task.id,
+  () => {
+    selectedQuestionId.value = null;
+    historyEntries.value = [];
+    historyIndex.value = -1;
+    pushHistoryEntry();
+  },
+);
+
 const questionTypeLabel = (type: TaskQuestion['type']) => questionTypeLabels[type] || type;
 
 function createHistoryEntry(): TaskEditorHistoryEntry {
@@ -300,28 +317,15 @@ function createHistoryEntry(): TaskEditorHistoryEntry {
   };
 }
 
-function sameHistoryEntry(a: TaskEditorHistoryEntry | undefined, b: TaskEditorHistoryEntry) {
-  return !!a
-    && a.title === b.title
-    && a.displayText === b.displayText
-    && a.storyText === b.storyText
-    && a.evaluationJson === b.evaluationJson;
-}
-
 function pushHistoryEntry() {
   if (isRestoringHistory.value) return;
-  const nextEntry = createHistoryEntry();
-  if (sameHistoryEntry(historyEntries.value[historyIndex.value], nextEntry)) return;
-
-  const nextHistory = historyEntries.value.slice(0, historyIndex.value + 1);
-  nextHistory.push(nextEntry);
-
-  if (nextHistory.length > 80) {
-    nextHistory.shift();
-  }
-
-  historyEntries.value = nextHistory;
-  historyIndex.value = nextHistory.length - 1;
+  const result = appendTaskHistoryEntry(
+    historyEntries.value,
+    historyIndex.value,
+    createHistoryEntry(),
+  );
+  historyEntries.value = result.entries;
+  historyIndex.value = result.index;
 }
 
 const restoreHistoryEntry = async (entry: TaskEditorHistoryEntry) => {

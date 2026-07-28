@@ -55,3 +55,18 @@ test('admin workspace state formats event year ranges without custom ids', () =>
   assert.equal(state.eventYearRange({ ...sampleEvent, start_year: null, end_year: null, century: 19 }), '19 世紀');
   assert.equal(state.eventYearRange({ ...sampleEvent, start_year: null, end_year: null, century: null }), '未設定');
 });
+
+test('task authoring signature changes only when editable task content changes', () => {
+  const evaluationJson = JSON.stringify(sampleTask.evaluation_payload, null, 2);
+  const baseline = state.taskAuthoringSignature(sampleTask, evaluationJson);
+
+  assert.equal(state.taskAuthoringSignature({ ...sampleTask }, evaluationJson), baseline);
+  assert.notEqual(
+    state.taskAuthoringSignature({ ...sampleTask, display_text: `${sampleTask.display_text}新增` }, evaluationJson),
+    baseline,
+  );
+  assert.notEqual(
+    state.taskAuthoringSignature(sampleTask, evaluationJson.replace('"questions"', '"questions_updated"')),
+    baseline,
+  );
+});

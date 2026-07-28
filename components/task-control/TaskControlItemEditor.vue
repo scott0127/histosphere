@@ -61,12 +61,23 @@
       <span class="admin-label">選項，每行一個</span>
       <textarea v-model="optionsText" rows="4" class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6" @blur="commit" />
     </label>
+
+    <label class="mt-3 block">
+      <span class="admin-label">解析／研究者備註</span>
+      <textarea
+        v-model="draft.explanation"
+        rows="3"
+        class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6"
+        placeholder="記錄本題的判斷依據或後續討論重點"
+        @blur="commit"
+      />
+    </label>
   </article>
 </template>
 
 <script setup lang="ts">
 // TaskControlItemEditor 維護單題草稿；更新時 emit 完整 TaskQuestion 給父層寫回 JSON。
-import { reactive, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import type { TaskQuestion } from '~/types';
 import { optionsFromText } from '~/composables/useTaskControl';
 
@@ -84,14 +95,15 @@ const answerToText = (value: unknown) => {
   return String(value ?? '');
 };
 
-const draft = reactive<TaskQuestion>({ ...props.question });
+const draft = ref<TaskQuestion>({ ...props.question });
 const correctAnswerText = ref(answerToText(props.question.correct_answer));
 const optionsText = ref((props.question.options || []).map((option) => option.label).join('\n'));
 
 watch(
   () => props.question,
   (question) => {
-    Object.assign(draft, question);
+    // 直接替換整筆草稿，避免切題時把上一題的選填欄位帶到下一題。
+    draft.value = { ...question };
     correctAnswerText.value = answerToText(question.correct_answer);
     optionsText.value = (question.options || []).map((option) => option.label).join('\n');
   },
@@ -99,7 +111,7 @@ watch(
 );
 
 const answerFromText = () => {
-  if (draft.type === 'true_false') {
+  if (draft.value.type === 'true_false') {
     if (correctAnswerText.value === 'true') return true;
     if (correctAnswerText.value === 'false') return false;
     return null;
@@ -108,10 +120,10 @@ const answerFromText = () => {
 };
 
 const changeType = () => {
-  if (draft.type === 'true_false' && !['true', 'false'].includes(correctAnswerText.value)) {
+  if (draft.value.type === 'true_false' && !['true', 'false'].includes(correctAnswerText.value)) {
     correctAnswerText.value = 'true';
   }
-  if (draft.type === 'multiple_choice' && !optionsText.value.trim()) {
+  if (draft.value.type === 'multiple_choice' && !optionsText.value.trim()) {
     optionsText.value = '選項 A\n選項 B';
     correctAnswerText.value = '選項 A';
   }
@@ -121,10 +133,10 @@ const changeType = () => {
 // 將草稿轉回正式題目物件。
 const commit = () => {
   emit('update', {
-    ...draft,
-    blank_id: draft.blank_id || draft.id,
+    ...draft.value,
+    blank_id: draft.value.blank_id || draft.value.id,
     correct_answer: answerFromText(),
-    options: draft.type === 'multiple_choice' ? optionsFromText(optionsText.value) : [],
+    options: draft.value.type === 'multiple_choice' ? optionsFromText(optionsText.value) : [],
   });
 };
 </script>

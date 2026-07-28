@@ -380,38 +380,24 @@ test('admin test mode uses the tab-scoped admin key instead of a learner JWT', a
   adminSession.clearAdminSession();
 });
 
-test('frontend api client starts and cancels optional session timers', async () => {
+test('frontend api client resets the fixed five-minute session timer', async () => {
   const runningSession = {
     id: 'session-1',
     timer_started_at: '2026-07-11T00:00:00Z',
-    timer_ends_at: '2026-07-11T00:30:00Z',
-  };
-  const untimedSession = {
-    ...runningSession,
-    timer_started_at: null,
-    timer_ends_at: null,
+    timer_ends_at: '2026-07-11T00:05:00Z',
   };
   const { calls, fetcher } = createFetchRecorder({
     'POST /api/admin/sessions/session-1/timer': runningSession,
-    'DELETE /api/admin/sessions/session-1/timer': untimedSession,
   });
 
-  assert.deepEqual(await api.startAdminSessionTimer('test-admin', 'session-1', 30, fetcher), runningSession);
-  assert.deepEqual(await api.cancelAdminSessionTimer('test-admin', 'session-1', fetcher), untimedSession);
+  assert.deepEqual(await api.resetAdminSessionTimer('test-admin', 'session-1', fetcher), runningSession);
   assert.deepEqual(calls, [
     {
       url: '/api/admin/sessions/session-1/timer',
       options: {
         method: 'POST',
         headers: { 'x-admin-key': 'test-admin' },
-        body: { duration_minutes: 30 },
-      },
-    },
-    {
-      url: '/api/admin/sessions/session-1/timer',
-      options: {
-        method: 'DELETE',
-        headers: { 'x-admin-key': 'test-admin' },
+        body: { duration_minutes: 5 },
       },
     },
   ]);

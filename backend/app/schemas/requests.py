@@ -275,10 +275,10 @@ class ParticipantUpdateRequest(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-class SessionTimerStartRequest(BaseModel):
-    """Admin-only opt-in timer configuration for one experiment session."""
+class SessionTimerResetRequest(BaseModel):
+    """Admin-only reset of the fixed experiment countdown."""
 
-    duration_minutes: int = Field(default=30, ge=1, le=240)
+    duration_minutes: Literal[5] = 5
 
 
 class AdminPromptDryRunRequest(BaseModel):

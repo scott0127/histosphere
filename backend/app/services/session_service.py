@@ -17,7 +17,7 @@ from app.schemas.responses import (
     UserProgressItem,
     UserProgressResponse,
 )
-from app.services.session_runtime import expire_session_if_due
+from app.services.session_runtime import EXPERIMENT_CHAT_DURATION_MINUTES, expire_session_if_due
 
 
 class SessionService:
@@ -58,7 +58,8 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
 
         progress: list[UserProgressItem] = []
-        for session in self.repository.list_sessions_for_user(user_id.strip()):
+        for stored_session in self.repository.list_sessions_for_user(user_id.strip()):
+            session = expire_session_if_due(self.repository, stored_session)
             task = self.repository.get_latest_event_task(session.event_id)
             attempt = self.repository.get_task_attempt_for_session(session.id, task.id if task else None)
             conversation = self.repository.get_conversation_by_session(session.id)
@@ -80,16 +81,27 @@ class SessionService:
             )
         return UserProgressResponse(progress=progress)
 
-    def start_timer(self, session_id: str, duration_minutes: int) -> ExperimentSession:
-        """Enable a timer for one session; timers are disabled until this is called."""
+    def reset_timer(self, session_id: str) -> ExperimentSession:
+        """由 Admin 將可對話的 session 明確重置為新的五分鐘倒數。"""
         session = self.repository.get_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
-        if session.status in {"completed", "archived"}:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
+        if session.status == "archived":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archived session cannot be resumed")
+        if session.status == "completed" and session.completion_reason != "timer_elapsed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only a timer-completed session can reset its countdown",
+            )
+        if not self.repository.get_conversation_by_session(session.id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The countdown starts after the Chat stage is ready",
+            )
         now = utc_now()
+        session.status = "conversation_started"
         session.timer_started_at = now
-        session.timer_ends_at = now + timedelta(minutes=duration_minutes)
+        session.timer_ends_at = now + timedelta(minutes=EXPERIMENT_CHAT_DURATION_MINUTES)
         session.completed_at = None
         session.completion_reason = None
         saved = self.repository.save_session(session)
@@ -98,27 +110,12 @@ class SessionService:
                 user_id=saved.user_id,
                 session_id=saved.id,
                 event_id=saved.event_id,
-                action_type="session_timer_started",
-                payload={"duration_minutes": duration_minutes, "timer_ends_at": saved.timer_ends_at.isoformat()},
-            )
-        )
-        return saved
-
-    def cancel_timer(self, session_id: str) -> ExperimentSession:
-        """Disable a running timer without changing experiment progress."""
-        session = self.repository.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
-        session.timer_started_at = None
-        session.timer_ends_at = None
-        saved = self.repository.save_session(session)
-        self.repository.log_research(
-            ResearchLog(
-                user_id=saved.user_id,
-                session_id=saved.id,
-                event_id=saved.event_id,
-                action_type="session_timer_cancelled",
-                payload={},
+                action_type="session_timer_reset",
+                payload={
+                    "duration_minutes": EXPERIMENT_CHAT_DURATION_MINUTES,
+                    "timer_ends_at": saved.timer_ends_at.isoformat(),
+                    "trigger": "admin",
+                },
             )
         )
         return saved
@@ -192,7 +189,7 @@ class SessionService:
         )
 
     def expire_due_sessions(self) -> int:
-        """Complete all due opt-in timers; used by the background worker."""
+        """Complete all due five-minute timers; used by the background worker."""
         completed = 0
         for session in self.repository.list_sessions():
             previous_status = session.status

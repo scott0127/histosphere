@@ -13,7 +13,9 @@
     :session="session"
     :is-replying="isSending"
     :reply-status="streamStatus"
+    @next-stage="handleNextStage"
     @reset="handleReset"
+    @session-expired="handleSessionExpired"
     @send-message="sendMessage"
   />
   <div v-else class="flex h-screen items-center justify-center bg-[var(--admin-page)] font-sans text-[var(--admin-copy)]">
@@ -60,6 +62,20 @@ onMounted(async () => {
 });
 
 const handleReset = async () => {
+  resetConversationState();
+  await navigateTo('/');
+};
+
+const handleSessionExpired = async () => {
+  try {
+    await loadConversation();
+  } catch (e) {
+    console.error('Failed to refresh the expired session:', e);
+  }
+};
+
+const handleNextStage = async () => {
+  await handleSessionExpired();
   resetConversationState();
   await navigateTo('/');
 };

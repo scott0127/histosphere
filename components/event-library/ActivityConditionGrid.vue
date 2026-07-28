@@ -145,7 +145,8 @@ const progressLabel = (conditionKey: ConditionKey) => {
   const progress = progressFor(conditionKey);
   if (!progress) return '未開始';
   if (progress.status === 'archived') return '已封存';
-  if (progress.status === 'completed' || progress.status === 'chat_started') return '已完成';
+  if (progress.status === 'completed') return '已完成';
+  if (progress.status === 'chat_started') return '進行中';
   if (progress.status === 'task_submitted') return '已送出';
   if (progress.status === 'task_draft') return '草稿';
   return '進行中';
@@ -156,7 +157,8 @@ const progressBadgeClass = (conditionKey: ConditionKey) => {
   const progress = progressFor(conditionKey);
   const base = 'shrink-0 rounded-full px-3 py-1 text-xs font-black';
   if (!progress) return `${base} bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]`;
-  if (progress.status === 'completed' || progress.status === 'chat_started') return `${base} bg-[#dcebd6] text-[#3f6d4a]`;
+  if (progress.status === 'completed') return `${base} bg-[#dcebd6] text-[#3f6d4a]`;
+  if (progress.status === 'chat_started') return `${base} bg-[#eadfcf] text-[var(--admin-coffee)]`;
   if (progress.status === 'task_submitted') return `${base} bg-[#e4dfd6] text-[var(--admin-coffee)]`;
   if (progress.status === 'task_draft') return `${base} bg-[var(--admin-coffee-soft)] text-[var(--admin-copy)]`;
   if (progress.status === 'archived') return `${base} bg-[var(--admin-surface-sunken)] text-[var(--admin-muted)]`;

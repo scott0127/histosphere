@@ -19,6 +19,7 @@ import {
   conditionOrdinal,
   eventYearRange,
   sortPromptConditions,
+  taskAuthoringSignature,
 } from '~/utils/adminWorkspaceState';
 import {
   clearAdminSessionKey,
@@ -28,7 +29,6 @@ import {
 import {
   archiveAdminEvent,
   archiveAdminParticipant,
-  cancelAdminSessionTimer,
   createAdminParticipant,
   fetchAdminAuthUsers,
   fetchAdminSnapshot,
@@ -37,7 +37,7 @@ import {
   restoreAdminParticipant,
   restartAdminSession,
   runAdminPromptDryRun,
-  startAdminSessionTimer,
+  resetAdminSessionTimer,
   updateAdminCondition,
   updateAdminEvent,
   updateAdminParticipant,
@@ -54,12 +54,14 @@ export const useAdminWorkspace = () => {
   const error = ref<string | null>(null);
   const authUsersError = ref<string | null>(null);
   const taskJson = ref<Record<string, string>>({});
+  const taskBaselines = ref<Record<string, string>>({});
   const personaJson = ref<Record<string, string>>({});
   const selectedConditionId = ref<string | null>(null);
   const selectedEventId = ref<string | null>(null);
   const creatingParticipant = ref(false);
   const changingParticipantStatusId = ref<string | null>(null);
   const savingParticipantId = ref<string | null>(null);
+  const savingTaskId = ref<string | null>(null);
   const updatingTimerSessionId = ref<string | null>(null);
   const restartingSessionId = ref<string | null>(null);
   const promptPreview = ref<AdminPromptPreviewResponse | null>(null);
@@ -81,6 +83,16 @@ export const useAdminWorkspace = () => {
     return conditions.find((condition) => condition.id === selectedConditionId.value) || conditions[0] || null;
   });
 
+  const isTaskDirty = (task?: EventTask | null) => {
+    if (!task) return false;
+    const evaluationJson = taskJson.value[task.id] || '{}';
+    return taskAuthoringSignature(task, evaluationJson) !== taskBaselines.value[task.id];
+  };
+
+  const hasUnsavedTaskChanges = computed(() => {
+    return Boolean(snapshot.value?.events.some((event) => isTaskDirty(event.latest_task)));
+  });
+
   watch([selectedEventId, selectedConditionId, promptPreviewMessage], () => {
     promptPreview.value = null;
     promptDryRun.value = null;
@@ -93,6 +105,7 @@ export const useAdminWorkspace = () => {
     error.value = null;
     authUsersError.value = null;
     taskJson.value = {};
+    taskBaselines.value = {};
     personaJson.value = {};
     promptPreview.value = null;
     promptDryRun.value = null;
@@ -119,14 +132,57 @@ export const useAdminWorkspace = () => {
     }
   };
 
-  const loadSnapshot = async () => {
+  type TaskDraftSnapshot = {
+    title: string | null | undefined;
+    storyText: string;
+    displayText: string;
+    evaluationJson: string;
+  };
+
+  const captureUnsavedTaskDrafts = (exceptTaskId?: string) => {
+    const drafts: Record<string, TaskDraftSnapshot> = {};
+    for (const event of snapshot.value?.events || []) {
+      const task = event.latest_task;
+      if (!task || task.id === exceptTaskId || !isTaskDirty(task)) continue;
+      drafts[task.id] = {
+        title: task.title,
+        storyText: task.story_text,
+        displayText: task.display_text,
+        evaluationJson: taskJson.value[task.id] || '{}',
+      };
+    }
+    return drafts;
+  };
+
+  const loadSnapshot = async (options: {
+    preserveUnsavedTaskDrafts?: boolean;
+    exceptTaskId?: string;
+  } = {}) => {
     error.value = null;
+    const drafts = options.preserveUnsavedTaskDrafts
+      ? captureUnsavedTaskDrafts(options.exceptTaskId)
+      : {};
     try {
       const data = await fetchAdminSnapshot(adminKey.value);
       setAdminSessionKey(adminKey.value);
       const editable = buildAdminEditableJson(data);
+      const nextBaselines: Record<string, string> = {};
+
+      for (const event of data.events) {
+        const task = event.latest_task;
+        if (!task) continue;
+        const serverEvaluationJson = editable.taskJson[task.id] || '{}';
+        nextBaselines[task.id] = taskAuthoringSignature(task, serverEvaluationJson);
+        const draft = drafts[task.id];
+        if (!draft) continue;
+        task.title = draft.title;
+        task.story_text = draft.storyText;
+        task.display_text = draft.displayText;
+        editable.taskJson[task.id] = draft.evaluationJson;
+      }
 
       taskJson.value = editable.taskJson;
+      taskBaselines.value = nextBaselines;
       personaJson.value = editable.personaJson;
       snapshot.value = data;
 
@@ -162,7 +218,7 @@ export const useAdminWorkspace = () => {
         description: condition.description,
         active: condition.active,
       });
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, 'Condition 儲存失敗。');
     }
@@ -176,6 +232,8 @@ export const useAdminWorkspace = () => {
       error.value = `Task ${task.id} 的 evaluation_payload 不是合法 JSON。`;
       return;
     }
+    savingTaskId.value = task.id;
+    error.value = null;
     try {
       await updateAdminTask(adminKey.value, task.id, {
         title: task.title,
@@ -184,9 +242,14 @@ export const useAdminWorkspace = () => {
         evaluation_payload: evaluationPayload,
         revision_state: 'teacher_modified',
       });
-      await loadSnapshot();
+      await loadSnapshot({
+        preserveUnsavedTaskDrafts: true,
+        exceptTaskId: task.id,
+      });
     } catch (e: any) {
       error.value = formatAdminApiError(e, 'Task 儲存失敗。');
+    } finally {
+      savingTaskId.value = null;
     }
   };
 
@@ -201,7 +264,7 @@ export const useAdminWorkspace = () => {
         context: event.context,
         source_summary: event.source_summary || {},
       });
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, '事件資料儲存失敗。');
     }
@@ -214,7 +277,7 @@ export const useAdminWorkspace = () => {
       } else {
         await restoreAdminEvent(adminKey.value, event.id);
       }
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, archived ? '事件封存失敗。' : '事件恢復失敗。');
     }
@@ -237,7 +300,7 @@ export const useAdminWorkspace = () => {
         active: persona.active,
         revision_state: 'teacher_modified',
       });
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, '人物資料儲存失敗。');
     }
@@ -248,7 +311,7 @@ export const useAdminWorkspace = () => {
     error.value = null;
     try {
       await updateAdminParticipant(adminKey.value, participantId, body);
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, '受測者資料儲存失敗。');
     } finally {
@@ -261,7 +324,7 @@ export const useAdminWorkspace = () => {
     error.value = null;
     try {
       await createAdminParticipant(adminKey.value, body);
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, '受測者建立失敗。');
     } finally {
@@ -278,7 +341,7 @@ export const useAdminWorkspace = () => {
       } else {
         await restoreAdminParticipant(adminKey.value, participant.id);
       }
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, archived ? '受測者封存失敗。' : '受測者恢復失敗。');
     } finally {
@@ -286,25 +349,13 @@ export const useAdminWorkspace = () => {
     }
   };
 
-  const startSessionTimer = async (sessionId: string, durationMinutes: number) => {
+  const resetSessionTimer = async (sessionId: string) => {
     updatingTimerSessionId.value = sessionId;
     try {
-      await startAdminSessionTimer(adminKey.value, sessionId, durationMinutes);
-      await loadSnapshot();
+      await resetAdminSessionTimer(adminKey.value, sessionId);
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
-      error.value = formatAdminApiError(e, 'Session 計時器啟動失敗。');
-    } finally {
-      updatingTimerSessionId.value = null;
-    }
-  };
-
-  const cancelSessionTimer = async (sessionId: string) => {
-    updatingTimerSessionId.value = sessionId;
-    try {
-      await cancelAdminSessionTimer(adminKey.value, sessionId);
-      await loadSnapshot();
-    } catch (e: any) {
-      error.value = formatAdminApiError(e, 'Session 計時器停止失敗。');
+      error.value = formatAdminApiError(e, 'Session 倒數重置失敗。');
     } finally {
       updatingTimerSessionId.value = null;
     }
@@ -315,7 +366,7 @@ export const useAdminWorkspace = () => {
     error.value = null;
     try {
       await restartAdminSession(adminKey.value, sessionId);
-      await loadSnapshot();
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, 'Session 無法重新建立。');
     } finally {
@@ -369,7 +420,6 @@ export const useAdminWorkspace = () => {
     adminKey,
     authUsers,
     authUsersError,
-    cancelSessionTimer,
     changingParticipantStatusId,
     conditionModeLabel,
     conditionOrdinal,
@@ -377,6 +427,8 @@ export const useAdminWorkspace = () => {
     creatingParticipant,
     error,
     eventYearRange,
+    hasUnsavedTaskChanges,
+    isTaskDirty,
     loadSnapshot,
     loadAuthUsers,
     loadPromptPreview,
@@ -399,7 +451,8 @@ export const useAdminWorkspace = () => {
     saveParticipant,
     setParticipantArchived,
     saveTask,
-    startSessionTimer,
+    savingTaskId,
+    resetSessionTimer,
     updatingTimerSessionId,
     savingParticipantId,
     selectedCondition,

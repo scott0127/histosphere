@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+from datetime import timedelta
 
 from fastapi import HTTPException, status
 
@@ -21,7 +22,7 @@ from app.services.conversation_opening_service import (
     ConversationOpeningService,
     OpeningValidationError,
 )
-from app.services.session_runtime import expire_session_if_due
+from app.services.session_runtime import EXPERIMENT_CHAT_DURATION_MINUTES, expire_session_if_due
 from app.services.task_judgement import enrich_task_judgement
 
 
@@ -167,7 +168,29 @@ class TaskService:
             attempt.submitted_at = utc_now()
             attempt = self.repository.save_task_attempt(attempt)
             session.status = "conversation_started"
-            self.repository.save_session(session)
+            timer_started = session.timer_ends_at is None
+            if timer_started:
+                # 五分鐘從 Chat 真正可互動時開始，避免 LLM 開場等待占用實驗時間。
+                timer_started_at = utc_now()
+                session.timer_started_at = timer_started_at
+                session.timer_ends_at = timer_started_at + timedelta(
+                    minutes=EXPERIMENT_CHAT_DURATION_MINUTES,
+                )
+            session = self.repository.save_session(session)
+            if timer_started:
+                self.repository.log_research(
+                    ResearchLog(
+                        user_id=session.user_id,
+                        session_id=session.id,
+                        event_id=session.event_id,
+                        action_type="session_timer_started",
+                        payload={
+                            "duration_minutes": EXPERIMENT_CHAT_DURATION_MINUTES,
+                            "timer_ends_at": session.timer_ends_at.isoformat(),
+                            "trigger": "conversation_ready",
+                        },
+                    )
+                )
             self.repository.log_research(
                 ResearchLog(
                     user_id=attempt.user_id,

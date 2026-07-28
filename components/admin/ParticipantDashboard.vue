@@ -119,43 +119,6 @@
             <p class="admin-caption mt-2 text-right text-xs font-bold">
               {{ row.updatedAt ? `最後活動 ${formatDate(row.updatedAt)}` : '尚無活動紀錄' }}
             </p>
-            <div
-              v-if="row.latestActiveSession"
-              class="mt-3 flex min-h-10 items-center justify-end gap-2 border-t border-[var(--admin-border-soft)] pt-3"
-            >
-              <template v-if="row.latestActiveSession.timer_ends_at">
-                <span class="admin-caption text-xs font-bold">
-                  計時至 {{ formatDate(row.latestActiveSession.timer_ends_at) }}
-                </span>
-                <button
-                  type="button"
-                  class="admin-button-secondary min-h-9 px-3 text-xs font-bold"
-                  :disabled="updatingTimerSessionId === row.latestActiveSession.id"
-                  @click="$emit('cancel-timer', row.latestActiveSession.id)"
-                >
-                  停止計時
-                </button>
-              </template>
-              <template v-else>
-                <input
-                  :value="timerMinutes[row.participant.id] || 30"
-                  type="number"
-                  min="1"
-                  max="240"
-                  class="admin-field h-9 w-20 px-2 text-center text-xs font-bold"
-                  title="計時分鐘數"
-                  @input="setTimerMinutes(row.participant.id, $event)"
-                />
-                <button
-                  type="button"
-                  class="admin-button-primary min-h-9 px-3 text-xs font-bold"
-                  :disabled="updatingTimerSessionId === row.latestActiveSession.id"
-                  @click="$emit('start-timer', row.latestActiveSession.id, timerMinutes[row.participant.id] || 30)"
-                >
-                  啟動計時
-                </button>
-              </template>
-            </div>
           </div>
         </div>
 
@@ -171,13 +134,29 @@
             <div
               v-for="item in row.currentSessions"
               :key="item.session.id"
-              class="grid min-h-12 gap-2 py-2 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_100px_130px] lg:items-center"
+              class="grid min-h-12 gap-2 py-2 lg:grid-cols-[minmax(180px,1fr)_minmax(190px,1fr)_minmax(150px,0.8fr)_116px_130px] lg:items-center"
             >
               <span class="admin-copy text-sm font-black">{{ item.eventName }}</span>
               <span class="admin-caption text-xs font-bold">
                 {{ item.conditionCode }} {{ item.conditionLabel }}
               </span>
-              <span class="admin-caption text-xs font-bold">{{ sessionStatusLabel(item.session.status) }}</span>
+              <span class="admin-caption text-xs font-bold">
+                {{ sessionTimerLabel(item.session) }}
+              </span>
+              <button
+                type="button"
+                class="admin-button-primary inline-flex min-h-9 items-center justify-center gap-2 px-3 text-xs font-bold"
+                :disabled="!canResetTimer(item.session) || updatingTimerSessionId === item.session.id"
+                :title="canResetTimer(item.session) ? '從現在重新開始五分鐘倒數' : '進入 Chat 後才會自動開始倒數'"
+                @click="$emit('reset-timer', item.session.id)"
+              >
+                <Icon
+                  :name="updatingTimerSessionId === item.session.id ? 'mdi:loading' : 'mdi:timer-refresh-outline'"
+                  class="h-4 w-4"
+                  :class="{ 'animate-spin': updatingTimerSessionId === item.session.id }"
+                />
+                重置 05:00
+              </button>
               <button
                 type="button"
                 class="admin-button-secondary inline-flex min-h-9 items-center justify-center gap-2 px-3 text-xs font-bold"
@@ -403,7 +382,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
-import type { AdminAuthUserSummary, Participant } from '~/types';
+import type { AdminAuthUserSummary, ExperimentSession, Participant } from '~/types';
 import type { ParticipantCreateInput, ParticipantUpdateInput } from '~/utils/histosphereApi';
 import {
   conditionDisplayLabel,
@@ -431,8 +410,7 @@ const emit = defineEmits<{
   (event: 'archive', participant: Participant): void;
   (event: 'restore', participant: Participant): void;
   (event: 'save', participantId: string, payload: ParticipantUpdateInput): void;
-  (event: 'start-timer', sessionId: string, durationMinutes: number): void;
-  (event: 'cancel-timer', sessionId: string): void;
+  (event: 'reset-timer', sessionId: string): void;
   (event: 'restart-session', sessionId: string): void;
 }>();
 
@@ -445,7 +423,6 @@ const createConditionCodes = ref<string[]>([]);
 const editingRow = ref<ParticipantDashboardRow | null>(null);
 const draftAuthUserId = ref('');
 const draftConditionCodes = ref<string[]>([]);
-const timerMinutes = ref<Record<string, number>>({});
 const restartTarget = ref<ParticipantSessionSummary | null>(null);
 const archiveTarget = ref<ParticipantDashboardRow | null>(null);
 
@@ -540,9 +517,17 @@ const formatDate = (value: string) => {
   }).format(new Date(value));
 };
 
-const setTimerMinutes = (participantId: string, event: Event) => {
-  const value = Number((event.target as HTMLInputElement).value);
-  timerMinutes.value[participantId] = Math.min(240, Math.max(1, Number.isFinite(value) ? value : 30));
+const canResetTimer = (session: ExperimentSession) => {
+  return session.status === 'conversation_started'
+    || (session.status === 'completed' && session.completion_reason === 'timer_elapsed');
+};
+
+const sessionTimerLabel = (session: ExperimentSession) => {
+  if (session.timer_ends_at) {
+    const prefix = session.status === 'completed' ? '已結束' : '倒數至';
+    return `${prefix} ${formatDate(session.timer_ends_at)}`;
+  }
+  return `${sessionStatusLabel(session.status)} · Chat 後自動倒數`;
 };
 
 const confirmRestart = () => {
