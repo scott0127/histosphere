@@ -1,12 +1,21 @@
 <template>
   <div
     v-if="session?.timer_ends_at"
-    class="flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm font-bold"
-    :class="expired ? 'border-red-300 bg-red-50 text-red-800' : 'border-[var(--admin-border)] bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]'"
+    :class="[
+      'flex min-h-14 flex-wrap items-center justify-between gap-3 border text-sm font-bold',
+      flush ? 'rounded-none border-x-0 border-t-0 px-5 py-4' : 'rounded-lg px-4 py-3',
+      expired
+        ? 'border-red-300 bg-red-50 text-red-800'
+        : 'border-[var(--admin-border)] bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]',
+    ]"
     aria-live="polite"
   >
     <div class="flex min-w-0 items-center gap-3">
-      <Icon :name="expired ? 'mdi:timer-check-outline' : 'mdi:timer-outline'" class="h-5 w-5 shrink-0" />
+      <Icon
+        v-if="!flush"
+        :name="expired ? 'mdi:timer-check-outline' : 'mdi:timer-outline'"
+        class="h-5 w-5 shrink-0"
+      />
       <div>
         <p>{{ expired ? '本階段已結束' : '本階段剩餘時間' }}</p>
         <p v-if="expired" class="mt-0.5 text-xs font-semibold text-red-700">
@@ -31,7 +40,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { ExperimentSession } from '~/types';
 
-const props = defineProps<{ session?: ExperimentSession | null }>();
+const props = withDefaults(defineProps<{
+  session?: ExperimentSession | null;
+  flush?: boolean;
+}>(), {
+  flush: false,
+});
 defineEmits<{ (event: 'next-stage'): void }>();
 const now = ref(Date.now());
 let intervalId: ReturnType<typeof setInterval> | null = null;

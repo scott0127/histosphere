@@ -27,10 +27,10 @@
     </header>
 
     <main class="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <section class="flex min-h-0 flex-col rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-soft)]">
+      <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-soft)]">
         <SessionTimerBanner
           :session="session"
-          class="m-4 mb-0"
+          flush
           @next-stage="$emit('next-stage')"
         />
         <TaskAttemptReview
@@ -38,7 +38,7 @@
           :task="task"
           :attempt="taskAttempt"
         />
-        <div ref="chatContainerRef" class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <div ref="chatContainerRef" class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-6 pt-7">
           <!-- message.speaker_type 是新版 message contract 的核心欄位，用來區分 learner/persona/assistant。 -->
           <div
             v-for="(message, index) in history"
@@ -50,7 +50,7 @@
           >
             <div
               :class="[
-                'max-w-[86%] rounded-lg border px-4 py-3 shadow-sm',
+                'max-w-[88%] rounded-lg border px-5 py-4 shadow-sm',
                 message.speaker_type === 'learner'
                   ? 'border-[var(--admin-coffee)] bg-[var(--admin-coffee)] text-[var(--admin-surface)]'
                   : 'border-[var(--admin-border)] bg-[var(--admin-surface)] text-[var(--admin-text)]'
@@ -58,7 +58,7 @@
             >
               <div
                 v-if="message.speaker_type !== 'learner'"
-                class="mb-2 flex items-center gap-2 border-b border-[var(--admin-border-soft)] pb-2 text-xs font-semibold text-[var(--admin-soft)]"
+                class="mb-3 flex items-center gap-2 border-b border-[var(--admin-border-soft)] pb-3 text-xs font-semibold text-[var(--admin-soft)]"
               >
                 <Icon :name="message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline'" class="h-4 w-4" />
                 {{ message.speaker_name }}
@@ -101,7 +101,7 @@
           <div ref="chatEndRef" />
         </div>
 
-        <footer class="shrink-0 border-t border-[var(--admin-border-soft)] p-4">
+        <footer class="shrink-0 border-t border-[var(--admin-border-soft)] p-5">
           <!-- role-play 條件才顯示人物選擇；非 role-play 條件維持一般 AI assistant 對話。 -->
           <div v-if="condition?.roleplay_enabled" class="mb-3 flex gap-2 overflow-x-auto pb-1">
             <button
