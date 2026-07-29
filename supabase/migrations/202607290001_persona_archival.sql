@@ -8,10 +8,10 @@ comment on column public.personas.archived_at is
 -- 只替尚未設定肖像的既有人物補值，保留 Admin 已自訂的圖片。
 update public.personas
 set avatar_url = case name
-  when '馬克西米連·羅伯斯比爾' then '/images/personas/maximilien-robespierre.png'
-  when '莫那·魯道' then '/images/personas/mona-rudao.png'
-  when '林則徐' then '/images/personas/lin-zexu.png'
-  when '坂本龍馬' then '/images/personas/sakamoto-ryoma.png'
+  when '馬克西米連·羅伯斯比爾' then '/images/personas/maximilien-robespierre.jpg'
+  when '莫那·魯道' then '/images/personas/mona-rudao.jpg'
+  when '林則徐' then '/images/personas/lin-zexu.jpg'
+  when '坂本龍馬' then '/images/personas/sakamoto-ryoma.jpg'
   else avatar_url
 end
 where name in ('馬克西米連·羅伯斯比爾', '莫那·魯道', '林則徐', '坂本龍馬')

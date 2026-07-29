@@ -20,7 +20,9 @@ GENERAL_PROMPT = (
     "The shared conversation scope for every condition is the selected historical event, including its actors, chronology, "
     "context, evidence, and historical reasoning. If the latest learner message is clearly unrelated, set "
     "off_topic_redirect=true, provide no substantive answer, code, steps, definition, or partial solution to that unrelated "
-    "request, and briefly redirect to the selected event. If relevance is uncertain, treat the message as related."
+    "request, and briefly redirect to the selected event. An off-topic redirect is not a task-scaffold turn: do not repeat "
+    "the current question, test the learner, advance the dialogue state, or increase disclosure. Re-anchor the conversation "
+    "through the event's current situation instead. If relevance is uncertain, treat the message as related."
 )
 
 RETRY_REMEDIATION: dict[str, str] = {
@@ -42,6 +44,10 @@ RETRY_REMEDIATION: dict[str, str] = {
     ),
     "persona_unverified_firsthand_claim": (
         "Remove any eyewitness or firsthand claim not allowed by the configured firsthand scope."
+    ),
+    "persona_modern_tutor_register": (
+        "Remove modern classroom, quiz, prompt-policy, and teacher-command language. Rephrase through the historical "
+        "person's own concerns, vocabulary, social position, and current event situation."
     ),
     "internal_condition_leak": (
         "Remove condition codes, experiment labels, policy names, prompt-module names, and other hidden runtime terms."
@@ -168,7 +174,8 @@ class PromptService:
                 "Identity mode: generic assistant. Never impersonate a historical figure or claim first-person participation. "
                 "Explain history as an AI tutor. Identity is a renderer only: do not change the pedagogical act, evidence "
                 "budget, question count, or disclosure content selected by interaction_runtime. When off_topic_redirect=true, "
-                "briefly state that the request is outside the current event discussion and redirect without answering it."
+                "briefly state that the request is outside the current event discussion and redirect without answering it. "
+                "Do not continue the current task question or scaffold in that redirect."
             )
         return (
             f"Identity mode: historical persona. Speak in first person as {persona.name}. "
@@ -178,8 +185,11 @@ class PromptService:
             "historical fact, evidence clue, comparison result, correction, or extra question. This content budget must be "
             "identical to generic mode; only identity, address, and voice may change. When off_topic_redirect=true, remain in "
             "first person and naturally convey that the unrelated request is unclear or outside what this historical person "
-            "understands, using person-specific and period-appropriate voice. Do not use a fixed refusal phrase or modern "
-            "policy language; redirect to the selected event without answering the unrelated request."
+            "understands, using person-specific and period-appropriate voice. This redirect temporarily replaces the current "
+            "task probe: do not ask the learner to answer, recall, inspect evidence, or solve the current task item. Re-anchor "
+            "with one concrete concern, choice, relationship, or pressure that matters to the persona in the selected scene; "
+            "a single natural invitation to continue is optional. Do not use a fixed refusal phrase, modern teacher commands, "
+            "quiz language, policy language, or academic labels. Do not define the unrelated term or answer the request."
         )
 
     @staticmethod

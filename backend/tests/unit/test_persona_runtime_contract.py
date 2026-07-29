@@ -162,6 +162,24 @@ def test_persona_audit_rejects_ai_meta_voice():
     assert "persona_out_of_character_meta_voice" in flags
 
 
+def test_persona_audit_rejects_modern_teacher_redirect_but_accepts_in_character_boundary():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    teacher_redirect = audit_persona_response(
+        "我不清楚 Python。請回到我們正在談論的事情上，想想看題目的答案。",
+        context,
+        is_opening=False,
+    )
+    in_character_redirect = audit_persona_response(
+        "我不識得你所說的 Python。此刻共和國的存亡已逼近眼前；公民，你若願意，便談談國民公會的爭論。",
+        context,
+        is_opening=False,
+    )
+
+    assert "persona_modern_tutor_register" in teacher_redirect
+    assert in_character_redirect == ()
+
+
 def test_persona_audit_rejects_explicit_knowledge_after_the_scene_cutoff():
     context = build_persona_runtime_context(_event(), _persona())
 

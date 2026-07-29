@@ -1,0 +1,34 @@
+[
+  {
+    "persona": "馬克西米連·羅伯斯比爾",
+    "local_path": "/images/personas/maximilien-robespierre.jpg",
+    "asset_type": "period museum portrait",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Robespierre.jpg",
+    "source_note": "Anonymous portrait, circa 1790, Musée Carnavalet. Photography did not yet exist.",
+    "license": "Public domain / CC0"
+  },
+  {
+    "persona": "莫那·魯道",
+    "local_path": "/images/personas/mona-rudao.jpg",
+    "asset_type": "archival photograph",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Mona_Rudao_and_Seediq_tribal_leaders.jpg",
+    "source_note": "Photographed before 1930. Mona Rudao is the center figure in the three-person photograph.",
+    "license": "Public domain"
+  },
+  {
+    "persona": "林則徐",
+    "local_path": "/images/personas/lin-zexu.jpg",
+    "asset_type": "nineteenth-century portrait",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Portrait_of_Lin_Zexu.jpeg",
+    "source_note": "Portrait attributed to Lam Qua. No verified photographic portrait is available from his period.",
+    "license": "Public domain"
+  },
+  {
+    "persona": "坂本龍馬",
+    "local_path": "/images/personas/sakamoto-ryoma.jpg",
+    "asset_type": "archival photograph",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Sakamoto_Ryoma.jpg",
+    "source_note": "Historical photograph taken before 1867.",
+    "license": "Public domain"
+  }
+]

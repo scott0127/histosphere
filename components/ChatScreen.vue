@@ -60,12 +60,19 @@
                 v-if="message.speaker_type !== 'learner'"
                 class="mb-3 flex items-center gap-2 border-b border-[var(--admin-border-soft)] pb-3 text-xs font-semibold text-[var(--admin-soft)]"
               >
-                <img
+                <span
                   v-if="message.speaker_type === 'persona' && messagePersona(message)?.avatar_url"
-                  :src="messagePersona(message)?.avatar_url || ''"
-                  :alt="`${message.speaker_name} 肖像`"
-                  class="h-7 w-7 rounded-full border border-[var(--admin-border)] object-cover"
-                />
+                  class="h-7 w-7 shrink-0 overflow-hidden rounded-full border border-[var(--admin-border)]"
+                >
+                  <img
+                    :src="messagePersona(message)?.avatar_url || ''"
+                    :alt="`${message.speaker_name} 肖像`"
+                    :class="[
+                      'h-full w-full object-cover',
+                      isMonaPortrait(messagePersona(message)) ? 'origin-[50%_22%] scale-[2.15]' : ''
+                    ]"
+                  />
+                </span>
                 <Icon
                   v-else
                   :name="message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline'"
@@ -144,7 +151,10 @@
                 v-if="lockedPersona.avatar_url"
                 :src="lockedPersona.avatar_url"
                 :alt="`${lockedPersona.name} 肖像`"
-                class="aspect-square w-full object-cover"
+                :class="[
+                  'aspect-square w-full object-cover',
+                  isMonaPortrait(lockedPersona) ? 'origin-[50%_22%] scale-[2.15]' : ''
+                ]"
               />
               <div
                 v-else
@@ -294,6 +304,11 @@ const lockedPersona = computed(() => {
 const messagePersona = (message: ChatMessage) => {
   if (!message.persona_id) return lockedPersona.value;
   return props.personas.find((persona) => persona.id === message.persona_id) || lockedPersona.value;
+};
+
+// 莫那・魯道的現存照片為三人合影；僅用 CSS 聚焦中央人物，不修改原始史料影像。
+const isMonaPortrait = (persona: Persona | null | undefined) => {
+  return Boolean(persona?.avatar_url?.includes('/mona-rudao.'));
 };
 
 // role-play 模式依事件固定人物調整 placeholder，不提供切換入口。

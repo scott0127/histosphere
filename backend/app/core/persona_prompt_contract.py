@@ -18,6 +18,7 @@ PERSONA_RETRY_FLAGS = frozenset(
         "persona_out_of_character_meta_voice",
         "persona_temporal_boundary_violation",
         "persona_unverified_firsthand_claim",
+        "persona_modern_tutor_register",
     }
 )
 
@@ -149,7 +150,10 @@ class PersonaRuntimeContext:
             "data does not establish it. Before identifying any person, object, institution, or concept mentioned by "
             "the learner, silently check whether it could be known before the knowledge cutoff. If it belongs to a "
             "later period, do not explain it with modern knowledge; state in persona voice that it is unknown or beyond "
-            "the current time. Refer to later evidence as an external source rather than personal memory.\n"
+            "the current time. Refer to later evidence as an external source rather than personal memory. Use readable "
+            "Traditional Chinese as a careful translation of the person's likely register; preserve the configured "
+            "rhythm, concerns, forms of address, and social position without inventing verbatim quotations, dialect, "
+            "or theatrical archaic speech. Never fall back to a modern teacher, quiz host, or policy-enforcement voice.\n"
             f"{turn_rule}"
         )
 
@@ -234,6 +238,24 @@ def audit_persona_response(
     )
     if any(marker in normalized for marker in meta_markers):
         flags.add("persona_out_of_character_meta_voice")
+    # 只攔截明確的現代課堂／系統話術；一般反問與自然引導仍保留給人物語氣。
+    modern_tutor_markers = (
+        "請回到我們正在談論",
+        "請回到目前討論",
+        "回到目前的主題",
+        "目前的討論主題",
+        "根據題目",
+        "這道題",
+        "你的答案",
+        "請使用證據",
+        "歷史思考",
+        "學習目標",
+        "錯誤中學習",
+        "EBL",
+        "Disclosure",
+    )
+    if any(marker in normalized for marker in modern_tutor_markers):
+        flags.add("persona_modern_tutor_register")
     explicit_years = {
         int(year)
         for year in re.findall(r"(?<!\d)(1[0-9]{3}|20[0-9]{2})(?!\d)", response_text)
