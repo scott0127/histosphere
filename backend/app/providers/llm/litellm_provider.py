@@ -23,8 +23,8 @@ from app.models.domain import (
     TaskAttempt,
     WikiSource,
 )
-from app.providers.llm.json_runner import LLMJsonRunner
 from app.providers.llm.base import ChatGenerationResult
+from app.providers.llm.json_runner import LLMCallMetadata, LLMJsonRunner
 from app.providers.llm.structured import (
     ChatOutputPayload,
     EventProfilePayload,
@@ -95,7 +95,7 @@ class LiteLLMProvider:
         Returns:
             dict: 事件 profile 的欄位字典。
         """
-        payload = await self.runner.run_json(
+        run = await self.runner.run_json(
             schema=EventProfilePayload,
             task_name="generate_event_profile",
             system_prompt=self._system_prompt(),
@@ -108,10 +108,11 @@ class LiteLLMProvider:
                 f"Wikipedia sources:\n{self._format_sources(sources)}"
             ),
         )
+        payload = run.payload
         result = payload.model_dump()
         result["source_summary"] = {
             **result.get("source_summary", {}),
-            **self._provider_metadata(),
+            **self._provider_metadata(run.metadata),
             "source_count": len(sources),
             "source_titles": [source.title for source in sources],
         }
@@ -131,7 +132,7 @@ class LiteLLMProvider:
         Returns:
             EventTask: 生成的 task（revision_state 為 ``"llm_generated"``）。
         """
-        payload = await self.runner.run_json(
+        run = await self.runner.run_json(
             schema=GeneratedTaskPayload,
             task_name="generate_task",
             system_prompt=self._system_prompt(),
@@ -155,6 +156,7 @@ class LiteLLMProvider:
                 f"Wikipedia sources:\n{self._format_sources(sources)}"
             ),
         )
+        payload = run.payload
         return EventTask(
             event_id=event.id,
             title=payload.title,
@@ -162,7 +164,7 @@ class LiteLLMProvider:
             display_text=payload.display_text,
             evaluation_payload={
                 **payload.evaluation_payload,
-                **self._provider_metadata(),
+                **self._provider_metadata(run.metadata),
             },
             revision_state="llm_generated",
         )
@@ -187,7 +189,7 @@ class LiteLLMProvider:
             dict: 包含 result、misconception_summary、feedback、
                 score、provider、model。
         """
-        payload = await self.runner.run_json(
+        run = await self.runner.run_json(
             schema=TaskJudgementPayload,
             task_name="judge_task_attempt",
             system_prompt=self._system_prompt(),
@@ -204,8 +206,9 @@ class LiteLLMProvider:
                 f"Learner response payload:\n{response_payload}"
             ),
         )
+        payload = run.payload
         result = payload.model_dump()
-        result.update(self._provider_metadata())
+        result.update(self._provider_metadata(run.metadata))
         return result
 
     async def generate_personas(self, event: Event, sources: list[WikiSource]) -> list[Persona]:
@@ -221,7 +224,7 @@ class LiteLLMProvider:
         Returns:
             list[Persona]: 僅含一位 persona 的清單。
         """
-        payload = await self.runner.run_json(
+        run = await self.runner.run_json(
             schema=PersonaListPayload,
             task_name="generate_personas",
             system_prompt=self._system_prompt(),
@@ -241,6 +244,8 @@ class LiteLLMProvider:
                 f"Wikipedia sources:\n{self._format_sources(sources)}"
             ),
         )
+        payload = run.payload
+        provider_metadata = self._provider_metadata(run.metadata)
         personas: list[Persona] = []
         for index, item in enumerate(payload.personas[:1]):
             personas.append(
@@ -257,7 +262,7 @@ class LiteLLMProvider:
                     ],
                     prompt_profile={
                         **item.prompt_profile,
-                        **self._provider_metadata(),
+                        **provider_metadata,
                         "deliberate_error_enabled": item.prompt_profile.get("deliberate_error_enabled", False),
                     },
                     sort_order=index,
@@ -275,7 +280,7 @@ class LiteLLMProvider:
         prompt: str,
     ) -> ChatGenerationResult:
         """Generate the first turn from the canonical modules also used by later chat."""
-        payload = await self.runner.run_json(
+        run = await self.runner.run_json(
             schema=ChatOutputPayload,
             task_name="generate_greeting",
             system_prompt=self._system_prompt(),
@@ -285,7 +290,11 @@ class LiteLLMProvider:
                 f"Prompt modules:\n{prompt}"
             ),
         )
-        return self._chat_generation_result(payload, event)
+        return self._chat_generation_result(
+            run.payload,
+            event,
+            self._provider_metadata(run.metadata),
+        )
 
     async def generate_chat_response(
         self,
@@ -314,7 +323,7 @@ class LiteLLMProvider:
         Returns:
             ChatGenerationResult: Visible response plus hidden interaction metadata。
         """
-        payload = await self.runner.run_json(
+        run = await self.runner.run_json(
             schema=ChatOutputPayload,
             task_name="generate_chat_response",
             system_prompt=self._system_prompt(),
@@ -323,14 +332,22 @@ class LiteLLMProvider:
                 "Respect role-play boundaries and the EBL/Standard Chat policy.\n"
                 "Use Traditional Chinese unless the user asks otherwise. English terms are allowed only when useful.\n"
                 f"{CHAT_OUTPUT_JSON_CONTRACT}\n\n"
-                f"Prompt modules:\n{prompt}\n\n"
-                f"User message:\n{user_message}"
+                # learner 最新訊息已是 canonical user_message module，不可在外層再傳一次。
+                f"Prompt modules:\n{prompt}"
             ),
         )
-        return self._chat_generation_result(payload, event)
+        return self._chat_generation_result(
+            run.payload,
+            event,
+            self._provider_metadata(run.metadata),
+        )
 
     @staticmethod
-    def _chat_generation_result(payload: ChatOutputPayload, event: Event) -> ChatGenerationResult:
+    def _chat_generation_result(
+        payload: ChatOutputPayload,
+        event: Event,
+        llm_metadata: dict | None = None,
+    ) -> ChatGenerationResult:
         """Map the one structured completion schema used by opening and chat."""
         legacy_disclosure = {
             "L0": "D0",
@@ -374,6 +391,7 @@ class LiteLLMProvider:
                 "off_topic_redirect": payload.off_topic_redirect,
                 "fidelity_flags": payload.fidelity_flags,
             },
+            llm_metadata=llm_metadata or {},
         )
 
     # ── Internal helpers ───────────────────────────────────────
@@ -395,18 +413,20 @@ class LiteLLMProvider:
         )
         return base_prompt
 
-    def _provider_metadata(self) -> dict[str, str]:
-        """取得最近一次成功呼叫的 provider/model metadata。
+    @staticmethod
+    def _provider_metadata(metadata: LLMCallMetadata) -> dict:
+        """把 per-call metadata 整理成現有 JSON 欄位可保存的形狀。
 
         用於嵌入 source_summary、evaluation_payload 與
         prompt_profile，方便研究 log 與後台除錯。
 
         Returns:
-            dict[str, str]: 包含 ``"provider"`` 與 ``"model"`` 鍵值。
+            dict: 保留相容的 provider/model，並加入完整 ``llm_call``。
         """
         return {
-            "provider": self.runner.last_provider,
-            "model": self.runner.last_model,
+            "provider": metadata.provider,
+            "model": metadata.model,
+            "llm_call": metadata.as_dict(),
         }
 
     @staticmethod

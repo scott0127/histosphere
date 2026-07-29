@@ -1,5 +1,6 @@
-from app.providers.llm.base import ChatGenerationResult
+from app.core.interaction_contract import INTERACTION_POLICY_VERSION
 from app.models.domain import Event
+from app.providers.llm.base import ChatGenerationResult
 
 
 CONDITIONS = [
@@ -401,7 +402,7 @@ def test_chat_policy_matrix(client):
             assert payload["message"]["metadata"]["disclosure_level"] is None
             assert payload["message"]["metadata"]["target_question_id"] is None
 
-        assert payload["message"]["metadata"]["interaction_policy_version"] == "2x2-interaction-v4"
+        assert payload["message"]["metadata"]["interaction_policy_version"] == INTERACTION_POLICY_VERSION
         if initialized["condition"]["response_policy"] == "scaffold":
             assert payload["message"]["metadata"]["target_question_id"] == "q01"
         assert "interaction_runtime" in payload["message"]["metadata"]["prompt_modules"]

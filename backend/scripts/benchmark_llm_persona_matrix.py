@@ -355,11 +355,10 @@ async def _run_condition(
             "error": _safe_error(provider, exc),
         }
 
-    runner = getattr(provider, "runner", None)
     return {
         "ok": True,
-        "provider": str(getattr(runner, "last_provider", "unknown")),
-        "model": str(getattr(runner, "last_model", "unknown")),
+        "provider": str(generation.llm_metadata.get("provider", "unknown")),
+        "model": str(generation.llm_metadata.get("model", "unknown")),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "opening": {
             "elapsed_seconds": opening_elapsed,

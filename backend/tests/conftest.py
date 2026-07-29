@@ -42,6 +42,26 @@ class FakeLLMProvider:
         self.chat_prompts: list[str] = []
         self.greeting_prompts: list[str] = []
 
+    @staticmethod
+    def _llm_metadata(task_name: str) -> dict:
+        return {
+            "provider": "fake-test",
+            "model": "fake-model",
+            "llm_call": {
+                "correlation_id": f"fake-{task_name}",
+                "task_name": task_name,
+                "provider": "fake-test",
+                "model": "fake-model",
+                "status": "completed",
+                "latency_ms": 1,
+                "attempt_count": 1,
+                "transient_retry_count": 0,
+                "schema_repair_count": 0,
+                "provider_switching_enabled": False,
+                "fallback_reason": None,
+            },
+        }
+
     async def generate_event_profile(self, event_name: str, sources: list[WikiSource]) -> dict:
         return {
             "canonical_name": event_name,
@@ -50,7 +70,10 @@ class FakeLLMProvider:
             "start_year": 1944,
             "end_year": 1944,
             "context": f"{event_name} 的測試脈絡用於驗證事件、任務、人物與對話流程。",
-            "source_summary": {"provider": "fake-test", "source_count": len(sources)},
+            "source_summary": {
+                **self._llm_metadata("generate_event_profile"),
+                "source_count": len(sources),
+            },
         }
 
     async def generate_task(self, event: Event, sources: list[WikiSource]) -> EventTask:
@@ -61,6 +84,7 @@ class FakeLLMProvider:
             display_text=f"{event.canonical_name} 的核心問題包含{{{{blank:q01}}}}與不同歷史觀點。",
             evaluation_payload={
                 "rubric": "測試 rubric",
+                **self._llm_metadata("generate_task"),
                 "questions": [
                     {
                         "id": "q01",
@@ -83,7 +107,10 @@ class FakeLLMProvider:
                 role="歷史觀察者",
                 biography=f"用於測試 {event.canonical_name} 對話流程的歷史人物。",
                 expertise_areas=[event.canonical_name],
-                prompt_profile={"selection_policy": "fake-test-primary-persona"},
+                prompt_profile={
+                    "selection_policy": "fake-test-primary-persona",
+                    **self._llm_metadata("generate_personas"),
+                },
             )
         ]
 
@@ -98,7 +125,7 @@ class FakeLLMProvider:
             "score": 0.5,
             "misconception_summary": "測試判斷",
             "feedback": "測試回饋",
-            "provider": "fake-test",
+            **self._llm_metadata("judge_task_attempt"),
         }
 
     async def generate_greeting(
@@ -148,7 +175,11 @@ class FakeLLMProvider:
                 "completion_status": "continue",
                 "fidelity_flags": [],
             }
-        return ChatGenerationResult(response=response, interaction_metadata=metadata)
+        return ChatGenerationResult(
+            response=response,
+            interaction_metadata=metadata,
+            llm_metadata=self._llm_metadata("generate_greeting"),
+        )
 
     async def generate_chat_response(
         self,
@@ -193,6 +224,7 @@ class FakeLLMProvider:
             related_events=[],
             dynamic_context="fake dynamic context",
             interaction_metadata=interaction_metadata,
+            llm_metadata=self._llm_metadata("generate_chat_response"),
         )
 
 

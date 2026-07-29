@@ -58,6 +58,8 @@ class PersonaPromptProfile(BaseModel):
     selection_reason: str | None = None
     provider: str | None = None
     model: str | None = None
+    # 生成 provenance 只供研究追蹤，不會被轉成 learner-facing persona 指令。
+    llm_call: dict[str, Any] | None = None
 
 
 def normalize_persona_prompt_profile(value: Any) -> dict[str, Any]:

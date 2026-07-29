@@ -129,6 +129,15 @@ class EventInitializationService:
                 event_id=event.id,
             )
         )
+        material_llm_calls = [
+            call
+            for call in (
+                event.source_summary.get("llm_call"),
+                task.evaluation_payload.get("llm_call"),
+                *(persona.prompt_profile.get("llm_call") for persona in personas),
+            )
+            if isinstance(call, dict)
+        ]
         self.repository.log_research(
             ResearchLog(
                 user_id=request.user_id,
@@ -141,6 +150,7 @@ class EventInitializationService:
                     "condition_key": condition.condition_key,
                     "rebuild": request.rebuild,
                     "rebuild_ignored": rebuild_ignored,
+                    "material_llm_calls": material_llm_calls,
                 },
             )
         )

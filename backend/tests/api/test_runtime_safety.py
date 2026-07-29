@@ -118,6 +118,17 @@ def test_task_submission_is_persisted_and_polled(client):
     submitted = submit_and_poll(client, initialized)
     assert submitted["conversation_id"]
     assert submitted["attempt"]["status"] == "submitted"
+    assert submitted["judgement"]["llm_call"]["task_name"] == "judge_task_attempt"
+    assert submitted["history"][0]["metadata"]["llm_call"]["task_name"] == "generate_greeting"
+
+    processed_log = next(
+        log
+        for log in client.app.state.repository.list_research_logs()
+        if log.action_type == "task_submission_processed"
+        and log.attempt_id == submitted["attempt_id"]
+    )
+    assert processed_log.payload["judgement_llm_call"]["provider_switching_enabled"] is False
+    assert processed_log.payload["opening_llm_call"]["provider_switching_enabled"] is False
 
     duplicate = client.post(
         f"/api/tasks/{initialized['task']['id']}/submit",
@@ -244,6 +255,13 @@ def test_chat_stream_reports_persistence_status_deltas_and_completion(client):
     )
     assert response_message["metadata"]["generation_status"] == "completed"
     assert response_message["metadata"]["delivery_mode"] == "validated_stream"
+    assert response_message["metadata"]["llm_call"]["task_name"] == "generate_chat_response"
+    response_log = next(
+        log
+        for log in client.app.state.repository.list_research_logs()
+        if log.message_id == response_message["id"]
+    )
+    assert response_log.payload["llm_call"]["provider_switching_enabled"] is False
 
 
 def test_chat_stream_reports_failure_after_learner_message_is_saved(client):

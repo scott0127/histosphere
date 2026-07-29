@@ -30,6 +30,7 @@ class ChatGenerationResult:
     related_events: list[RelatedEvent] = field(default_factory=list)
     dynamic_context: str = ""
     interaction_metadata: dict[str, Any] = field(default_factory=dict)
+    llm_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class LLMProvider(Protocol):

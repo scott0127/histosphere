@@ -185,7 +185,7 @@ class ChatService:
                     "persona_profile_contract": profile_payload.get("contract_version") if selected else None,
                     "persona_profile_hash": profile_hash if selected else None,
                     **interaction_metadata,
-                    **self._llm_metadata(),
+                    **generation.llm_metadata,
                 },
             )
             model_message = self.repository.add_message(model_message)
@@ -213,6 +213,7 @@ class ChatService:
                         "off_topic_redirect": interaction_metadata.get("off_topic_redirect", False),
                         "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
                         "fidelity_retry_count": interaction_metadata.get("generation_retry_count", 0),
+                        "llm_call": generation.llm_metadata.get("llm_call"),
                     },
                 )
             )
@@ -248,12 +249,14 @@ class ChatService:
             )
             raise
         except Exception as exc:
+            llm_call = getattr(getattr(exc, "metadata", None), "as_dict", lambda: {})()
             self._record_generation_failure(
                 conversation=conversation,
                 event=event,
                 condition=condition,
                 user_message=user_message,
                 failure_type=type(exc).__name__,
+                llm_call=llm_call,
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -268,6 +271,7 @@ class ChatService:
         condition: ExperimentCondition,
         user_message: ChatMessage,
         failure_type: str,
+        llm_call: dict[str, Any] | None = None,
     ) -> None:
         """保存失敗狀態，但不把例外內容或密鑰寫入研究資料。"""
         failed_user_message = user_message.model_copy(
@@ -276,6 +280,7 @@ class ChatService:
                     **user_message.metadata,
                     "response_status": "failed",
                     "failure_type": failure_type,
+                    "llm_call": llm_call or None,
                 }
             }
         )
@@ -292,6 +297,7 @@ class ChatService:
                 payload={
                     "condition_key": condition.condition_key,
                     "failure_type": failure_type,
+                    "llm_call": llm_call or None,
                 },
             )
         )
@@ -382,15 +388,15 @@ class ChatService:
                         related_events=generation.related_events,
                         dynamic_context=generation.dynamic_context,
                         interaction_metadata=metadata,
+                        llm_metadata=generation.llm_metadata,
                     ),
                     metadata,
                 )
 
-            runner = getattr(self.llm_provider, "runner", None)
             audit_id = record_rejected_generation(
                 stage="chat_contract_validation",
-                provider=str(getattr(runner, "last_provider", "unknown")),
-                model=str(getattr(runner, "last_model", "unknown")),
+                provider=str(generation.llm_metadata.get("provider", "unknown")),
+                model=str(generation.llm_metadata.get("model", "unknown")),
                 task_name="chat_response",
                 raw_output=generation.response,
                 reasons=list(validation.retry_flags),
@@ -399,6 +405,7 @@ class ChatService:
                     "attempt_id": task_attempt.id if task_attempt else None,
                     "condition_key": condition.condition_key,
                     "generation_index": generation_index,
+                    "llm_call": generation.llm_metadata.get("llm_call", {}),
                 },
             )
             rejected_candidates.append(
@@ -419,11 +426,3 @@ class ChatService:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="LLM response failed interaction/persona validation",
         )
-
-    def _llm_metadata(self) -> dict[str, str]:
-        """Read provider metadata without coupling the service to LiteLLMProvider."""
-        runner = getattr(self.llm_provider, "runner", None)
-        return {
-            "provider": str(getattr(runner, "last_provider", "unknown")),
-            "model": str(getattr(runner, "last_model", "unknown")),
-        }

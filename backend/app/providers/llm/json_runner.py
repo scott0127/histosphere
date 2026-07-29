@@ -1,19 +1,21 @@
 """LLM JSON execution helper.
 
-本模組集中處理 LiteLLM 呼叫、JSON 擷取、重試與 Pydantic 驗證。
+本模組集中處理 LiteLLM 呼叫、JSON 擷取、重試、研究 metadata 與 Pydantic 驗證。
 Provider 方法只需要描述任務與 schema，避免每個生成函式各自實作解析邏輯。
 
 執行流程:
-    1. 依序嘗試主模型與 fallback 模型（``_candidates()``）。
-    2. 對每個 candidate 呼叫 LiteLLM ``acompletion``。
+    1. 鎖定設定中的單一模型與 provider。
+    2. 呼叫 LiteLLM ``acompletion``；暫時性錯誤最多以同一模型重試一次。
     3. 從回覆中擷取 JSON 並以 Pydantic schema 驗證。
     4. 若 JSON 解析或驗證失敗，發送 repair prompt 重試一次。
-    5. 所有 candidates 皆失敗時拋出 ``RuntimeError``。
+    5. 回傳 payload 與該次呼叫專屬的研究 metadata。
 """
 
 import json
-from dataclasses import dataclass
-from typing import TypeVar
+from dataclasses import asdict, dataclass
+from time import perf_counter
+from typing import Generic, TypeVar
+from uuid import uuid4
 
 from litellm import acompletion
 from pydantic import BaseModel, ValidationError
@@ -23,6 +25,7 @@ from app.services.llm_generation_audit import record_rejected_generation
 
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
+MAX_TRANSIENT_RETRIES = 1
 
 
 @dataclass(frozen=True)
@@ -50,16 +53,69 @@ class LLMCallCandidate:
     reasoning_effort: str | None = None
 
 
+@dataclass(frozen=True)
+class LLMCompletion:
+    """一次 LiteLLM HTTP completion 的文字與可取得的 token usage。"""
+
+    content: str
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    finish_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class LLMCallMetadata:
+    """一個 structured LLM 任務的獨立研究紀錄。"""
+
+    correlation_id: str
+    task_name: str
+    provider: str
+    model: str
+    status: str
+    latency_ms: int
+    attempt_count: int
+    transient_retry_count: int
+    schema_repair_count: int
+    provider_switching_enabled: bool = False
+    fallback_reason: str | None = None
+    retry_reason: str | None = None
+    failure_category: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    finish_reason: str | None = None
+
+    def as_dict(self) -> dict:
+        """轉成可直接寫入 Supabase JSON 欄位的資料。"""
+
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class LLMRunResult(Generic[PayloadT]):
+    """通過 schema 的 payload，以及只屬於該次呼叫的 metadata。"""
+
+    payload: PayloadT
+    metadata: LLMCallMetadata
+
+
+class LLMRunError(RuntimeError):
+    """LLM 任務失敗，並保留不含密鑰的研究 metadata。"""
+
+    def __init__(self, message: str, metadata: LLMCallMetadata) -> None:
+        super().__init__(message)
+        self.metadata = metadata
+
+
 class LLMJsonRunner:
     """執行 structured JSON LLM call 並驗證回傳結構。
 
-    集中處理 LLM 呼叫、JSON 擷取、自動重試與 Pydantic 驗證，
+    集中處理 LLM 呼叫、JSON 擷取、有限重試、研究 metadata 與 Pydantic 驗證，
     讓 provider 方法只需描述 schema 與 prompt。
 
     Attributes:
         settings: 全域設定實例。
-        last_provider: 最近一次成功呼叫的 provider 名稱。
-        last_model: 最近一次成功呼叫的 model 名稱。
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -69,8 +125,6 @@ class LLMJsonRunner:
             settings: 全域 Settings 實例，提供 LLM 相關設定。
         """
         self.settings = settings
-        self.last_provider = "litellm"
-        self.last_model = settings.llm_model
 
     async def run_json(
         self,
@@ -79,13 +133,8 @@ class LLMJsonRunner:
         system_prompt: str,
         user_prompt: str,
         task_name: str,
-    ) -> PayloadT:
-        """呼叫 LLM 並驗證 JSON；失敗時依序嘗試備援模型。
-
-        對每個 candidate：
-            1. 第一次呼叫 → 嘗試解析 JSON。
-            2. 若 JSON 解析或 Pydantic 驗證失敗 → 發送 repair prompt 重試。
-            3. 仍失敗 → 嘗試下一個 candidate。
+    ) -> LLMRunResult[PayloadT]:
+        """以單一模型呼叫 LLM、驗證 JSON，並回傳 per-call metadata。
 
         Args:
             schema: 預期回傳 JSON 的 Pydantic model 類別。
@@ -94,73 +143,148 @@ class LLMJsonRunner:
             task_name: 任務名稱，用於錯誤訊息與日誌。
 
         Returns:
-            PayloadT: 通過 Pydantic 驗證的結構化物件。
+            LLMRunResult[PayloadT]: 結構化 payload 與本次呼叫的研究 metadata。
 
         Raises:
-            RuntimeError: 所有 candidates 皆失敗時。
+            LLMRunError: 單一設定模型經有限重試後仍失敗。
         """
-        errors: list[str] = []
-        for candidate in self._candidates():
-            try:
-                first_text = await self._complete(
-                    candidate,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                )
+        candidate = self._candidates()[0]
+        correlation_id = str(uuid4())
+        started_at = perf_counter()
+        attempt_count = 0
+        transient_retry_count = 0
+        schema_repair_count = 0
+        retry_reason: str | None = None
+        finish_reason: str | None = None
+        token_totals = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        token_usage_seen = False
+
+        def build_metadata(
+            *,
+            status: str,
+            failure_category: str | None = None,
+        ) -> LLMCallMetadata:
+            return LLMCallMetadata(
+                correlation_id=correlation_id,
+                task_name=task_name,
+                provider=candidate.provider,
+                model=candidate.display_model,
+                status=status,
+                latency_ms=round((perf_counter() - started_at) * 1000),
+                attempt_count=attempt_count,
+                transient_retry_count=transient_retry_count,
+                schema_repair_count=schema_repair_count,
+                provider_switching_enabled=False,
+                fallback_reason=None,
+                retry_reason=retry_reason,
+                failure_category=failure_category,
+                prompt_tokens=token_totals["prompt_tokens"] if token_usage_seen else None,
+                completion_tokens=token_totals["completion_tokens"] if token_usage_seen else None,
+                total_tokens=token_totals["total_tokens"] if token_usage_seen else None,
+                finish_reason=finish_reason,
+            )
+
+        async def complete(current_user_prompt: str) -> str:
+            nonlocal attempt_count, finish_reason, retry_reason
+            nonlocal token_usage_seen, transient_retry_count
+
+            for retry_index in range(MAX_TRANSIENT_RETRIES + 1):
+                attempt_count += 1
                 try:
-                    payload = self._parse(schema, first_text)
-                    self._mark_success(candidate)
-                    return payload
-                except (json.JSONDecodeError, ValidationError) as first_error:
-                    record_rejected_generation(
-                        stage="schema_validation_initial",
-                        provider=candidate.provider,
-                        model=candidate.display_model,
-                        task_name=task_name,
-                        raw_output=first_text,
-                        reasons=[self._safe_error_message(first_error)],
-                    )
-                    repair_prompt = (
-                        "The previous response failed JSON validation. "
-                        f"Task: {task_name}\n"
-                        f"Validation error: {first_error}\n"
-                        "Return only one valid JSON object matching the requested schema. "
-                        "Do not include markdown fences."
-                    )
-                    second_text = await self._complete(
+                    completion = await self._complete(
                         candidate,
                         system_prompt=system_prompt,
-                        user_prompt=f"{user_prompt}\n\n{repair_prompt}\n\nPrevious response:\n{first_text}",
+                        user_prompt=current_user_prompt,
                     )
-                    try:
-                        payload = self._parse(schema, second_text)
-                    except (json.JSONDecodeError, ValidationError) as second_error:
-                        record_rejected_generation(
-                            stage="schema_validation_repair",
-                            provider=candidate.provider,
-                            model=candidate.display_model,
-                            task_name=task_name,
-                            raw_output=second_text,
-                            reasons=[self._safe_error_message(second_error)],
-                        )
+                    for field_name in token_totals:
+                        value = getattr(completion, field_name)
+                        if value is not None:
+                            token_totals[field_name] += value
+                            token_usage_seen = True
+                    finish_reason = completion.finish_reason
+                    return completion.content
+                except Exception as exc:
+                    if retry_index >= MAX_TRANSIENT_RETRIES or not self._is_transient_error(exc):
                         raise
-                    self._mark_success(candidate)
-                    return payload
-            except Exception as exc:
+                    # 正式實驗只允許同一模型做一次有限重試，不切換 provider 或 model。
+                    transient_retry_count += 1
+                    retry_reason = self._failure_category(exc)
+            raise RuntimeError("LLM retry loop exited unexpectedly")
+
+        try:
+            first_text = await complete(user_prompt)
+            try:
+                payload = self._parse(schema, first_text)
+                return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"))
+            except (json.JSONDecodeError, ValidationError) as first_error:
                 record_rejected_generation(
-                    stage="provider_or_generation_failure",
+                    stage="schema_validation_initial",
                     provider=candidate.provider,
                     model=candidate.display_model,
                     task_name=task_name,
-                    raw_output=None,
-                    reasons=[self._safe_error_message(exc)],
+                    raw_output=first_text,
+                    reasons=[self._safe_error_message(first_error)],
+                    context={"llm_call": build_metadata(status="repairing").as_dict()},
                 )
-                errors.append(
-                    f"{candidate.provider}:{candidate.display_model}: {self._safe_error_message(exc)}"
+                repair_prompt = (
+                    "The previous response failed JSON validation. "
+                    f"Task: {task_name}\n"
+                    f"Validation error: {first_error}\n"
+                    "Return only one valid JSON object matching the requested schema. "
+                    "Do not include markdown fences."
                 )
-        raise RuntimeError(f"All LLM candidates failed for {task_name}: {' | '.join(errors)}")
+                schema_repair_count += 1
+                second_text = await complete(
+                    f"{user_prompt}\n\n{repair_prompt}\n\nPrevious response:\n{first_text}"
+                )
+                try:
+                    payload = self._parse(schema, second_text)
+                except (json.JSONDecodeError, ValidationError) as second_error:
+                    record_rejected_generation(
+                        stage="schema_validation_repair",
+                        provider=candidate.provider,
+                        model=candidate.display_model,
+                        task_name=task_name,
+                        raw_output=second_text,
+                        reasons=[self._safe_error_message(second_error)],
+                        context={
+                            "llm_call": build_metadata(
+                                status="failed",
+                                failure_category="schema_validation",
+                            ).as_dict()
+                        },
+                    )
+                    raise
+                return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"))
+        except Exception as exc:
+            failure_category = self._failure_category(exc)
+            metadata = build_metadata(status="failed", failure_category=failure_category)
+            record_rejected_generation(
+                stage="provider_or_generation_failure",
+                provider=candidate.provider,
+                model=candidate.display_model,
+                task_name=task_name,
+                raw_output=None,
+                reasons=[self._safe_error_message(exc)],
+                context={"llm_call": metadata.as_dict()},
+            )
+            raise LLMRunError(
+                f"LLM call failed for {task_name} with locked provider "
+                f"{candidate.provider}:{candidate.display_model}",
+                metadata,
+            ) from exc
 
-    async def _complete(self, candidate: LLMCallCandidate, *, system_prompt: str, user_prompt: str) -> str:
+    async def _complete(
+        self,
+        candidate: LLMCallCandidate,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> LLMCompletion:
         """執行 LiteLLM completion。
 
         每個 candidate 可指定自己的 api_base、api_key 與 extra_body。
@@ -171,7 +295,7 @@ class LLMJsonRunner:
             user_prompt: User message 內容。
 
         Returns:
-            str: LLM 回覆的文字內容。
+            LLMCompletion: LLM 文字內容與 provider 可提供的 token usage。
 
         Raises:
             RuntimeError: LLM 回傳空內容時。
@@ -202,7 +326,14 @@ class LLMJsonRunner:
         content = response.choices[0].message.content
         if not content:
             raise RuntimeError("LLM returned empty content")
-        return str(content)
+        usage = getattr(response, "usage", None)
+        return LLMCompletion(
+            content=str(content),
+            prompt_tokens=self._usage_value(usage, "prompt_tokens"),
+            completion_tokens=self._usage_value(usage, "completion_tokens"),
+            total_tokens=self._usage_value(usage, "total_tokens"),
+            finish_reason=self._finish_reason(response),
+        )
 
     @staticmethod
     def _supports_sampling_temperature(model: str) -> bool:
@@ -220,34 +351,15 @@ class LLMJsonRunner:
         )
 
     def _candidates(self) -> list[LLMCallCandidate]:
-        """建立候選 LLM endpoint 清單（含 fallback 與 NVIDIA）。
+        """只建立設定中的單一 LLM endpoint。
 
-        組裝順序:
-            1. 主模型。
-            2. 設定中的 fallback 模型。
-            3. 若有 NVIDIA API key 且清單中尚無 NVIDIA candidate，
-               自動追加 NVIDIA endpoint。
-        去重邏輯以 (provider, display_model, api_base) 為 key。
+        正式受測期間不能因 provider 狀態改變而讓不同受測者使用不同模型，
+        因此 ``llm_fallback_models`` 與其他已設定 API key 不參與 runtime。
 
         Returns:
-            list[LLMCallCandidate]: 去重後的候選清單。
+            list[LLMCallCandidate]: 僅包含鎖定模型的單元素清單。
         """
-        candidates = [self._candidate_from_model(self.settings.llm_model)]
-        for model in self.settings.llm_fallback_models:
-            candidates.append(self._candidate_from_model(model))
-
-        if self.settings.nvidia_api_key and not any(candidate.provider == "nvidia" for candidate in candidates):
-            candidates.append(self._nvidia_candidate(self.settings.nvidia_llm_model))
-
-        deduped: list[LLMCallCandidate] = []
-        seen: set[tuple[str, str, str | None]] = set()
-        for candidate in candidates:
-            key = (candidate.provider, candidate.display_model, candidate.api_base)
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(candidate)
-        return deduped
+        return [self._candidate_from_model(self.settings.llm_model)]
 
     def _candidate_from_model(self, model: str) -> LLMCallCandidate:
         """依 model 名稱建立對應的 candidate。
@@ -315,15 +427,6 @@ class LLMJsonRunner:
             extra_body=extra_body,
         )
 
-    def _mark_success(self, candidate: LLMCallCandidate) -> None:
-        """記錄最近一次成功的 provider 與 model。
-
-        Args:
-            candidate: 成功完成呼叫的 candidate。
-        """
-        self.last_provider = candidate.provider
-        self.last_model = candidate.display_model
-
     def _safe_error_message(self, exc: Exception) -> str:
         """遮蔽 API key 後回傳安全的錯誤訊息。
 
@@ -343,6 +446,68 @@ class LLMJsonRunner:
             if secret:
                 text = text.replace(secret, "***")
         return text
+
+    @staticmethod
+    def _usage_value(usage, field_name: str) -> int | None:
+        """從 LiteLLM dict 或物件 usage 中安全擷取整數。"""
+
+        if usage is None:
+            return None
+        value = usage.get(field_name) if isinstance(usage, dict) else getattr(usage, field_name, None)
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _finish_reason(response) -> str | None:
+        """讀取 provider 結束原因，以辨識輸出是否被 token 上限截斷。"""
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return None
+        value = getattr(choices[0], "finish_reason", None)
+        return str(value) if value is not None else None
+
+    @staticmethod
+    def _failure_category(exc: Exception) -> str:
+        """將 provider 例外縮成可分析且不含敏感資訊的穩定分類。"""
+
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 429:
+            return "rate_limited"
+        if status_code in {408, 500, 502, 503, 504}:
+            return "provider_transient"
+        if status_code in {401, 403}:
+            return "authentication"
+        if status_code == 400:
+            return "invalid_request"
+        if isinstance(exc, TimeoutError):
+            return "timeout"
+        if isinstance(exc, ConnectionError):
+            return "connection"
+        if isinstance(exc, (json.JSONDecodeError, ValidationError)):
+            return "schema_validation"
+
+        name = type(exc).__name__.lower()
+        if "timeout" in name:
+            return "timeout"
+        if "ratelimit" in name or "rate_limit" in name:
+            return "rate_limited"
+        if "connection" in name:
+            return "connection"
+        return "provider_error"
+
+    @classmethod
+    def _is_transient_error(cls, exc: Exception) -> bool:
+        """只有逾時、限流、連線與 5xx 才能以原 provider 重試。"""
+
+        return cls._failure_category(exc) in {
+            "timeout",
+            "rate_limited",
+            "connection",
+            "provider_transient",
+        }
 
     @staticmethod
     def _parse(schema: type[PayloadT], text: str) -> PayloadT:

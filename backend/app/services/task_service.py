@@ -177,6 +177,22 @@ class TaskService:
                     minutes=EXPERIMENT_CHAT_DURATION_MINUTES,
                 )
             session = self.repository.save_session(session)
+            self.repository.log_research(
+                ResearchLog(
+                    user_id=attempt.user_id,
+                    session_id=session.id,
+                    event_id=event.id,
+                    task_id=task.id,
+                    attempt_id=attempt.id,
+                    conversation_id=conversation.id,
+                    message_id=greeting_message.id,
+                    action_type="task_submission_processed",
+                    payload={
+                        "judgement_llm_call": judgement.get("llm_call"),
+                        "opening_llm_call": greeting_message.metadata.get("llm_call"),
+                    },
+                )
+            )
             if timer_started:
                 self.repository.log_research(
                     ResearchLog(
@@ -219,6 +235,7 @@ class TaskService:
             logger.exception("Task submission processing failed for attempt %s", attempt.id)
             attempt.status = "failed"
             previous_judgement = dict(attempt.judgement_payload)
+            llm_call = getattr(getattr(exc, "metadata", None), "as_dict", lambda: {})()
             validation_failure = (
                 {"rejected_candidates": exc.rejected_candidates}
                 if isinstance(exc, OpeningValidationError)
@@ -228,6 +245,7 @@ class TaskService:
                 **previous_judgement,
                 "error": "Task processing failed. The submission can be retried.",
                 "error_type": type(exc).__name__,
+                **({"llm_call": llm_call} if llm_call else {}),
                 **({"completion_validation": validation_failure} if validation_failure else {}),
             }
             self.repository.save_task_attempt(attempt)
@@ -239,7 +257,10 @@ class TaskService:
                     task_id=attempt.task_id,
                     attempt_id=attempt.id,
                     action_type="task_submission_failed",
-                    payload={"error_type": type(exc).__name__},
+                    payload={
+                        "error_type": type(exc).__name__,
+                        "llm_call": llm_call or None,
+                    },
                 )
             )
 
@@ -336,14 +357,7 @@ class TaskService:
                 "persona_profile_contract": profile_payload.get("contract_version") if persona else None,
                 "persona_profile_hash": profile_hash if persona else None,
                 **opening.metadata,
-                **self._llm_metadata(),
+                **opening.generation.llm_metadata,
             },
         )
         return self.repository.add_message(message)
-
-    def _llm_metadata(self) -> dict[str, str]:
-        runner = getattr(self.llm_provider, "runner", None)
-        return {
-            "provider": str(getattr(runner, "last_provider", "unknown")),
-            "model": str(getattr(runner, "last_model", "unknown")),
-        }

@@ -103,6 +103,7 @@ class ConversationOpeningService:
                         related_events=generation.related_events,
                         dynamic_context=generation.dynamic_context,
                         interaction_metadata=metadata,
+                        llm_metadata=generation.llm_metadata,
                     ),
                     metadata=metadata,
                     persona=persona,
@@ -110,11 +111,11 @@ class ConversationOpeningService:
                     modules=tuple(modules),
                 )
 
-            runner = getattr(self.llm_provider, "runner", None)
+            llm_call = generation.llm_metadata.get("llm_call", {})
             audit_id = record_rejected_generation(
                 stage="opening_contract_validation",
-                provider=str(getattr(runner, "last_provider", "unknown")),
-                model=str(getattr(runner, "last_model", "unknown")),
+                provider=str(generation.llm_metadata.get("provider", "unknown")),
+                model=str(generation.llm_metadata.get("model", "unknown")),
                 task_name="conversation_opening",
                 raw_output=generation.response,
                 reasons=list(validation.retry_flags),
@@ -123,6 +124,7 @@ class ConversationOpeningService:
                     "attempt_id": attempt.id,
                     "condition_key": condition.condition_key,
                     "generation_index": generation_index,
+                    "llm_call": llm_call,
                 },
             )
             rejected_candidates.append(
