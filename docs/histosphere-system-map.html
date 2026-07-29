@@ -930,6 +930,15 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       background: var(--destructive);
     }
 
+    #histosphere-system-map [data-status="critical"] .dot {
+      background: var(--red);
+    }
+
+    #histosphere-system-map .function[data-status="critical"] .status {
+      color: var(--red);
+      font-weight: 600;
+    }
+
     #histosphere-system-map [data-status="deferred"] .dot {
       background: var(--viz-series-4);
     }
@@ -1165,6 +1174,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
     <span class="legend-item" data-status="done"><span class="dot"></span>已完成</span>
     <span class="legend-item" data-status="partial"><span class="dot"></span>部分完成</span>
     <span class="legend-item" data-status="missing"><span class="dot"></span>未完成</span>
+    <span class="legend-item" data-status="critical"><span class="dot"></span>最高優先待做</span>
     <span class="legend-item" data-status="deferred"><span class="dot"></span>已暫緩</span>
     <span class="legend-item" data-status="accepted"><span class="dot"></span>已接受風險</span>
   </div>
@@ -1419,13 +1429,13 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">客觀題 deterministic 比對 + LLM misconception/enrichment</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">每題正式計分語意<span class="function-note text-small">accepted answers、同義詞、錯字、人工覆核與答案版本尚未定案</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="critical">
+          <span class="function-name">每題正式計分語意<span class="function-note text-small">目前先擱置，但正式收案前必須定案 accepted answers、同義詞、錯字、人工覆核與答案版本</span></span>
+          <span class="status text-small"><span class="dot"></span>最高優先待做</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">背景工作耐久性<span class="function-note text-small">單機可由 polling 重掛 orphan；無 startup reconciliation、DB claim 或多 instance queue</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="accepted">
+          <span class="function-name">背景工作耐久性<span class="function-note text-small">單機、單一受測者可由持久化 processing 狀態與 polling 重掛；多 instance queue 暫不實作</span></span>
+          <span class="status text-small"><span class="dot"></span>目前足夠</span>
         </div>
       </div>
     </details>
@@ -1944,12 +1954,12 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "是非題由布林答案判定，LLM 則指出學生可能把明治維新理解成單一原因。"
       ]],
       ["每題正式計分語意", [
-        "基本正解比對已存在，但同義答案、錯字容許、人工覆核與答案版本仍未定案。",
+        "此項目前先擱置，但正式收案前必須完成；基本正解比對已存在，同義答案、錯字容許、人工覆核與答案版本仍未定案。",
         "「巴士底獄」是否應視為「巴士底監獄」的正確同義答案，目前沒有完整規則。"
       ]],
       ["背景工作耐久性", [
-        "單機時可透過 polling 接回中斷工作，但尚無啟動時全面恢復、資料庫工作認領或多主機佇列。",
-        "後端短暫中斷時可能接回評分，但多台後端同時處理時仍可能重複執行。"
+        "作答會先保存到資料庫；後端中斷後，受測者再次開啟或輪詢時會重新掛回評分，已足以支援目前的單機實驗。",
+        "只有同時運行多台後端時才需要資料庫工作認領或佇列；目前不實作，並接受多台後端可能重複處理的限制。"
       ]],
       ["後端 canonical modules 與 2×2 factor composition", [
         "後端以共用 Prompt 模組加上 EBL、Role-play 因子組成四種 Condition。",
