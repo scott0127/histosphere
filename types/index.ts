@@ -133,6 +133,7 @@ export interface Persona {
   prompt_profile: Record<string, unknown>;
   avatar_url?: string | null;
   active: boolean;
+  archived_at?: string | null;
   sort_order: number;
   revision_state: 'llm_generated' | 'teacher_modified' | 'manual';
   created_at: string;

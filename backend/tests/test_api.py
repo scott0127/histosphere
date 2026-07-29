@@ -348,7 +348,6 @@ def test_chat_policy_matrix(client):
     for index, condition_key in enumerate(CONDITIONS, start=1):
         initialized = initialize_event(client, f"矩陣測試事件 {index}", condition_key)
         submitted = submit_task(client, initialized)
-        target_persona_id = initialized["personas"][0]["id"] if "roleplay" in condition_key and not condition_key.startswith("no_ebl_no") else None
 
         chat = client.post(
             "/api/chat",
@@ -356,7 +355,6 @@ def test_chat_policy_matrix(client):
                 "conversation_id": submitted["conversation_id"],
                 "user_message": "這場事件的重要性是什麼？",
                 "history": [],
-                "target_persona_id": target_persona_id,
             },
         )
         assert chat.status_code == 200
@@ -465,6 +463,7 @@ def test_invalid_persona_candidate_is_retried_and_never_persisted(client):
 def test_persona_crud(client):
     initialized = initialize_event(client, "明治維新")
     event_id = initialized["event_id"]
+    original_persona = initialized["personas"][0]
 
     unauthorized = client.post(
         "/api/personas",
@@ -481,24 +480,50 @@ def test_persona_crud(client):
             "role": "觀察者",
             "biography": "用於測試人物管理的角色。",
             "expertise_areas": ["history"],
+            "avatar_url": "/images/personas/test-persona.png",
             "prompt_profile": {"speaking_style": "calm"},
-            "active": True,
+            "active": False,
         },
     )
     assert created.status_code == 200
     persona = created.json()
+    assert persona["avatar_url"] == "/images/personas/test-persona.png"
+
+    unauthorized_update = client.patch(
+        f"/api/personas/{persona['id']}",
+        json={"active": True},
+    )
+    assert unauthorized_update.status_code == 401
+
+    conflict = client.patch(
+        f"/api/personas/{persona['id']}",
+        headers={"x-admin-key": "test-admin"},
+        json={"active": True},
+    )
+    assert conflict.status_code == 409
+
+    disabled = client.patch(
+        f"/api/admin/personas/{original_persona['id']}",
+        headers={"x-admin-key": "test-admin"},
+        json={"active": False},
+    )
+    assert disabled.status_code == 200
 
     updated = client.patch(
-        f"/api/personas/{persona['id']}",
+        f"/api/admin/personas/{persona['id']}",
         headers={"x-admin-key": "test-admin"},
         json={"role": "更新後角色", "active": True},
     )
     assert updated.status_code == 200
     assert updated.json()["role"] == "更新後角色"
+    assert updated.json()["active"] is True
 
     listed = client.get(f"/api/personas?event_id={event_id}")
     assert listed.status_code == 200
-    assert any(item["id"] == persona["id"] for item in listed.json())
+    assert [item["id"] for item in listed.json()] == [persona["id"]]
+
+    unauthorized_archive = client.delete(f"/api/personas/{persona['id']}")
+    assert unauthorized_archive.status_code == 401
 
     deleted = client.delete(
         f"/api/personas/{persona['id']}",
@@ -506,6 +531,46 @@ def test_persona_crud(client):
     )
     assert deleted.status_code == 200
     assert deleted.json()["success"] is True
+
+    snapshot = client.get("/api/admin/snapshot", headers={"x-admin-key": "test-admin"})
+    archived = next(
+        item
+        for event in snapshot.json()["events"]
+        if event["id"] == event_id
+        for item in event["personas"]
+        if item["id"] == persona["id"]
+    )
+    assert archived["active"] is False
+    assert archived["archived_at"] is not None
+
+    unauthorized_restore = client.post(f"/api/personas/{persona['id']}/restore")
+    assert unauthorized_restore.status_code == 401
+
+    restored = client.post(
+        f"/api/personas/{persona['id']}/restore",
+        headers={"x-admin-key": "test-admin"},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["active"] is False
+    assert restored.json()["archived_at"] is None
+
+
+def test_learner_cannot_select_persona(client):
+    initialized = initialize_event(client, "禁止人物切換", "no_ebl_roleplay")
+    submitted = submit_task(client, initialized)
+
+    response = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": submitted["conversation_id"],
+            "user_message": "請繼續。",
+            "history": [],
+            "target_persona_id": initialized["personas"][0]["id"],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Learners cannot select a historical persona"
 
 
 def test_admin_key_protects_mutations(client):

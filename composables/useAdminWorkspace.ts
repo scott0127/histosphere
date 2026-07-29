@@ -28,12 +28,15 @@ import {
 } from '~/utils/adminSession';
 import {
   archiveAdminEvent,
+  archiveAdminPersona,
   archiveAdminParticipant,
+  createAdminPersona,
   createAdminParticipant,
   fetchAdminAuthUsers,
   fetchAdminSnapshot,
   fetchAdminPromptPreview,
   restoreAdminEvent,
+  restoreAdminPersona,
   restoreAdminParticipant,
   restartAdminSession,
   runAdminPromptDryRun,
@@ -59,8 +62,11 @@ export const useAdminWorkspace = () => {
   const selectedConditionId = ref<string | null>(null);
   const selectedEventId = ref<string | null>(null);
   const creatingParticipant = ref(false);
+  const creatingPersona = ref(false);
   const changingParticipantStatusId = ref<string | null>(null);
+  const changingPersonaStatusId = ref<string | null>(null);
   const savingParticipantId = ref<string | null>(null);
+  const savingPersonaId = ref<string | null>(null);
   const savingTaskId = ref<string | null>(null);
   const updatingTimerSessionId = ref<string | null>(null);
   const restartingSessionId = ref<string | null>(null);
@@ -107,6 +113,9 @@ export const useAdminWorkspace = () => {
     taskJson.value = {};
     taskBaselines.value = {};
     personaJson.value = {};
+    creatingPersona.value = false;
+    changingPersonaStatusId.value = null;
+    savingPersonaId.value = null;
     promptPreview.value = null;
     promptDryRun.value = null;
     selectedConditionId.value = null;
@@ -291,11 +300,14 @@ export const useAdminWorkspace = () => {
       error.value = `Persona ${persona.name} 的 prompt_profile 不是合法 JSON。`;
       return;
     }
+    savingPersonaId.value = persona.id;
+    error.value = null;
     try {
       await updateAdminPersona(adminKey.value, persona.id, {
         name: persona.name,
         role: persona.role,
         biography: persona.biography,
+        avatar_url: persona.avatar_url,
         prompt_profile: promptProfile,
         active: persona.active,
         revision_state: 'teacher_modified',
@@ -303,6 +315,65 @@ export const useAdminWorkspace = () => {
       await loadSnapshot({ preserveUnsavedTaskDrafts: true });
     } catch (e: any) {
       error.value = formatAdminApiError(e, '人物資料儲存失敗。');
+    } finally {
+      savingPersonaId.value = null;
+    }
+  };
+
+  const createPersona = async (eventId: string) => {
+    creatingPersona.value = true;
+    error.value = null;
+    try {
+      await createAdminPersona(adminKey.value, {
+        event_id: eventId,
+        name: '新歷史人物',
+        active: false,
+        revision_state: 'manual',
+      });
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '人物建立失敗。');
+    } finally {
+      creatingPersona.value = false;
+    }
+  };
+
+  const setPersonaActive = async (persona: Persona, active: boolean) => {
+    changingPersonaStatusId.value = persona.id;
+    error.value = null;
+    try {
+      await updateAdminPersona(adminKey.value, persona.id, { active });
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, active ? '人物啟用失敗。' : '人物停用失敗。');
+    } finally {
+      changingPersonaStatusId.value = null;
+    }
+  };
+
+  const archivePersona = async (persona: Persona) => {
+    changingPersonaStatusId.value = persona.id;
+    error.value = null;
+    try {
+      await archiveAdminPersona(adminKey.value, persona.id);
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '人物封存失敗。');
+    } finally {
+      changingPersonaStatusId.value = null;
+    }
+  };
+
+  const restorePersona = async (persona: Persona) => {
+    changingPersonaStatusId.value = persona.id;
+    error.value = null;
+    try {
+      await restoreAdminPersona(adminKey.value, persona.id);
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '人物恢復失敗。');
+    } finally {
+      changingPersonaStatusId.value = null;
     }
   };
 
@@ -418,12 +489,16 @@ export const useAdminWorkspace = () => {
 
   return {
     adminKey,
+    archivePersona,
     authUsers,
     authUsersError,
     changingParticipantStatusId,
+    changingPersonaStatusId,
     conditionModeLabel,
     conditionOrdinal,
+    createPersona,
     createParticipant,
+    creatingPersona,
     creatingParticipant,
     error,
     eventYearRange,
@@ -442,14 +517,17 @@ export const useAdminWorkspace = () => {
     resetWorkspace,
     restartSession,
     restartingSessionId,
+    restorePersona,
     restoreStoredAdminKey,
     runPromptDryRun,
     saveCondition,
     saveEvent,
     setEventArchived,
     savePersona,
+    savingPersonaId,
     saveParticipant,
     setParticipantArchived,
+    setPersonaActive,
     saveTask,
     savingTaskId,
     resetSessionTimer,

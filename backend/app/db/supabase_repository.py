@@ -547,7 +547,7 @@ class SupabaseRepository(RepositoryProtocol):
         return self._select_many("personas", Persona, params)
 
     def delete_persona(self, persona_id: str) -> bool:
-        """軟刪除 persona（PATCH active=False）。
+        """可恢復封存 persona（停用並記錄 archived_at）。
 
         Args:
             persona_id: Persona UUID 字串。
@@ -555,7 +555,12 @@ class SupabaseRepository(RepositoryProtocol):
         Returns:
             bool: 是否成功軟刪除。
         """
-        return self._patch("personas", Persona, persona_id, {"active": False}) is not None
+        return self._patch(
+            "personas",
+            Persona,
+            persona_id,
+            {"active": False, "archived_at": utc_now().isoformat()},
+        ) is not None
 
     # ── Conversation ───────────────────────────────────────────
 

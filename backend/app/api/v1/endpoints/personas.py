@@ -8,6 +8,7 @@ Routes:
     POST   /api/personas:                   新增 persona。
     PATCH  /api/personas/{persona_id}:      更新 persona。
     DELETE /api/personas/{persona_id}:      刪除 persona。
+    POST   /api/personas/{persona_id}/restore: 恢復已封存 persona。
     POST   /api/personas/{persona_id}/regenerate_avatar: 重新生成 avatar。
 """
 
@@ -91,10 +92,9 @@ def delete_persona(
     _admin: None = Depends(require_admin_key),
     service: PersonaService = Depends(get_persona_service),
 ) -> dict[str, bool]:
-    """停用或刪除 persona；研究資料固定後需謹慎使用。
+    """封存 persona，保留既有對話與研究資料關聯。
 
-    實際策略由 repository 決定；Supabase 實作會將 active 設為 False，
-    保留既有 conversation 的回放關聯。
+    此操作會將人物設為停用並寫入封存時間，不會永久刪除資料。
 
     Args:
         persona_id: 要刪除的 persona UUID 字串。
@@ -104,6 +104,16 @@ def delete_persona(
         dict[str, bool]: ``{"success": True/False}``。
     """
     return service.delete_persona(persona_id)
+
+
+@router.post("/{persona_id}/restore", response_model=Persona)
+def restore_persona(
+    persona_id: str,
+    _admin: None = Depends(require_admin_key),
+    service: PersonaService = Depends(get_persona_service),
+) -> Persona:
+    """恢復已封存人物，但不直接啟用，避免意外取代正式人物。"""
+    return service.restore_persona(persona_id)
 
 
 @router.post("/{persona_id}/regenerate_avatar")

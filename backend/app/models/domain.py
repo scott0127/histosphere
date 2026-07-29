@@ -364,6 +364,7 @@ class Persona(BaseModel):
         prompt_profile: 供 prompt 組裝的角色 profile（含 speaking_style 等）。
         avatar_url: 角色頭像 URL。
         active: 是否啟用。
+        archived_at: 封存時間；封存後仍保留既有研究資料關聯。
         sort_order: 排序順序。
         revision_state: 修訂狀態。
         created_at: 建立時間。
@@ -383,6 +384,7 @@ class Persona(BaseModel):
     prompt_profile: dict[str, Any] = Field(default_factory=dict)
     avatar_url: str | None = None
     active: bool = True
+    archived_at: datetime | None = None
     sort_order: int = 0
     revision_state: Literal["llm_generated", "teacher_modified", "manual"] = "llm_generated"
     created_at: datetime = Field(default_factory=utc_now)

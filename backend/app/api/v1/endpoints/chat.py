@@ -74,7 +74,7 @@ async def chat(
 
     Args:
         request: 聊天請求，包含 conversation_id、user_message、
-            可選的 history 與 target_persona_id。
+            可選的 history；target_persona_id 僅保留舊版相容且傳入會被拒絕。
         service: 由 Dependency Injection 注入的 ChatService 實例。
 
     Returns:

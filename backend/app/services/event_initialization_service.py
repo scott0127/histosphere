@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 
 from app.core.experiment_conditions import condition_code_for_key
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import Event, EventTask, ExperimentSession, ResearchLog
+from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, ResearchLog
 from app.providers.llm.base import LLMProvider
 from app.providers.wikipedia_provider import WikipediaProvider
 from app.schemas.requests import EventInitializeRequest
@@ -61,13 +61,13 @@ class EventInitializationService:
 
         learner_session = None
         if existing:
-            # 已存在事件可重用，但仍要補齊 task/primary persona，避免舊資料不完整。
+            # 已存在事件可重用；人物啟用狀態只能由 Admin 管理。
             event = existing
             if not admin_override:
                 learner_session = self._learner_session_for_event(request.user_id, event.id)
             sources = self.repository.list_wiki_sources(event.id)
             task = self._ensure_task(event, sources)
-            personas = await self._ensure_personas(event, sources)
+            personas = self._ensure_personas(event, condition)
         else:
             if not admin_override:
                 raise HTTPException(
@@ -255,12 +255,26 @@ class EventInitializationService:
             )
         )
 
-    async def _ensure_personas(self, event: Event, sources) -> list:
-        """確保事件有一位 primary persona；舊資料若有多位，只回傳排序第一位。"""
+    def _ensure_personas(
+        self,
+        event: Event,
+        condition: ExperimentCondition,
+    ) -> list:
+        """讀取 Admin 設定的人物；Learner 流程不得自行建立或啟用人物。"""
         personas = self.repository.list_personas(event.id)
+        if len(personas) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Event has more than one active historical persona",
+            )
         if personas:
-            return personas[:1]
-        return await self._generate_primary_persona(event, sources)
+            return personas
+        if condition.roleplay_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Role-play requires one active historical persona configured by an admin",
+            )
+        return []
 
     async def _generate_primary_persona(self, event: Event, sources) -> list:
         """用 LLM provider 產生最能代表事件的一位 historical persona。"""

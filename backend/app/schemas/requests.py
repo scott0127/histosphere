@@ -127,7 +127,7 @@ class ChatRequest(BaseModel):
         conversation_id: 所屬 Conversation UUID（至少 1 字元）。
         user_message: 使用者訊息內容（至少 1 字元）。
         history: 前端持有的歷史訊息（相容欄位；目前 ChatService 尚未納入 prompt context）。
-        target_persona_id: 指定回覆的 Persona ID（可選）。
+        target_persona_id: 舊版相容欄位；Learner 傳入時後端會拒絕。
     """
 
     conversation_id: str = Field(..., min_length=1)

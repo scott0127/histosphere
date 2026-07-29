@@ -185,6 +185,41 @@ test('frontend api client archives and restores events through protected admin e
   ]);
 });
 
+test('frontend api client manages the complete persona lifecycle through admin endpoints', async () => {
+  const inactivePersona = { ...samplePersona, active: false, archived_at: null };
+  const { calls, fetcher } = createFetchRecorder({
+    'POST /api/personas': inactivePersona,
+    'PATCH /api/admin/personas/persona-1': { ...samplePersona, active: true },
+    'DELETE /api/personas/persona-1': { success: true },
+    'POST /api/personas/persona-1/restore': inactivePersona,
+  });
+
+  await api.createAdminPersona('test-admin', {
+    event_id: samplePersona.event_id,
+    name: samplePersona.name,
+    role: samplePersona.role,
+    biography: samplePersona.biography,
+    prompt_profile: samplePersona.prompt_profile,
+    avatar_url: samplePersona.avatar_url,
+    active: false,
+  }, fetcher);
+  await api.updateAdminPersona('test-admin', 'persona-1', { active: true }, fetcher);
+  assert.deepEqual(await api.archiveAdminPersona('test-admin', 'persona-1', fetcher), { success: true });
+
+  // 封存回應由下一次 snapshot 反映；這裡只確認前端走可恢復的管理入口。
+  await api.restoreAdminPersona('test-admin', 'persona-1', fetcher);
+
+  assert.deepEqual(calls.map((call) => [call.url, call.options.method]), [
+    ['/api/personas', 'POST'],
+    ['/api/admin/personas/persona-1', 'PATCH'],
+    ['/api/personas/persona-1', 'DELETE'],
+    ['/api/personas/persona-1/restore', 'POST'],
+  ]);
+  for (const call of calls) {
+    assert.deepEqual(call.options.headers, { 'x-admin-key': 'test-admin' });
+  }
+});
+
 test('frontend api client creates, archives, and restores participants through admin endpoints', async () => {
   const participant = {
     id: 'participant-6',
@@ -344,7 +379,6 @@ test('frontend api client preserves task draft, asynchronous submit polling, con
     conversationId: 'conversation-1',
     userMessage: '你好',
     history: [],
-    targetPersonaId: null,
   }, fetcher);
 
   assert.deepEqual(calls.map((call) => [call.url, call.options?.method || 'GET']), [
@@ -498,6 +532,5 @@ test('frontend chat stream parses split SSE frames and keeps learner authenticat
     conversation_id: 'conversation-1',
     user_message: '請回答。',
     history: [],
-    target_persona_id: null,
   });
 });

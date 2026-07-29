@@ -1534,7 +1534,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Historical Persona</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1549,17 +1549,29 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">Persona prompt_profile 後台編輯與 runtime hash</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Persona 選擇一致性<span class="function-note text-small">後端鎖定 opening 人物，但前端仍顯示可切換人物／一般助教控制</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Learner 固定單一 Persona<span class="function-note text-small">受測者不能選擇或切換人物；後端也拒絕指定 persona 的請求</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">人物圖片、情緒／情境變化與 avatar 生成<span class="function-note text-small">avatar_url 欄位存在，regenerate_avatar 目前是相容 no-op</span></span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Admin 人物生命週期與單一啟用限制<span class="function-note text-small">Admin 可新增、編輯、啟用、停用、封存與還原；同事件最多啟用一位人物</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">固定人物肖像<span class="function-note text-small">四位既有人物皆有固定肖像，聊天側欄與訊息會沿用該人物圖片</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">時代知識邊界與基本史實防錯<span class="function-note text-small">人物遇到生存年代之後的人物、物件或概念時，不得假裝認識或用後世知識作答</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="deferred">
-          <span class="function-name">受控歷史錯誤與正式 Debrief</span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+          <span class="function-name">情緒／情境圖片變化<span class="function-note text-small">不影響目前主要實驗流程，低優先暫緩</span></span>
+          <span class="status text-small"><span class="dot"></span>低優先暫緩</span>
+        </div>
+        <div class="function" data-status="critical">
+          <span class="function-name">受控歷史錯誤與正式 Debrief<span class="function-note text-small">目前暫緩，但正式採用受控歷史錯誤前必須完成揭露與說明流程</span></span>
+          <span class="status text-small"><span class="dot"></span>以後必須做</span>
         </div>
       </div>
     </details>
@@ -2037,17 +2049,29 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "Admin 可編輯人物 Prompt profile，執行時會保存對應版本 hash。",
         "修改人物稱呼方式後，可由 hash 確認某段對話使用的是修改前或修改後設定。"
       ]],
-      ["Persona 選擇一致性", [
-        "後端會鎖定開場所選人物，但前端仍保留切換人物或一般助教的控制，因此目前只部分一致。",
-        "後端指定坂本龍馬後，學生畫面仍可能切換其他人物，造成實驗條件不一致。"
+      ["Learner 固定單一 Persona", [
+        "受測者端只顯示該事件目前唯一啟用的人物，不提供人物下拉選單或切換按鈕；後端也不接受受測者自行傳入 persona id。",
+        "黑船事件啟用坂本龍馬後，受測者只能與坂本龍馬互動，不能改選林則徐或一般助教。"
       ]],
-      ["人物圖片、情緒／情境變化與 avatar 生成", [
-        "雖有 avatar_url 欄位，但人物圖片生成與依情境改變表情尚未實作。",
-        "人物進入反思或衝突情境時，目前不會切換成對應的表情圖片。"
+      ["Admin 人物生命週期與單一啟用限制", [
+        "Admin 可新增、編輯、啟用、停用、封存與還原人物；封存是可復原操作，不會永久刪除資料。",
+        "若法國大革命已啟用羅伯斯比爾，Admin 必須先停用他，才能啟用同事件的另一位人物。"
+      ]],
+      ["固定人物肖像", [
+        "每位既有人物都有固定肖像網址，受測者聊天側欄及人物訊息會顯示同一張肖像。",
+        "坂本龍馬的既有對話重新載入後，仍顯示坂本龍馬肖像，不會變成姓名縮寫。"
+      ]],
+      ["時代知識邊界與基本史實防錯", [
+        "Prompt 要求人物先檢查受測者提到的人物、物件、制度或概念是否超出自己的年代；超出時以人物語氣表示不知情，不得假裝擁有後世知識。",
+        "拿破崙被問到愛因斯坦時，不能評論相對論或聲稱認識他；應以拿破崙的第一人稱語氣表示不知道此人。"
+      ]],
+      ["情緒／情境圖片變化", [
+        "目前使用固定肖像，不依每則對話切換人物表情或背景；這不影響主要實驗操作，因此低優先暫緩。",
+        "人物面對衝突或反思問題時仍使用同一張肖像，不另外產生憤怒或沉思版本。"
       ]],
       ["受控歷史錯誤與正式 Debrief", [
-        "讓人物依研究設計呈現受控錯誤，並在活動後正式解釋的流程目前暫緩。",
-        "若人物刻意表達一項預設爭議觀點，系統目前不會在結束時提供專門 Debrief。"
+        "讓人物依研究設計呈現受控錯誤，並在活動後正式向受測者揭露與說明的流程目前暫緩，但採用前必須完成。",
+        "若未來要求人物刻意表達預設爭議觀點，正式收案前必須補上 Debrief，不能只讓錯誤內容留在對話裡。"
       ]],
       ["Supabase messages 為權威歷史；依 sequence_index 全部送入 prompt", [
         "對話以資料庫訊息為準，後端依訊息順序把歷史內容交給模型。",

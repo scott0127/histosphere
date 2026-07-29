@@ -21,7 +21,15 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 
-from app.api.deps import get_chat_service, get_prompt_service, get_rag_pipeline, get_repository, get_session_service, require_admin_key
+from app.api.deps import (
+    get_chat_service,
+    get_persona_service,
+    get_prompt_service,
+    get_rag_pipeline,
+    get_repository,
+    get_session_service,
+    require_admin_key,
+)
 from app.core.config import get_settings
 from app.core.experiment_conditions import sort_condition_codes
 from app.core.interaction_contract import build_interaction_runtime
@@ -47,7 +55,7 @@ from app.schemas.responses import (
     PromptPreviewModule,
     SessionRestartResponse,
 )
-from app.services import ChatService, PromptService, RagPipelineService, SessionService
+from app.services import ChatService, PersonaService, PromptService, RagPipelineService, SessionService
 from app.core.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
@@ -455,18 +463,18 @@ def update_task(
 def update_admin_persona(
     persona_id: str,
     request: PersonaUpdateRequest,
-    repository: RepositoryProtocol = Depends(get_repository),
+    service: PersonaService = Depends(get_persona_service),
 ) -> Persona:
     """更新 persona 基本資料與 prompt_profile。
 
-    Admin 專用的 persona 更新入口，直接操作 repository。
+    Admin 專用的 persona 更新入口，統一交由 PersonaService 驗證。
     支援部分更新（PATCH 語意），可修改 name、biography、
     prompt_profile 等欄位。
 
     Args:
         persona_id: 目標 persona 的 UUID 字串。
         request: 部分更新請求，僅含需修改的欄位。
-        repository: 由 Dependency Injection 注入的資料存取層實例。
+        service: 由 Dependency Injection 注入的 PersonaService。
 
     Returns:
         Persona: 更新後的完整 persona 資料。
@@ -474,13 +482,7 @@ def update_admin_persona(
     Raises:
         HTTPException: 404 — 指定 persona_id 不存在時。
     """
-    persona = repository.get_persona(persona_id)
-    if not persona:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
-    updates = request.model_dump(exclude_unset=True)
-    for key, value in updates.items():
-        setattr(persona, key, value)
-    return repository.save_persona(persona)
+    return service.update_persona(persona_id, request)
 
 
 @router.post("/participants", response_model=Participant, status_code=status.HTTP_201_CREATED)

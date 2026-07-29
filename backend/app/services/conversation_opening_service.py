@@ -150,6 +150,8 @@ class ConversationOpeningService:
     ) -> Persona | None:
         if not condition.roleplay_enabled:
             return None
-        if not personas:
-            raise RuntimeError("Role-play condition requires an active historical persona")
+        if len(personas) != 1:
+            raise RuntimeError(
+                "Role-play condition requires exactly one active historical persona"
+            )
         return personas[0]

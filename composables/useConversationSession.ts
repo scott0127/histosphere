@@ -64,7 +64,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     }
   };
 
-  const sendMessage = async (userInput: string, targetPersonaId?: string) => {
+  const sendMessage = async (userInput: string) => {
     const currentConversationId = conversationId.value;
     if (!currentConversationId || !chatState.value || isSending.value) return;
 
@@ -81,9 +81,10 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     });
 
     const thinkingSpeaker = chatState.value.condition?.roleplay_enabled ? 'persona' : 'assistant';
-    const targetPersona = targetPersonaId
-      ? chatState.value.personas.find((persona) => persona.id === targetPersonaId)
-      : null;
+    const lockedPersonaId = history.value.find((message) => message.persona_id)?.persona_id;
+    const targetPersona = chatState.value.personas.find((persona) => {
+      return lockedPersonaId ? persona.id === lockedPersonaId : persona.active;
+    }) || null;
     history.value.push({
       id: `local-${localRequestId}-assistant`,
       speaker_type: thinkingSpeaker,
@@ -101,7 +102,6 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
         conversationId: currentConversationId,
         userMessage: userInput,
         history: history.value.slice(0, learnerIndex),
-        targetPersonaId,
       }, async (event: ChatStreamEvent) => {
         if (event.type === 'user_message') {
           history.value[learnerIndex] = event.message;

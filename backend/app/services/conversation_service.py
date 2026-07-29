@@ -139,12 +139,23 @@ class ConversationService:
         )
         if not task:
             task = self.repository.get_latest_event_task(event.id)
+        messages = self.repository.list_messages(conversation.id)
+        personas = self.repository.list_personas(event.id)
+        locked_persona_id = next(
+            (message.persona_id for message in messages if message.persona_id),
+            None,
+        )
+        # 既有對話要保留原人物與肖像，即使管理員之後停用或封存該人物。
+        if locked_persona_id and all(persona.id != locked_persona_id for persona in personas):
+            locked_persona = self.repository.get_persona(locked_persona_id)
+            if locked_persona and locked_persona.event_id == event.id:
+                personas.append(locked_persona)
         return ConversationLoadResponse(
             conversation_id=conversation.id,
             session=session,
             event=event,
-            personas=self.repository.list_personas(event.id),
-            messages=self.repository.list_messages(conversation.id),
+            personas=personas,
+            messages=messages,
             condition=condition,
             task=task,
             task_attempt=task_attempt,

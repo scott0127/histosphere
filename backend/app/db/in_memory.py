@@ -465,7 +465,7 @@ class InMemoryRepository(RepositoryProtocol):
         return sorted(personas, key=lambda item: (item.sort_order, item.created_at))
 
     def delete_persona(self, persona_id: str) -> bool:
-        """軟刪除 persona（設定 active=False）。
+        """可恢復封存 persona（停用並記錄 archived_at）。
 
         Args:
             persona_id: Persona UUID 字串。
@@ -477,6 +477,7 @@ class InMemoryRepository(RepositoryProtocol):
         if not persona:
             return False
         persona.active = False
+        persona.archived_at = utc_now()
         persona.updated_at = utc_now()
         self.personas[persona_id] = persona
         return True

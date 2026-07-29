@@ -2,7 +2,7 @@
   <!--
     ChatScreen 是純 UI 元件：不直接呼叫 API，只透過 emit 把送出訊息交給 conversation route。
     它同時支援 generic chatbot 與 historical persona role-play，
-    由 condition.roleplay_enabled 決定是否顯示 persona selector 與人物側欄。
+    由 condition.roleplay_enabled 決定是否顯示事件固定人物與人物側欄。
   -->
   <div class="flex h-screen min-h-0 flex-col bg-[var(--admin-page)] font-sans text-[var(--admin-text)]">
     <header class="shrink-0 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.9)] backdrop-blur-xl">
@@ -60,7 +60,17 @@
                 v-if="message.speaker_type !== 'learner'"
                 class="mb-3 flex items-center gap-2 border-b border-[var(--admin-border-soft)] pb-3 text-xs font-semibold text-[var(--admin-soft)]"
               >
-                <Icon :name="message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline'" class="h-4 w-4" />
+                <img
+                  v-if="message.speaker_type === 'persona' && messagePersona(message)?.avatar_url"
+                  :src="messagePersona(message)?.avatar_url || ''"
+                  :alt="`${message.speaker_name} 肖像`"
+                  class="h-7 w-7 rounded-full border border-[var(--admin-border)] object-cover"
+                />
+                <Icon
+                  v-else
+                  :name="message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline'"
+                  class="h-4 w-4"
+                />
                 {{ message.speaker_name }}
               </div>
 
@@ -102,26 +112,6 @@
         </div>
 
         <footer class="shrink-0 border-t border-[var(--admin-border-soft)] p-5">
-          <!-- role-play 條件才顯示人物選擇；非 role-play 條件維持一般 AI assistant 對話。 -->
-          <div v-if="condition?.roleplay_enabled" class="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button
-              type="button"
-              :class="selectorClass(selectedPersonaId === null)"
-              @click="selectedPersonaId = null"
-            >
-              主要人物
-            </button>
-            <button
-              v-for="persona in personas"
-              :key="persona.id"
-              type="button"
-              :class="selectorClass(selectedPersonaId === persona.id)"
-              @click="selectedPersonaId = persona.id"
-            >
-              {{ persona.name }}
-            </button>
-          </div>
-
           <form v-if="!sessionClosed" class="flex items-end gap-2" @submit.prevent="handleSendMessage">
             <textarea
               v-model="userInput"
@@ -145,15 +135,32 @@
       </section>
 
       <aside class="hidden min-h-0 space-y-4 lg:block">
-        <!-- persona 摘要只在 role-play 條件出現；作答結果統一顯示於聊天主區。 -->
+        <!-- role-play 僅呈現後端鎖定的人物，不提供受測者任何切換控制。 -->
         <div v-if="condition?.roleplay_enabled" class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
           <h2 class="text-sm font-semibold text-[var(--admin-text)]">歷史人物</h2>
-          <div class="mt-3 space-y-3">
-            <div v-for="persona in personas" :key="persona.id" class="rounded-lg border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)] p-3">
-              <p class="font-semibold text-[var(--admin-text)]">{{ persona.name }}</p>
-              <p class="mt-1 text-sm text-[var(--admin-soft)]">{{ persona.role || '角色資料待補' }}</p>
-              <p class="mt-2 line-clamp-3 text-xs leading-5 text-[var(--admin-copy)]">{{ persona.biography }}</p>
+          <div v-if="lockedPersona" class="mt-3">
+            <div class="overflow-hidden rounded-lg border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)]">
+              <img
+                v-if="lockedPersona.avatar_url"
+                :src="lockedPersona.avatar_url"
+                :alt="`${lockedPersona.name} 肖像`"
+                class="aspect-square w-full object-cover"
+              />
+              <div
+                v-else
+                class="flex aspect-square w-full items-center justify-center bg-[var(--admin-coffee-soft)] text-4xl font-semibold text-[var(--admin-coffee)]"
+              >
+                {{ lockedPersona.name.slice(0, 1) }}
+              </div>
+              <div class="p-3">
+                <p class="font-semibold text-[var(--admin-text)]">{{ lockedPersona.name }}</p>
+                <p class="mt-1 text-sm text-[var(--admin-soft)]">{{ lockedPersona.role || '角色資料待補' }}</p>
+                <p class="mt-2 line-clamp-4 text-xs leading-5 text-[var(--admin-copy)]">{{ lockedPersona.biography }}</p>
+              </div>
             </div>
+          </div>
+          <div v-else class="mt-3 rounded-lg border border-dashed border-[var(--admin-border)] p-3 text-sm text-[var(--admin-soft)]">
+            此事件尚未設定可用人物。
           </div>
         </div>
 
@@ -181,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-// ChatScreen 只管理本地輸入框、persona selector 與畫面捲動。
+// ChatScreen 只管理本地輸入框、固定人物呈現與畫面捲動。
 // 對話 state、API error handling、history 替換都在 useConversationSession 處理。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ChatMessage, EventTask, ExperimentCondition, ExperimentSession, HistoricalEvent, Persona, TaskAttempt } from '~/types';
@@ -210,11 +217,10 @@ const emit = defineEmits<{
   (event: 'reset'): void;
   (event: 'next-stage'): void;
   (event: 'session-expired'): void;
-  (event: 'send-message', userInput: string, targetPersonaId?: string): void;
+  (event: 'send-message', userInput: string): void;
 }>();
 
 const userInput = ref('');
-const selectedPersonaId = ref<string | null>(null);
 const chatEndRef = ref<HTMLDivElement | null>(null);
 const chatContainerRef = ref<HTMLDivElement | null>(null);
 const showExitConfirmDialog = ref(false);
@@ -275,26 +281,31 @@ const activityTitle = computed(() => {
   return studentActivityTitle(props.condition);
 });
 
-// role-play 模式會依選定 persona 改變 placeholder，幫助使用者知道目前對話目標。
-const inputPlaceholder = computed(() => {
-  if (!props.condition?.roleplay_enabled) return '輸入你的問題...';
-  if (!selectedPersonaId.value) return '向歷史人物提問...';
-  const persona = props.personas.find((item) => item.id === selectedPersonaId.value);
-  return `向 ${persona?.name || '歷史人物'} 提問...`;
+const lockedPersona = computed(() => {
+  const lockedPersonaId = props.history.find((message) => message.persona_id)?.persona_id;
+  if (lockedPersonaId) {
+    return props.personas.find((persona) => persona.id === lockedPersonaId) || null;
+  }
+  return props.personas.find((persona) => persona.active && !persona.archived_at)
+    || props.personas[0]
+    || null;
 });
 
-// persona selector 使用同一組 class，避免 active/inactive 視覺規則散在 template 裡。
-const selectorClass = (active: boolean) => [
-  'whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold transition',
-  active
-    ? 'border-[var(--admin-coffee-muted)] bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]'
-    : 'border-[var(--admin-border)] bg-[var(--admin-surface)] text-[var(--admin-copy)] hover:border-[var(--admin-coffee-muted)]',
-];
+const messagePersona = (message: ChatMessage) => {
+  if (!message.persona_id) return lockedPersona.value;
+  return props.personas.find((persona) => persona.id === message.persona_id) || lockedPersona.value;
+};
+
+// role-play 模式依事件固定人物調整 placeholder，不提供切換入口。
+const inputPlaceholder = computed(() => {
+  if (!props.condition?.roleplay_enabled) return '輸入你的問題...';
+  return `向 ${lockedPersona.value?.name || '歷史人物'} 提問...`;
+});
 
 const handleSendMessage = () => {
   const trimmed = userInput.value.trim();
   if (!trimmed || props.isReplying) return;
-  emit('send-message', trimmed, selectedPersonaId.value || undefined);
+  emit('send-message', trimmed);
   userInput.value = '';
 };
 

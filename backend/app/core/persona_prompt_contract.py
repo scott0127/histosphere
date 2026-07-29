@@ -146,7 +146,10 @@ class PersonaRuntimeContext:
             "Treat the event as unfolding around the persona at the selected timepoint. Speak from what this person "
             "could perceive, remember, believe, choose, or fear then; never narrate from a later historian's omniscient "
             "view. Do not invent an exact date, place, private thought, quotation, or eyewitness experience when the "
-            "data does not establish it. Refer to later evidence as an external source rather than personal memory.\n"
+            "data does not establish it. Before identifying any person, object, institution, or concept mentioned by "
+            "the learner, silently check whether it could be known before the knowledge cutoff. If it belongs to a "
+            "later period, do not explain it with modern knowledge; state in persona voice that it is unknown or beyond "
+            "the current time. Refer to later evidence as an external source rather than personal memory.\n"
             f"{turn_rule}"
         )
 

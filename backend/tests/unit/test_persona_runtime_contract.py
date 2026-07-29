@@ -98,6 +98,15 @@ def test_runtime_context_changes_with_the_persisted_event():
     assert french != restoration
 
 
+def test_persona_prompt_requires_unknown_future_people_to_stay_unknown():
+    prompt = build_persona_runtime_context(_event(), _persona()).prompt_block(
+        turn_kind="conversation"
+    )
+
+    assert "silently check whether it could be known before the knowledge cutoff" in prompt
+    assert "do not explain it with modern knowledge" in prompt
+
+
 def test_opening_audit_requires_identity_event_anchor_and_in_event_situation():
     context = build_persona_runtime_context(_event(), _persona())
 
@@ -169,6 +178,17 @@ def test_persona_audit_rejects_explicit_knowledge_after_the_scene_cutoff():
 
     assert "persona_temporal_boundary_violation" in violation
     assert "persona_temporal_boundary_violation" not in uncertainty
+
+
+def test_roleplay_opening_requires_exactly_one_active_persona():
+    with pytest.raises(
+        RuntimeError,
+        match="exactly one active historical persona",
+    ):
+        ConversationOpeningService._select_persona(
+            [_persona(), _persona().model_copy(update={"id": "persona-2"})],
+            _condition("03"),
+        )
 
 
 class _SequenceOpeningProvider:

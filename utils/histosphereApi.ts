@@ -56,7 +56,6 @@ export type ChatMessageInput = {
   conversationId: string;
   userMessage: string;
   history: ChatMessage[];
-  targetPersonaId?: string | null;
 };
 
 export type PromptPreviewInput = {
@@ -78,10 +77,15 @@ export type TaskUpdateInput = Pick<
   revision_state: EventTask['revision_state'];
 };
 
-export type PersonaUpdateInput = Pick<
+export type PersonaUpdateInput = Partial<Pick<
   Persona,
-  'name' | 'role' | 'biography' | 'prompt_profile' | 'active' | 'revision_state'
->;
+  'name' | 'role' | 'biography' | 'avatar_url' | 'prompt_profile' | 'active' | 'revision_state'
+>>;
+
+export type PersonaCreateInput = Pick<Persona, 'event_id' | 'name'> & Partial<Pick<
+  Persona,
+  'english_name' | 'role' | 'biography' | 'avatar_url' | 'prompt_profile' | 'active' | 'sort_order' | 'revision_state'
+>>;
 
 export type ConditionUpdateInput = Pick<
   ExperimentCondition,
@@ -251,7 +255,6 @@ export const sendChatMessage = (input: ChatMessageInput, fetcher: FrontendFetche
       conversation_id: input.conversationId,
       user_message: input.userMessage,
       history: input.history,
-      target_persona_id: input.targetPersonaId || null,
     },
   });
 };
@@ -282,7 +285,6 @@ export const sendChatMessageStream = async (
       conversation_id: input.conversationId,
       user_message: input.userMessage,
       history: input.history,
-      target_persona_id: input.targetPersonaId || null,
     }),
   });
 
@@ -363,6 +365,40 @@ export const updateAdminPersona = (
     method: 'PATCH',
     headers: adminHeaders(adminKey),
     body,
+  });
+};
+
+export const createAdminPersona = (
+  adminKey: string,
+  body: PersonaCreateInput,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<Persona>('/api/personas', {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+    body,
+  });
+};
+
+export const archiveAdminPersona = (
+  adminKey: string,
+  personaId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<{ success: boolean }>(`/api/personas/${personaId}`, {
+    method: 'DELETE',
+    headers: adminHeaders(adminKey),
+  });
+};
+
+export const restoreAdminPersona = (
+  adminKey: string,
+  personaId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<Persona>(`/api/personas/${personaId}/restore`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
   });
 };
 

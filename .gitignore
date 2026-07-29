@@ -59,6 +59,8 @@ backend/.venv/
 !public/images/
 !public/images/activity-motifs/
 !public/images/activity-motifs/*.png
+!public/images/personas/
+!public/images/personas/*.png
 
 # Build and hosting metadata
 .vercel

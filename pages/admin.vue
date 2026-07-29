@@ -343,22 +343,93 @@
                     <div>
                       <p class="admin-kicker">歷史人物</p>
                       <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ selectedEvent.canonical_name }}</h2>
+                      <p class="admin-caption mt-2 text-xs">同一事件最多只能啟用一位人物；封存不會刪除既有研究資料。</p>
                     </div>
-                    <span class="admin-badge">{{ selectedEvent.personas.length }} 人</span>
+                    <div class="flex items-center gap-2">
+                      <span class="admin-badge">{{ selectedEvent.personas.length }} 人</span>
+                      <button
+                        type="button"
+                        class="admin-button-secondary inline-flex min-h-10 items-center justify-center gap-2 px-3 text-xs font-bold"
+                        :disabled="creatingPersona"
+                        @click="createPersona(selectedEvent.id)"
+                      >
+                        <Icon name="mdi:account-plus-outline" class="h-4 w-4" />
+                        {{ creatingPersona ? '建立中' : '新增人物' }}
+                      </button>
+                    </div>
                   </div>
 
                   <div class="mt-4 space-y-3">
                     <div v-for="persona in selectedEvent.personas" :key="persona.id" class="admin-subpanel p-4">
-                      <input v-model="persona.name" class="admin-field w-full px-3 py-2 text-sm font-bold" />
-                      <input v-model="persona.role" class="admin-field mt-2 w-full px-3 py-2 text-sm" placeholder="角色定位" />
-                      <textarea v-model="persona.biography" rows="3" class="admin-textarea mt-2 w-full px-3 py-2 text-sm leading-6" />
+                      <div class="flex flex-col gap-4 md:flex-row">
+                        <div class="shrink-0">
+                          <img
+                            v-if="persona.avatar_url"
+                            :src="persona.avatar_url"
+                            :alt="`${persona.name} 肖像`"
+                            class="h-24 w-24 rounded-md border border-[var(--admin-border)] object-cover"
+                          />
+                          <div
+                            v-else
+                            class="flex h-24 w-24 items-center justify-center rounded-md border border-dashed border-[var(--admin-border)] bg-[var(--admin-surface-muted)] text-2xl font-bold text-[var(--admin-soft)]"
+                          >
+                            {{ persona.name.slice(0, 1) }}
+                          </div>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-2">
+                            <input v-model="persona.name" class="admin-field min-w-0 flex-1 px-3 py-2 text-sm font-bold" />
+                            <span
+                              :class="[
+                                'admin-badge whitespace-nowrap',
+                                persona.archived_at ? 'opacity-60' : ''
+                              ]"
+                            >
+                              {{ personaStatusLabel(persona) }}
+                            </span>
+                          </div>
+                          <input v-model="persona.role" class="admin-field mt-2 w-full px-3 py-2 text-sm" placeholder="角色定位" />
+                          <input v-model="persona.avatar_url" class="admin-field mt-2 w-full px-3 py-2 text-xs" placeholder="/images/personas/portrait.png" />
+                        </div>
+                      </div>
+                      <textarea v-model="persona.biography" rows="3" class="admin-textarea mt-3 w-full px-3 py-2 text-sm leading-6" />
                       <label class="admin-label mt-3 block">prompt_profile JSON</label>
                       <textarea v-model="personaJson[persona.id]" rows="5" class="admin-textarea admin-code-editor mt-1 w-full px-3 py-2 font-mono text-xs leading-5" />
-                      <div class="mt-3 flex items-center justify-between gap-2">
-                        <span class="admin-caption text-xs font-bold">{{ persona.active ? '使用中' : '停用' }}</span>
-                        <button class="admin-button-primary px-3 py-2 text-xs font-bold" @click="savePersona(persona)">
-                          儲存人物
+                      <div class="mt-3 flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          v-if="persona.archived_at"
+                          type="button"
+                          class="admin-button-secondary px-3 py-2 text-xs font-bold"
+                          :disabled="changingPersonaStatusId === persona.id"
+                          @click="restorePersona(persona)"
+                        >
+                          恢復
                         </button>
+                        <template v-else>
+                          <button
+                            type="button"
+                            class="admin-button-secondary px-3 py-2 text-xs font-bold"
+                            :disabled="changingPersonaStatusId === persona.id"
+                            @click="setPersonaActive(persona, !persona.active)"
+                          >
+                            {{ persona.active ? '停用' : '啟用' }}
+                          </button>
+                          <button
+                            type="button"
+                            class="admin-button-secondary px-3 py-2 text-xs font-bold"
+                            :disabled="changingPersonaStatusId === persona.id"
+                            @click="confirmArchivePersona(persona)"
+                          >
+                            封存
+                          </button>
+                          <button
+                            class="admin-button-primary px-3 py-2 text-xs font-bold"
+                            :disabled="savingPersonaId === persona.id"
+                            @click="savePersona(persona)"
+                          >
+                            {{ savingPersonaId === persona.id ? '儲存中' : '儲存人物' }}
+                          </button>
+                        </template>
                       </div>
                     </div>
 
@@ -474,6 +545,7 @@
 // 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import type { Persona } from '~/types';
 import { buildParticipantDashboardRows } from '~/utils/adminParticipantDashboard';
 
 definePageMeta({
@@ -493,10 +565,14 @@ const openSections = ref<Record<AdminSectionKey, boolean>>({
 const { enterAdminMode, exitAdminMode, initAdminMode, setAdminViewMode } = useAdminMode();
 const {
   adminKey,
+  archivePersona,
   authUsers,
   authUsersError,
   changingParticipantStatusId,
+  changingPersonaStatusId,
+  createPersona,
   createParticipant,
+  creatingPersona,
   creatingParticipant,
   conditionModeLabel,
   conditionOrdinal,
@@ -516,14 +592,17 @@ const {
   resetWorkspace,
   restartSession,
   restartingSessionId,
+  restorePersona,
   restoreStoredAdminKey,
   runPromptDryRun,
   saveCondition,
   saveEvent,
   setEventArchived,
   savePersona,
+  savingPersonaId,
   saveParticipant,
   setParticipantArchived,
+  setPersonaActive,
   saveTask,
   savingTaskId,
   resetSessionTimer,
@@ -541,6 +620,16 @@ const {
 const participantRows = computed(() => {
   return snapshot.value ? buildParticipantDashboardRows(snapshot.value, authUsers.value) : [];
 });
+
+const personaStatusLabel = (persona: Persona) => {
+  if (persona.archived_at) return '已封存';
+  return persona.active ? '使用中' : '已停用';
+};
+
+const confirmArchivePersona = async (persona: Persona) => {
+  if (import.meta.client && !window.confirm(`確定封存「${persona.name}」？既有研究資料會保留。`)) return;
+  await archivePersona(persona);
+};
 
 const allowRouteLeave = ref(false);
 const confirmDiscardTaskDrafts = () => {

@@ -54,6 +54,11 @@ class ChatService:
         conversation = self.repository.get_conversation(request.conversation_id)
         if not conversation:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+        if request.target_persona_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Learners cannot select a historical persona",
+            )
         event = self.repository.get_event(conversation.event_id)
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
@@ -90,12 +95,9 @@ class ChatService:
         personas = self.repository.list_personas(event.id)
         selected = None
         if condition.roleplay_enabled:
-            if not personas:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active personas found")
             selected = self._select_persona(
                 event.id,
                 personas,
-                request.target_persona_id,
                 prior_messages,
             )
         # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
@@ -124,7 +126,7 @@ class ChatService:
                 metadata={
                     "condition_key": condition.condition_key,
                     "response_status": "pending",
-                    "target_persona_id": request.target_persona_id,
+                    "persona_selection": "event_fixed",
                 },
             )
         )
@@ -137,7 +139,7 @@ class ChatService:
                 conversation_id=conversation.id,
                 message_id=user_message.id,
                 action_type="message_sent",
-                payload={"target_persona_id": request.target_persona_id, "condition_key": condition.condition_key},
+                payload={"persona_selection": "event_fixed", "condition_key": condition.condition_key},
             )
         )
 
@@ -306,20 +308,14 @@ class ChatService:
         self,
         event_id: str,
         personas,
-        target_persona_id: str | None,
         prior_messages: list[ChatMessage],
     ):
-        """Keep one persona identity stable for the full conversation."""
+        """整段對話沿用同一人物；新對話只接受事件唯一的 active persona。"""
         locked_persona_id = next(
             (message.persona_id for message in prior_messages if message.persona_id),
             None,
         )
         if locked_persona_id:
-            if target_persona_id and target_persona_id != locked_persona_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Historical persona is locked for this conversation",
-                )
             selected = self.repository.get_persona(locked_persona_id)
             if not selected or selected.event_id != event_id:
                 raise HTTPException(
@@ -327,11 +323,11 @@ class ChatService:
                     detail="Conversation persona is no longer available",
                 )
             return selected
-        if target_persona_id:
-            selected = self.repository.get_persona(target_persona_id)
-            if not selected or selected.event_id != event_id or not selected.active:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected persona not found")
-            return selected
+        if len(personas) != 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Role-play requires exactly one active historical persona",
+            )
         return personas[0]
 
     @staticmethod
