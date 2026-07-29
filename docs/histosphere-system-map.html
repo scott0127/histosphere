@@ -1446,7 +1446,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>LLM Prompt Pipeline</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1454,28 +1454,28 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">結構化 JSON output、schema repair、Gemini 主模型與 NVIDIA fallback</span>
+          <span class="function-name">結構化 JSON output、schema repair 與單一 provider 鎖定<span class="function-note text-small">正式流程只使用 LLM_MODEL 指定的模型；格式修復與短暫錯誤重試都不切換 provider</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
           <span class="function-name">Prompt preview、dry-run、prompt/profile hash 與 provider/model metadata</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Provider failure contract<span class="function-note text-small">已有 candidate fallback 與 schema repair；缺穩定錯誤分類、有限 transient retry、顯式 retry 狀態</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">單一 Provider failure contract<span class="function-note text-small">逾時、限流、連線或 5xx 最多以同一模型重試一次，並保存失敗分類與重試狀態</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Latency、token usage、fallback reason、correlation id 與 attempt count 持久化</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">每次 LLM 呼叫的研究 metadata 持久化<span class="function-note text-small">保存獨立 ID、任務、provider、model、延遲、token、嘗試與修復次數、失敗分類及 finish reason</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Task judgement、opening、chat、persona generation 的個別模型參數政策</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">全域模型參數政策<span class="function-note text-small">各功能共用全域設定；max output tokens 維持 4096，並以 finish_reason=length 監測是否截斷</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Prompt 傳遞精簡<span class="function-note text-small">目前 user_message 同時存在 canonical module 與 provider 外層 user prompt</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Prompt 傳遞精簡<span class="function-note text-small">Learner 最新訊息只透過 canonical user_message module 傳入一次</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
       </div>
     </details>
@@ -1965,29 +1965,29 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "後端以共用 Prompt 模組加上 EBL、Role-play 因子組成四種 Condition。",
         "04 由後端組成 Historical EBL 與歷史人物呈現，不由前端自行拼接 Prompt。"
       ]],
-      ["結構化 JSON output、schema repair、Gemini 主模型與 NVIDIA fallback", [
-        "LLM 必須回傳指定 JSON 格式；格式錯誤時會嘗試修復，Gemini 不可用時可改用 NVIDIA。",
-        "Gemini 少回一個必要欄位時先嘗試修復；服務失敗時再改用備援模型。"
+      ["結構化 JSON output、schema repair 與單一 provider 鎖定", [
+        "LLM 必須回傳指定 JSON 格式；格式錯誤時只用同一模型修復，不會改用其他供應商。",
+        "正式實驗若設定 Gemini，task、開場與聊天都持續使用 Gemini。"
       ]],
       ["Prompt preview、dry-run、prompt/profile hash 與 provider/model metadata", [
         "研究者可預覽 Prompt、試跑生成，並記錄實際 Prompt 版本、供應商與模型資訊。",
         "比較 02 與 04 時，可確認兩者使用哪些模組及各自的 hash。"
       ]],
-      ["Provider failure contract", [
-        "已有候選模型 fallback 與 JSON 修復，但錯誤分類、短暫錯誤重試及明確重試狀態仍不完整。",
-        "API timeout 時能換候選模型，但目前難以區分限流、網路中斷或格式錯誤。"
+      ["單一 Provider failure contract", [
+        "後端會區分逾時、限流、連線、認證、格式錯誤等失敗，並留下重試狀態。",
+        "Gemini 短暫逾時時最多再用同一 Gemini 模型嘗試一次，不切換 NVIDIA 或 Cohere。"
       ]],
-      ["Latency、token usage、fallback reason、correlation id 與 attempt count 持久化", [
-        "尚未完整保存每次生成耗時、token 數、使用備援原因、追蹤編號與嘗試次數。",
-        "某次回覆耗時 40 秒，目前無法從資料庫完整查出經過幾次模型呼叫。"
+      ["每次 LLM 呼叫的研究 metadata 持久化", [
+        "每次生成會保存獨立追蹤編號、任務、模型、耗時、token、嘗試與修復次數及失敗原因。",
+        "研究者可查出某次聊天用了哪個模型、花多久、是否重試，以及是否因 token 上限中止。"
       ]],
-      ["Task judgement、opening、chat、persona generation 的個別模型參數政策", [
-        "不同生成工作尚未各自定義 temperature、token 上限等正式政策。",
-        "開場白與客觀評分目前沒有一套明確不同的模型參數規範。"
+      ["全域模型參數政策", [
+        "目前 task judgement、opening、chat 與 persona generation 共用同一套全域模型參數，避免不必要的差異。",
+        "輸出上限維持 4096 tokens；若 finish_reason 是 length，代表需要再評估上限。"
       ]],
       ["Prompt 傳遞精簡", [
-        "Learner 訊息目前同時存在 canonical module 與 provider 外層 Prompt，可能重複傳遞。",
-        "學生同一句問題可能在一次請求中被模型看見兩次，增加 token 並影響生成。"
+        "Learner 最新訊息只存在 canonical user_message module，不會再由 provider 外層重複附加。",
+        "學生同一句問題在一次請求中只會被模型看見一次，減少 token 與重複加權。"
       ]],
       ["Historical EBL 推理階段與 Disclosure D0–D4 分離", [
         "系統分開決定學生正在練習的歷史思考行為，以及這一輪可提供多少資訊。",
