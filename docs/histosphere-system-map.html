@@ -1582,40 +1582,44 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>多輪 Chat Runtime</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Supabase messages 為權威歷史；依 sequence_index 全部送入 prompt</span>
+          <span class="function-name">Supabase messages 為權威歷史；依 sequence_index 組裝 prompt</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">長對話 context 管理<span class="function-note text-small">每則截斷 1600 字，但沒有總 token budget、摘要或壓縮策略</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">長對話 context 上限<span class="function-note text-small">每則最多 1600 字、總歷史最多 16000 字；超過時省略最舊訊息並記錄省略數量</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">回覆等待 UX<span class="function-note text-small">有 optimistic message 與生成中提示，但 chat 仍是單一長連線 request</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">回覆等待、SSE 與重新連線 UX<span class="function-note text-small">即時顯示保存、生成與驗證狀態；斷線或重整後以 operation polling 接回結果</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">持久化 chat operation、polling、失敗重試與 duplicate/idempotency guard</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">持久化 chat operation、polling、失敗重試與 duplicate/idempotency guard<span class="function-note text-small">同一 request 可安全查詢、重播或明確重試，不會再次呼叫 LLM</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">LLM 失敗資料保留<span class="function-note text-small">候選輸出有本機 audit；本次 learner turn 在 AI 成功前不入 DB，失敗後重整會消失</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">LLM 失敗資料保留<span class="function-note text-small">Learner 訊息先寫入 DB；失敗狀態可在重整後恢復並安全重試</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">同 conversation 並行控制與 learner/model 原子寫入</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">同 conversation 並行控制與 learner-first durable write<span class="function-note text-small">同一對話一次只允許一筆 active operation；先保存提問，再關聯 AI 回覆</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Condition fail-closed<span class="function-note text-small">session／condition 缺失時目前會相容性 fallback 到 04，而非拒絕處理</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">後端重啟後的中斷回合恢復<span class="function-note text-small">啟動時將殘留 operation 標成可重試，並沿用原 learner 訊息</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Dynamic context／related events<span class="function-note text-small">API 有回傳，dynamic context 進前端 state，但正式 UI 未呈現且未寫 message metadata</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Condition fail-closed<span class="function-note text-small">session 或 condition snapshot 缺失時回 409，不會默認套用 04 或其他模式</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">Dynamic context／related events<span class="function-note text-small">屬 related-event／RAG 延伸範圍，正式 UI 與 message metadata 目前暫緩</span></span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
       </div>
     </details>
@@ -1726,24 +1730,24 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">本次執行 22/22 通過</span></span>
+          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">本次完整前端單元測試與 production build 通過</span></span>
+          <span class="status text-small"><span class="dot"></span>已通過</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">本次 117 項後端測試全部通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="partial">
-          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">測試檔完整存在；本次受 Windows runner 1312 阻擋，未能重跑</span></span>
-          <span class="status text-small"><span class="dot"></span>未重驗</span>
+          <span class="function-name">真實 Supabase repository integration 與 disposable migration smoke tests<span class="function-note text-small">已實測 operation 寫入、失敗與重啟恢復；乾淨資料庫 migration smoke test 尚未建立</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">真實 Supabase repository integration 與 disposable migration smoke tests</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="partial">
+          <span class="function-name">Vue DOM/component tests 與完整瀏覽器 E2E<span class="function-note text-small">前端單元測試及實際瀏覽器中斷恢復已驗證；完整自動化 E2E 尚未建立</span></span>
+          <span class="status text-small"><span class="dot"></span>部分完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Vue DOM/component tests 與完整瀏覽器 E2E</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
-        </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Provider failure、chat concurrency、idempotency 與 recovery tests</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Provider failure、chat concurrency、idempotency 與 recovery tests<span class="function-note text-small">自動測試及真實重複送出、斷線、重整與強制終止後恢復均已通過</span></span>
+          <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
       </div>
     </details>
@@ -2073,37 +2077,41 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "讓人物依研究設計呈現受控錯誤，並在活動後正式向受測者揭露與說明的流程目前暫緩，但採用前必須完成。",
         "若未來要求人物刻意表達預設爭議觀點，正式收案前必須補上 Debrief，不能只讓錯誤內容留在對話裡。"
       ]],
-      ["Supabase messages 為權威歷史；依 sequence_index 全部送入 prompt", [
-        "對話以資料庫訊息為準，後端依訊息順序把歷史內容交給模型。",
-        "學生重新登入後，AI 仍能讀取先前保存的問答並延續討論。"
+      ["Supabase messages 為權威歷史；依 sequence_index 組裝 prompt", [
+        "對話以資料庫訊息為準，後端依訊息順序組裝模型可用的歷史內容，不採信瀏覽器暫存的舊對話。",
+        "學生重新登入後，AI 會從 Supabase 讀取先前保存的問答，再依順序延續討論。"
       ]],
-      ["長對話 context 管理", [
-        "每則訊息限制在 1600 字，但尚無整體 token 上限、摘要或壓縮機制。",
-        "對話累積上百輪時，即使單則不長，整體 Prompt 仍可能超過模型限制。"
+      ["長對話 context 上限", [
+        "每則訊息最多 1600 字、整段歷史最多 16000 字；超過時從最舊訊息開始省略，並在 Prompt 記錄省略數量。目前不增加摘要模型呼叫。",
+        "長時間討論超過上限時，模型仍取得最近的完整脈絡，不會因無限累積訊息而超過輸入限制。"
       ]],
-      ["回覆等待 UX", [
-        "畫面會立即顯示學生訊息與生成中狀態，但後端仍使用一條長時間等待的請求。",
-        "LLM 等待 40 秒時學生知道正在生成，但連線中斷仍可能讓整次請求失敗。"
+      ["回覆等待、SSE 與重新連線 UX", [
+        "畫面會依序顯示保存、生成與驗證狀態；即時連線中斷後，前端會改查詢持久化 operation 並接回結果。",
+        "等待 40 秒期間即使重新整理，原提問仍在；01 模式顯示 AI Assistant，只有 03／04 顯示固定歷史人物。"
       ]],
       ["持久化 chat operation、polling、失敗重試與 duplicate/idempotency guard", [
-        "尚未把每次生成建立成可追蹤的背景工作，也沒有完整 polling、重試與防重複送出機制。",
-        "學生因網路問題重按送出，系統目前可能執行兩次相同的 LLM 請求。"
+        "每輪以 client_request_id 建立可查詢的 operation；已完成的相同請求直接重播結果，失敗後必須明確重試。",
+        "學生因網路問題重按送出時，系統不會再次呼叫 LLM，也不會新增第二筆相同提問。"
       ]],
       ["LLM 失敗資料保留", [
-        "被拒絕的模型候選輸出有本機 audit，但學生訊息要等 AI 成功後才寫入資料庫。",
-        "學生提問後 LLM timeout，此時重新整理可能遺失剛才的提問。"
+        "Learner 訊息會在呼叫 LLM 前先保存；模型失敗時 operation 記錄 failure type 並保持可重試。",
+        "學生提問後模型逾時，重新整理仍看得到原提問與重試按鈕，不會遺失內容。"
       ]],
-      ["同 conversation 並行控制與 learner/model 原子寫入", [
-        "同一對話尚無請求鎖定，也不能保證學生訊息與 AI 回覆一定成對寫入。",
-        "同一帳號在兩個分頁同時送出問題，回覆順序可能交錯或產生重複資料。"
+      ["同 conversation 並行控制與 learner-first durable write", [
+        "同一 conversation 同時只允許一筆 active generation；Learner 先保存，AI 成功後再以 response message 關聯。",
+        "同一帳號在兩個分頁同時送出時，第二筆會收到 409，不會交錯產生兩個 AI 回覆。"
+      ]],
+      ["後端重啟後的中斷回合恢復", [
+        "後端啟動時會把上一個程序遺留的 pending／processing operation 標成 failed 且可重試，並保留原 Learner 訊息。",
+        "生成途中強制關閉後端再啟動，畫面會顯示可重試；重試沿用同一筆提問，最後只新增一筆 AI 回覆。"
       ]],
       ["Condition fail-closed", [
-        "Session 或 Condition 缺失時仍可能相容性退回 04，而不是直接拒絕處理。",
-        "一筆缺少 Condition 的錯誤 Session 可能意外以 Historical EBL + Role-play 執行。"
+        "Conversation 缺 session、session 不存在或 condition snapshot 缺失時會立即回 409，不會自行猜測模式。",
+        "一筆缺少 Condition 的錯誤 Session 不會默認套用 04，因此不會污染實驗分組資料。"
       ]],
       ["Dynamic context／related events", [
-        "API 已回傳相關事件，前端也保存 dynamic context，但正式介面未呈現，訊息 metadata 也未保存使用內容。",
-        "後端找到「恐怖統治」作為相關事件，但學生看不到，研究紀錄也無法確認回覆用了哪些背景。"
+        "這是 related-event／RAG 的延伸能力，目前暫緩；正式介面不呈現，訊息 metadata 也尚未保存使用內容。",
+        "後端即使找到「恐怖統治」作為相關事件，目前也不把它當作正式多輪 Chat 必備流程。"
       ]],
       ["事件列表優先，再進入單一事件的 task／事件／persona 管理", [
         "管理員先選擇歷史事件，再編輯該事件的內容、Task 與人物設定。",
@@ -2166,32 +2174,32 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "受測者必須經過後端 API 讀寫資料，而不是直接操作 Supabase table。"
       ]],
       ["Frontend 純函式／API contract tests", [
-        "前端資料轉換及 API 格式測試已建立；心智圖記錄最近一次為 22/22 通過。",
-        "測試會驗證 condition mapping 與 Task payload 轉換是否符合預期。"
+        "前端資料轉換、API 格式、聊天等待身分與操作恢復測試已通過，production build 也成功。",
+        "測試會驗證 condition mapping、Task payload，以及 01 模式等待時不會誤顯示歷史人物。"
       ]],
       ["Backend API／interaction／persona／provider tests", [
-        "相關測試檔存在，但最近一次受 Windows runner 問題影響，沒有重新確認目前結果。",
-        "Persona 規則已有測試案例，但在重新執行前不能宣稱目前版本全部通過。"
+        "本次完整執行 117 項後端測試，API、互動政策、Persona、Provider 與 Chat operation 皆通過。",
+        "測試會驗證相同 request 重播、失敗重試、Condition 缺失拒絕及後端重啟恢復。"
       ]],
       ["真實 Supabase repository integration 與 disposable migration smoke tests", [
-        "尚未用可丟棄資料庫完整驗證 repository 與所有 migration。",
-        "從空資料庫套用 migration 後，還沒有自動測試確認 API 能正常讀寫。"
+        "已在真實本機 Supabase 驗證 operation 寫入、重複防護、失敗與重啟恢復；從空資料庫套用所有 migration 的自動 smoke test 仍未建立。",
+        "目前可確認現有資料庫上的 Chat Runtime 正常，但尚未自動證明全新資料庫可一次建置完成。"
       ]],
       ["Vue DOM/component tests 與完整瀏覽器 E2E", [
-        "尚未自動操作實際 Vue 畫面與完整受測流程。",
-        "目前沒有自動測試登入、選事件、填 Task、送出並進入聊天的完整流程。"
+        "前端單元測試與實際瀏覽器的重新整理、斷線恢復、失敗重試已驗證；登入到整場實驗的自動化 E2E 尚未建立。",
+        "目前已人工確認 Chat Runtime 真實操作，但仍沒有一支自動腳本完整跑完登入、Task 與聊天流程。"
       ]],
       ["Provider failure、chat concurrency、idempotency 與 recovery tests", [
-        "模型失敗、重複送出、同時請求與中斷恢復仍缺完整自動測試。",
-        "模型逾時後重新送出，尚未自動驗證是否會產生重複訊息。"
+        "自動測試及真實執行均涵蓋模型失敗、同時請求、相同 request 重播、重整與後端程序中斷恢復。",
+        "實際強制終止後端後重啟並重試，資料庫最後只有一筆 Learner 與一筆 AI 訊息。"
       ]],
       ["pnpm dev:full 釋放 3000／8000、保留官方 Supabase ports、檢查 Docker 與 readiness", [
         "完整啟動前會釋放前後端連接埠，保留 Supabase 官方連接埠並檢查必要服務。",
         "舊前端仍占用 3000 時，啟動腳本會先釋放再啟動。"
       ]],
       ["健康 Supabase stack 重用、log lock 重試與啟動時間輸出", [
-        "已健康的 Supabase 不會重啟；log 被占用時會重試，並顯示各服務啟動時間。",
-        "第二次執行 pnpm dev:full 時會沿用現有資料庫，以縮短等待。"
+        "已健康的 Supabase 不會重啟；log 被占用時會重試，並支援目前 CLI 的 Secret key 與舊版 service-role key 輸出。",
+        "第二次執行 pnpm dev:full 時會沿用現有資料庫；本次已實際確認前端、後端與 Supabase 都能啟動。"
       ]],
       ["文件與程式一致性", [
         "部分文件仍描述舊的 12 則對話限制、Prompt 順序或尚未實作的 EBL 狀態。",
