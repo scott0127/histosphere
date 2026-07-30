@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from fastapi import HTTPException, status
 
+from app.core.research_audit import build_change_payload
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
 from app.schemas.responses import (
@@ -98,6 +99,7 @@ class SessionService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="The countdown starts after the Chat stage is ready",
             )
+        before = session.model_copy(deep=True)
         now = utc_now()
         session.status = "conversation_started"
         session.timer_started_at = now
@@ -111,11 +113,22 @@ class SessionService:
                 session_id=saved.id,
                 event_id=saved.event_id,
                 action_type="session_timer_reset",
-                payload={
-                    "duration_minutes": EXPERIMENT_CHAT_DURATION_MINUTES,
-                    "timer_ends_at": saved.timer_ends_at.isoformat(),
-                    "trigger": "admin",
-                },
+                payload=build_change_payload(
+                    before=before,
+                    after=saved,
+                    fields=[
+                        "status",
+                        "timer_started_at",
+                        "timer_ends_at",
+                        "completed_at",
+                        "completion_reason",
+                    ],
+                    subject={
+                        "session_id": saved.id,
+                        "duration_minutes": EXPERIMENT_CHAT_DURATION_MINUTES,
+                        "trigger": "admin",
+                    },
+                ),
             )
         )
         return saved

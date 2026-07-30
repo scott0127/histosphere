@@ -6,7 +6,8 @@
 
 from fastapi import HTTPException, status
 
-from app.models.domain import Persona
+from app.core.research_audit import build_change_payload
+from app.models.domain import Persona, ResearchLog
 from app.schemas.requests import PersonaCreateRequest, PersonaUpdateRequest
 from app.crud.protocols import RepositoryProtocol
 
@@ -36,13 +37,39 @@ class PersonaService:
         if request.active:
             self._assert_can_activate(request.event_id)
         persona = Persona(**request.model_dump())
-        return self.repository.save_persona(persona)
+        saved = self.repository.save_persona(persona)
+        self.repository.log_research(
+            ResearchLog(
+                event_id=saved.event_id,
+                action_type="persona_created",
+                payload=build_change_payload(
+                    before=None,
+                    after=saved,
+                    fields=[
+                        "name",
+                        "role",
+                        "biography",
+                        "avatar_url",
+                        "prompt_profile",
+                        "active",
+                        "revision_state",
+                    ],
+                    subject={
+                        "persona_id": saved.id,
+                        "persona_name": saved.name,
+                        "event_id": saved.event_id,
+                    },
+                ),
+            )
+        )
+        return saved
 
     def update_persona(self, persona_id: str, request: PersonaUpdateRequest) -> Persona:
         """更新 persona；prompt_profile 也在此保存，供 prompt assembly 使用。"""
         persona = self.repository.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        before = persona.model_copy(deep=True)
         updates = request.model_dump(exclude_unset=True)
         if updates.get("active") is True:
             self._assert_can_activate(persona.event_id, persona_id=persona.id)
@@ -50,13 +77,51 @@ class PersonaService:
             persona.archived_at = None
         for key, value in updates.items():
             setattr(persona, key, value)
-        return self.repository.save_persona(persona)
+        saved = self.repository.save_persona(persona)
+        self.repository.log_research(
+            ResearchLog(
+                event_id=saved.event_id,
+                action_type="persona_updated",
+                payload=build_change_payload(
+                    before=before,
+                    after=saved,
+                    fields=set(updates.keys()) | ({"archived_at"} if updates.get("active") is True else set()),
+                    subject={
+                        "persona_id": saved.id,
+                        "persona_name": saved.name,
+                        "event_id": saved.event_id,
+                    },
+                ),
+            )
+        )
+        return saved
 
     def delete_persona(self, persona_id: str) -> dict[str, bool]:
         """可恢復封存 persona，保留既有 conversation 與研究資料關聯。"""
+        persona = self.repository.get_persona(persona_id)
+        if not persona:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        before = persona.model_copy(deep=True)
         deleted = self.repository.delete_persona(persona_id)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        saved = self.repository.get_persona(persona_id)
+        self.repository.log_research(
+            ResearchLog(
+                event_id=before.event_id,
+                action_type="persona_archived",
+                payload=build_change_payload(
+                    before=before,
+                    after=saved,
+                    fields=["active", "archived_at"],
+                    subject={
+                        "persona_id": before.id,
+                        "persona_name": before.name,
+                        "event_id": before.event_id,
+                    },
+                ),
+            )
+        )
         return {"success": True}
 
     def restore_persona(self, persona_id: str) -> Persona:
@@ -64,9 +129,27 @@ class PersonaService:
         persona = self.repository.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        before = persona.model_copy(deep=True)
         persona.archived_at = None
         persona.active = False
-        return self.repository.save_persona(persona)
+        saved = self.repository.save_persona(persona)
+        self.repository.log_research(
+            ResearchLog(
+                event_id=saved.event_id,
+                action_type="persona_restored",
+                payload=build_change_payload(
+                    before=before,
+                    after=saved,
+                    fields=["active", "archived_at"],
+                    subject={
+                        "persona_id": saved.id,
+                        "persona_name": saved.name,
+                        "event_id": saved.event_id,
+                    },
+                ),
+            )
+        )
+        return saved
 
     def regenerate_avatar(self, persona_id: str) -> dict[str, str | bool | None]:
         """保留 avatar 擴充點；影片與 persona card 已棄用。"""

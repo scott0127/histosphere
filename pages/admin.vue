@@ -113,6 +113,26 @@
           </div>
         </section>
 
+        <section class="admin-panel">
+          <button class="admin-accordion-header" type="button" @click="toggleSection('logs')">
+            <span>
+              <span class="admin-kicker">Audit trail</span>
+              <span class="admin-accordion-title">研究操作紀錄</span>
+            </span>
+            <span class="admin-accordion-meta">
+              最近 {{ snapshot.research_logs.length }} 筆
+              <Icon :name="openSections.logs ? 'mdi:chevron-down' : 'mdi:arrow-right'" class="h-5 w-5" />
+            </span>
+          </button>
+
+          <div v-show="openSections.logs" class="admin-accordion-body">
+            <AdminResearchLogPanel
+              :events="snapshot.events"
+              :logs="snapshot.research_logs"
+            />
+          </div>
+        </section>
+
         <section v-if="!selectedEvent" class="admin-panel">
           <div class="admin-accordion-header">
             <span>
@@ -259,7 +279,7 @@
           </button>
 
           <div v-show="openSections.events" class="admin-accordion-body">
-            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div class="grid gap-4">
               <article class="admin-panel-inner p-5">
                   <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
                     <div>
@@ -308,17 +328,6 @@
                     </button>
                   </div>
                 </article>
-
-              <aside class="admin-panel-inner p-5">
-                <p class="admin-kicker">研究紀錄</p>
-                <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">操作 logs</h2>
-                <div class="mt-4 max-h-[520px] space-y-2 overflow-auto text-xs">
-                  <div v-for="log in snapshot.research_logs" :key="String(log.id)" class="admin-log-item p-3">
-                    <p class="font-bold">{{ log.action_type }}</p>
-                    <p class="admin-caption mt-1">{{ log.created_at }}</p>
-                  </div>
-                </div>
-              </aside>
             </div>
           </div>
         </section>
@@ -553,10 +562,11 @@ definePageMeta({
   name: 'admin',
 });
 
-type AdminSectionKey = 'participants' | 'tasks' | 'events' | 'personas';
+type AdminSectionKey = 'participants' | 'logs' | 'tasks' | 'events' | 'personas';
 
 const openSections = ref<Record<AdminSectionKey, boolean>>({
   participants: true,
+  logs: false,
   tasks: true,
   events: true,
   personas: true,
@@ -691,6 +701,7 @@ const selectEvent = (eventId: string) => {
   selectedEventId.value = eventId;
   openSections.value = {
     participants: true,
+    logs: false,
     tasks: true,
     events: true,
     personas: true,

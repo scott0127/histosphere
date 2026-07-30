@@ -33,6 +33,7 @@ from app.api.deps import (
 from app.core.config import get_settings
 from app.core.experiment_conditions import sort_condition_codes
 from app.core.interaction_contract import build_interaction_runtime
+from app.core.research_audit import build_change_payload
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, Participant, Persona, ResearchLog
 from app.schemas.requests import (
@@ -339,6 +340,7 @@ def update_event(
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
+    before = event.model_copy(deep=True)
     updates = request.model_dump(exclude_unset=True)
     for key, value in updates.items():
         setattr(event, key, value)
@@ -347,7 +349,12 @@ def update_event(
         ResearchLog(
             event_id=saved.id,
             action_type="event_updated",
-            payload={"updated_fields": sorted(updates.keys())},
+            payload=build_change_payload(
+                before=before,
+                after=saved,
+                fields=updates.keys(),
+                subject={"event_id": saved.id, "event_name": saved.canonical_name},
+            ),
         )
     )
     return saved
@@ -359,11 +366,22 @@ def archive_event(
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> Event:
     """Archive event materials without deleting any related rows."""
-    event = repository.archive_event(event_id)
-    if not event:
+    current = repository.get_event(event_id)
+    if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    before = current.model_copy(deep=True)
+    event = repository.archive_event(event_id)
     repository.log_research(
-        ResearchLog(event_id=event.id, action_type="event_archived", payload={})
+        ResearchLog(
+            event_id=event.id,
+            action_type="event_archived",
+            payload=build_change_payload(
+                before=before,
+                after=event,
+                fields=["archived_at"],
+                subject={"event_id": event.id, "event_name": event.canonical_name},
+            ),
+        )
     )
     return event
 
@@ -374,11 +392,22 @@ def restore_event(
     repository: RepositoryProtocol = Depends(get_repository),
 ) -> Event:
     """Restore archived event materials to the learner library."""
-    event = repository.restore_event(event_id)
-    if not event:
+    current = repository.get_event(event_id)
+    if not current:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    before = current.model_copy(deep=True)
+    event = repository.restore_event(event_id)
     repository.log_research(
-        ResearchLog(event_id=event.id, action_type="event_restored", payload={})
+        ResearchLog(
+            event_id=event.id,
+            action_type="event_restored",
+            payload=build_change_payload(
+                before=before,
+                after=event,
+                fields=["archived_at"],
+                subject={"event_id": event.id, "event_name": event.canonical_name},
+            ),
+        )
     )
     return event
 
@@ -411,6 +440,7 @@ def update_task(
     task = repository.get_event_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    before = task.model_copy(deep=True)
     updates = request.model_dump(exclude_unset=True)
     required_field_issues = [
         {
@@ -453,7 +483,12 @@ def update_task(
             event_id=saved.event_id,
             task_id=saved.id,
             action_type="task_updated",
-            payload={"updated_fields": sorted(updates.keys())},
+            payload=build_change_payload(
+                before=before,
+                after=saved,
+                fields=updates.keys(),
+                subject={"task_id": saved.id, "event_id": saved.event_id},
+            ),
         )
     )
     return saved
@@ -526,12 +561,21 @@ def create_participant(
     repository.log_research(
         ResearchLog(
             action_type="participant_created",
-            payload={
-                "participant_id": saved.id,
-                "participant_code": saved.code,
-                "auth_user_id": saved.auth_user_id,
-                "condition_list": saved.condition_list,
-            },
+            payload=build_change_payload(
+                before=None,
+                after=saved,
+                fields=[
+                    "code",
+                    "auth_user_id",
+                    "display_name",
+                    "cohort",
+                    "condition_list",
+                    "status",
+                    "notes",
+                    "metadata",
+                ],
+                subject={"participant_id": saved.id, "participant_code": saved.code},
+            ),
         )
     )
     return saved
@@ -549,16 +593,22 @@ def archive_participant(
     if participant.status == "archived":
         return participant
 
+    before = participant.model_copy(deep=True)
     participant.status = "archived"
     saved = repository.save_participant(participant)
     repository.log_research(
         ResearchLog(
             action_type="participant_archived",
-            payload={
-                "participant_id": saved.id,
-                "participant_code": saved.code,
-                "auth_user_id": saved.auth_user_id,
-            },
+            payload=build_change_payload(
+                before=before,
+                after=saved,
+                fields=["status"],
+                subject={
+                    "participant_id": saved.id,
+                    "participant_code": saved.code,
+                    "auth_user_id": saved.auth_user_id,
+                },
+            ),
         )
     )
     return saved
@@ -576,16 +626,22 @@ def restore_participant(
     if participant.status == "active":
         return participant
 
+    before = participant.model_copy(deep=True)
     participant.status = "active"
     saved = repository.save_participant(participant)
     repository.log_research(
         ResearchLog(
             action_type="participant_restored",
-            payload={
-                "participant_id": saved.id,
-                "participant_code": saved.code,
-                "auth_user_id": saved.auth_user_id,
-            },
+            payload=build_change_payload(
+                before=before,
+                after=saved,
+                fields=["status"],
+                subject={
+                    "participant_id": saved.id,
+                    "participant_code": saved.code,
+                    "auth_user_id": saved.auth_user_id,
+                },
+            ),
         )
     )
     return saved
@@ -606,6 +662,7 @@ def update_participant(
     if not participant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
 
+    before = participant.model_copy(deep=True)
     updates = request.model_dump(exclude_unset=True)
     if "auth_user_id" in updates:
         raw_auth_user_id = updates["auth_user_id"]
@@ -629,11 +686,12 @@ def update_participant(
     repository.log_research(
         ResearchLog(
             action_type="participant_updated",
-            payload={
-                "participant_id": saved.id,
-                "participant_code": saved.code,
-                "updated_fields": sorted(updates.keys()),
-            },
+            payload=build_change_payload(
+                before=before,
+                after=saved,
+                fields=updates.keys(),
+                subject={"participant_id": saved.id, "participant_code": saved.code},
+            ),
         )
     )
     return saved
@@ -684,6 +742,7 @@ def update_condition(
     condition = repository.get_condition(condition_id)
     if not condition:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Condition not found")
+    before = condition.model_copy(deep=True)
     updates = request.model_dump(exclude_unset=True)
     try:
         validated = ExperimentCondition.model_validate({**condition.model_dump(), **updates})
@@ -692,7 +751,22 @@ def update_condition(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Condition behavior must match its fixed 01-04 experiment mapping",
         ) from exc
-    return repository.save_condition(validated)
+    saved = repository.save_condition(validated)
+    repository.log_research(
+        ResearchLog(
+            action_type="condition_updated",
+            payload=build_change_payload(
+                before=before,
+                after=saved,
+                fields=updates.keys(),
+                subject={
+                    "condition_id": saved.id,
+                    "condition_key": saved.condition_key,
+                },
+            ),
+        )
+    )
+    return saved
 
 
 @router.get("/research-logs", response_model=list[ResearchLog])

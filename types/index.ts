@@ -306,12 +306,37 @@ export type ChatStreamEvent =
   | { type: 'complete'; response: ChatResponse }
   | { type: 'error'; detail: string; retryable: boolean };
 
+export interface ResearchLogChange {
+  before: unknown;
+  after: unknown;
+}
+
+export interface ResearchLogPayload {
+  updated_fields?: string[];
+  changes?: Record<string, ResearchLogChange>;
+  [key: string]: unknown;
+}
+
+export interface ResearchLog {
+  id: string;
+  user_id?: string | null;
+  session_id?: string | null;
+  event_id?: string | null;
+  task_id?: string | null;
+  attempt_id?: string | null;
+  conversation_id?: string | null;
+  message_id?: string | null;
+  action_type: string;
+  payload: ResearchLogPayload;
+  created_at: string;
+}
+
 export interface AdminSnapshotResponse {
   events: EventWithPersonas[];
   conditions: ExperimentCondition[];
   participants: Participant[];
   sessions: ExperimentSession[];
-  research_logs: Array<Record<string, unknown>>;
+  research_logs: ResearchLog[];
 }
 
 export interface AdminAuthUserSummary {

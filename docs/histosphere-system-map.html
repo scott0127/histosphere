@@ -1630,7 +1630,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Admin 後台</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1649,9 +1649,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">Prompt preview 與不污染正式資料的 dry-run</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Research log 檢視<span class="function-note text-small">可看 action 與時間；缺欄位級 before/after diff、篩選與匯出</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Research log 檢視<span class="function-note text-small">可依事件、操作、日期與關鍵字篩選，查看欄位級 before／after，並匯出目前結果</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
       </div>
     </details>
@@ -2130,8 +2130,8 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "修改拿破崙 Prompt 後先試跑，確認語氣正確再正式使用。"
       ]],
       ["Research log 檢視", [
-        "目前能查看管理操作與時間，但不能查看欄位修改前後差異，也沒有篩選或匯出。",
-        "可知道某人曾修改事件，卻無法直接比較修改前後的介紹文字。"
+        "研究者可依事件、操作、日期或關鍵字篩選，展開查看實際修改前後內容，並將目前結果匯出成 CSV。",
+        "例如修改事件介紹後，可在 event updated 紀錄並排比較舊文字與新文字；舊紀錄沒有欄位差異時仍可查看完整 payload。"
       ]],
       ["Session、attempt、message、research_logs 與 prompt/profile hash 串接", [
         "受測流程、作答、對話、研究操作與 Prompt 識別值可以互相關聯。",
