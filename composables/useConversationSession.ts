@@ -6,6 +6,8 @@ import type {
   ChatResponse,
   ChatStreamEvent,
   ConversationLoadResponse,
+  ExperimentCondition,
+  Persona,
   TaskSubmitResponse,
 } from '~/types';
 import type { ComputedRef, Ref } from 'vue';
@@ -38,6 +40,30 @@ const messageRequestId = (message: ChatMessage): string | null => {
   if (message.client_request_id) return message.client_request_id;
   const metadataRequestId = message.metadata?.client_request_id;
   return typeof metadataRequestId === 'string' ? metadataRequestId : null;
+};
+
+export const resolvePendingAssistantIdentity = (
+  condition: Pick<ExperimentCondition, 'roleplay_enabled'> | null | undefined,
+  personas: Persona[],
+  history: ChatMessage[],
+) => {
+  if (!condition?.roleplay_enabled) {
+    return {
+      speakerType: 'assistant' as const,
+      speakerName: 'AI Assistant',
+      personaId: undefined,
+    };
+  }
+
+  const lockedPersonaId = history.find((message) => message.persona_id)?.persona_id;
+  const targetPersona = personas.find((persona) => {
+    return lockedPersonaId ? persona.id === lockedPersonaId : persona.active;
+  }) || null;
+  return {
+    speakerType: 'persona' as const,
+    speakerName: targetPersona?.name || '歷史人物',
+    personaId: targetPersona?.id,
+  };
 };
 
 export const useConversationSession = (conversationId: Ref<string> | ComputedRef<string>) => {
@@ -91,16 +117,16 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
   };
 
   const createAssistantPlaceholder = (requestId: string): ChatMessage => {
-    const thinkingSpeaker = chatState.value?.condition?.roleplay_enabled ? 'persona' : 'assistant';
-    const lockedPersonaId = history.value.find((message) => message.persona_id)?.persona_id;
-    const targetPersona = (chatState.value?.personas || []).find((persona) => {
-      return lockedPersonaId ? persona.id === lockedPersonaId : persona.active;
-    }) || null;
+    const identity = resolvePendingAssistantIdentity(
+      chatState.value?.condition,
+      chatState.value?.personas || [],
+      history.value,
+    );
     return {
       id: `local-${requestId}-assistant`,
-      speaker_type: thinkingSpeaker,
-      speaker_name: targetPersona?.name || (thinkingSpeaker === 'persona' ? '歷史人物' : 'AI Assistant'),
-      persona_id: targetPersona?.id,
+      speaker_type: identity.speakerType,
+      speaker_name: identity.speakerName,
+      persona_id: identity.personaId,
       sequence_index: history.value.length,
       content: '',
       client_request_id: requestId,

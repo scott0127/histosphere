@@ -668,6 +668,18 @@ class SupabaseRepository(RepositoryProtocol):
             },
         )
 
+    def list_active_chat_operations(self) -> list[ChatMessage]:
+        """列出所有尚在處理的 learner 回合，供程序重啟時恢復。"""
+        return self._select_many(
+            "messages",
+            ChatMessage,
+            {
+                "speaker_type": "eq.learner",
+                "operation_status": "in.(pending,processing)",
+                "order": "created_at.asc",
+            },
+        )
+
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
         """列出指定 conversation 的訊息，依 sequence_index 排序。
 

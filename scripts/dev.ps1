@@ -151,7 +151,7 @@ function Get-SupabaseStatus {
       return $null
     }
     $Status = $StatusJson | ConvertFrom-Json
-    if (-not $Status.API_URL -or -not $Status.SERVICE_ROLE_KEY -or -not $Status.ANON_KEY) {
+    if (-not $Status.API_URL -or (-not $Status.SECRET_KEY -and -not $Status.SERVICE_ROLE_KEY) -or -not $Status.ANON_KEY) {
       return $null
     }
     return $Status
@@ -415,11 +415,17 @@ if ($UseSupabase) {
     throw "Supabase is running, but its local connection settings could not be read."
   }
 
+  # Supabase CLI 新版以 SECRET_KEY 提供可寫入的 repository key；
+  # 舊版仍使用 SERVICE_ROLE_KEY，因此保留相容回退。
+  $RepositoryKey = $SupabaseStatus.SECRET_KEY
+  if (-not $RepositoryKey) {
+    $RepositoryKey = $SupabaseStatus.SERVICE_ROLE_KEY
+  }
   $env:BACKEND_REPOSITORY = "supabase"
   $env:SUPABASE_URL = $SupabaseStatus.API_URL
-  $env:SUPABASE_SERVICE_ROLE_KEY = $SupabaseStatus.SERVICE_ROLE_KEY
-  $env:SUPABASE_KEY = $SupabaseStatus.SERVICE_ROLE_KEY
-  $env:SUPABASE_KEY_SERVICE_ROLE = $SupabaseStatus.SERVICE_ROLE_KEY
+  $env:SUPABASE_SERVICE_ROLE_KEY = $RepositoryKey
+  $env:SUPABASE_KEY = $RepositoryKey
+  $env:SUPABASE_KEY_SERVICE_ROLE = $RepositoryKey
   $env:VITE_SUPABASE_URL = $SupabaseStatus.API_URL
   $env:VITE_SUPABASE_ANON_KEY = $SupabaseStatus.ANON_KEY
 }

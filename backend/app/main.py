@@ -40,6 +40,14 @@ async def _session_timer_worker(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    recovered_operations = await asyncio.to_thread(
+        app.state.chat_service.recover_interrupted_operations
+    )
+    if recovered_operations:
+        logger.warning(
+            "Recovered %s interrupted chat operation(s) after backend restart",
+            recovered_operations,
+        )
     worker = asyncio.create_task(_session_timer_worker(app))
     try:
         yield

@@ -415,6 +415,67 @@ def test_failed_chat_operation_retries_without_duplicating_learner_message(clien
     )
 
 
+def test_backend_restart_marks_interrupted_chat_operation_retryable(client):
+    initialized = admin_initialize(client, "聊天重啟恢復測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+    repository = client.app.state.repository
+    conversation_id = submitted["conversation_id"]
+    request_payload = {
+        "conversation_id": conversation_id,
+        "user_message": "後端重啟後應沿用同一則 learner 訊息重試。",
+        "client_request_id": "request-restart-001",
+    }
+    repository.add_message(
+        ChatMessage(
+            conversation_id=conversation_id,
+            speaker_type="learner",
+            speaker_name="learner",
+            sequence_index=repository.next_message_sequence(conversation_id),
+            content=request_payload["user_message"],
+            client_request_id=request_payload["client_request_id"],
+            operation_status="processing",
+            metadata={
+                "client_request_id": request_payload["client_request_id"],
+                "response_status": "pending",
+            },
+        )
+    )
+
+    recovered = client.app.state.chat_service.recover_interrupted_operations()
+
+    assert recovered == 1
+    assert client.app.state.chat_service.recover_interrupted_operations() == 0
+    operation = client.get(
+        f"/api/chat/operations/{request_payload['client_request_id']}",
+        params={"conversation_id": conversation_id},
+    )
+    assert operation.status_code == 200
+    assert operation.json()["status"] == "failed"
+    assert operation.json()["retryable"] is True
+    assert operation.json()["learner_message"]["metadata"]["failure_type"] == "backend_restart"
+
+    retried = client.post(
+        "/api/chat",
+        json={**request_payload, "retry_failed": True},
+    )
+    assert retried.status_code == 200
+    learner_operations = [
+        message
+        for message in repository.list_messages(conversation_id)
+        if message.client_request_id == request_payload["client_request_id"]
+        and message.speaker_type == "learner"
+    ]
+    assert len(learner_operations) == 1
+    assert learner_operations[0].operation_status == "completed"
+    assert learner_operations[0].metadata["retry_count"] == 1
+    assert any(
+        log.action_type == "response_generation_failed"
+        and log.message_id == learner_operations[0].id
+        and log.payload["failure_type"] == "backend_restart"
+        for log in repository.list_research_logs()
+    )
+
+
 def test_chat_rejects_missing_session_or_condition_without_falling_back(client):
     initialized = admin_initialize(client, "Condition fail-closed 測試", "no_ebl_no_roleplay")
     submitted = submit_and_poll(client, initialized)

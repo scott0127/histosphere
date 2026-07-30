@@ -620,6 +620,19 @@ class InMemoryRepository(RepositoryProtocol):
             None,
         )
 
+    def list_active_chat_operations(self) -> list[ChatMessage]:
+        """列出所有尚在處理的 learner 回合，供程序重啟時恢復。"""
+        return sorted(
+            (
+                item
+                for messages in self.messages.values()
+                for item in messages
+                if item.speaker_type == "learner"
+                and item.operation_status in {"pending", "processing"}
+            ),
+            key=lambda item: item.created_at,
+        )
+
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
         """列出指定 conversation 的所有訊息，依 sequence_index 排序。
 

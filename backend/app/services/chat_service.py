@@ -493,6 +493,49 @@ class ChatService:
             )
         )
 
+    def recover_interrupted_operations(self) -> int:
+        """把前一個後端程序留下的生成中回合轉成可重試狀態。"""
+        recovered_count = 0
+        for user_message in self.repository.list_active_chat_operations():
+            conversation = self.repository.get_conversation(user_message.conversation_id)
+            event = self.repository.get_event(conversation.event_id) if conversation else None
+            session = (
+                self.repository.get_session(conversation.session_id)
+                if conversation and conversation.session_id
+                else None
+            )
+            condition = (
+                self.repository.get_condition_by_key(session.condition_key_snapshot)
+                if session
+                else None
+            )
+
+            if conversation and event and condition:
+                self._record_generation_failure(
+                    conversation=conversation,
+                    event=event,
+                    condition=condition,
+                    user_message=user_message,
+                    failure_type="backend_restart",
+                )
+            else:
+                # 即使關聯資料不完整，也不能讓 learner 永遠卡在「處理中」。
+                failed_message = user_message.model_copy(
+                    update={
+                        "operation_status": "failed",
+                        "metadata": {
+                            **user_message.metadata,
+                            "response_status": "failed",
+                            "failure_type": "backend_restart",
+                            "llm_call": None,
+                        },
+                    }
+                )
+                self.repository.add_message(failed_message)
+            recovered_count += 1
+
+        return recovered_count
+
     def _select_persona(
         self,
         event_id: str,

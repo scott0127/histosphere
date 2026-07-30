@@ -484,6 +484,10 @@ class RepositoryProtocol(Protocol):
         """取得對話中唯一一筆尚在生成的 learner 回合。"""
         ...
 
+    def list_active_chat_operations(self) -> list[ChatMessage]:
+        """列出後端程序啟動時仍停在生成中的 learner 回合。"""
+        ...
+
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
         """列出指定 conversation 的所有訊息，依 sequence_index 排序。
 
