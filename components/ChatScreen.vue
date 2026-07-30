@@ -113,6 +113,16 @@
                 />
                 <p v-else class="whitespace-pre-wrap">{{ message.content }}</p>
               </div>
+              <button
+                v-if="isFailedMessage(message) && retryRequestId(message)"
+                type="button"
+                class="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 text-sm font-semibold text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)] disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="isReplying"
+                @click="$emit('retry-message', retryRequestId(message) || '')"
+              >
+                <Icon name="mdi:refresh" class="h-4 w-4" />
+                重試這次回覆
+              </button>
             </div>
           </div>
           <div ref="chatEndRef" />
@@ -228,6 +238,7 @@ const emit = defineEmits<{
   (event: 'next-stage'): void;
   (event: 'session-expired'): void;
   (event: 'send-message', userInput: string): void;
+  (event: 'retry-message', clientRequestId: string): void;
 }>();
 
 const userInput = ref('');
@@ -283,6 +294,14 @@ const isStreamingMessage = (message: ChatMessage) => {
 };
 const wasValidatedStream = (message: ChatMessage) => {
   return messageMetadata(message).delivery_mode === 'validated_stream';
+};
+const isFailedMessage = (message: ChatMessage) => {
+  return messageMetadata(message).generation_status === 'failed';
+};
+const retryRequestId = (message: ChatMessage) => {
+  if (message.client_request_id) return message.client_request_id;
+  const requestId = messageMetadata(message).client_request_id;
+  return typeof requestId === 'string' ? requestId : null;
 };
 
 // 學生端只顯示實驗代號，不揭露實際 treatment。

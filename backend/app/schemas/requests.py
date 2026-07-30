@@ -128,12 +128,16 @@ class ChatRequest(BaseModel):
         user_message: 使用者訊息內容（至少 1 字元）。
         history: 前端持有的歷史訊息（相容欄位；目前 ChatService 尚未納入 prompt context）。
         target_persona_id: 舊版相容欄位；Learner 傳入時後端會拒絕。
+        client_request_id: 同一回合重送時必須維持不變的識別碼。
+        retry_failed: 是否明確重試先前失敗的同一回合。
     """
 
     conversation_id: str = Field(..., min_length=1)
     user_message: str = Field(..., min_length=1)
     history: list[ChatMessage] = Field(default_factory=list)
     target_persona_id: str | None = None
+    client_request_id: str | None = Field(default=None, min_length=1, max_length=128)
+    retry_failed: bool = False
 
 
 class PersonaCreateRequest(BaseModel):

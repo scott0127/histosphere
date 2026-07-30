@@ -242,7 +242,12 @@ def test_existing_event_without_task_gets_structured_fallback(client):
         )
     )
 
-    initialized = initialize_event(client, "缺少任務的事件")
+    # 此測試只驗證 Task fallback；非 role-play 條件不需要額外建立 persona。
+    initialized = initialize_event(
+        client,
+        "缺少任務的事件",
+        condition_key="no_ebl_no_roleplay",
+    )
     task = initialized["task"]
 
     assert task["display_text"].count("{{blank:q01}}") == 1

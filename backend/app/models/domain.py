@@ -33,6 +33,7 @@ ConditionKey = Literal[
 """2x2 實驗條件鍵值的合法字串聯集。"""
 
 SpeakerType = Literal["learner", "assistant", "persona"]
+ChatOperationStatus = Literal["pending", "processing", "completed", "failed"]
 """聊天訊息發言者角色：learner / assistant（generic）/ persona（role-play）。"""
 
 ResponsePolicy = Literal["standard", "scaffold"]
@@ -495,6 +496,8 @@ class ChatMessage(BaseModel):
         annotations: 歷史標注清單。
         rag_sources: RAG 來源清單。
         metadata: 額外 metadata（如 provider、model 等）。
+        client_request_id: 前端送出回合的穩定識別碼，用於防止重複建立。
+        operation_status: learner 回合的生成狀態；AI 訊息通常為 None。
         created_at: 建立時間。
     """
 
@@ -508,6 +511,8 @@ class ChatMessage(BaseModel):
     annotations: list[Annotation] = Field(default_factory=list)
     rag_sources: list[RagSource] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    client_request_id: str | None = None
+    operation_status: ChatOperationStatus | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 

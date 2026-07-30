@@ -107,6 +107,15 @@ def test_jwt_blocks_cross_account_conversation_reads_and_chat_writes(client):
     completed = client.get(submitted.json()["poll_url"])
     assert completed.status_code == 200
     conversation_id = completed.json()["result"]["conversation_id"]
+    owner_chat = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": conversation_id,
+            "user_message": "建立一筆可查詢狀態的對話回合",
+            "client_request_id": "ownership-operation-001",
+        },
+    )
+    assert owner_chat.status_code == 200
 
     other_user_headers = {"Authorization": "Bearer participant-002"}
     assert client.get(
@@ -121,6 +130,11 @@ def test_jwt_blocks_cross_account_conversation_reads_and_chat_writes(client):
             "user_message": "嘗試寫入其他帳號的對話",
             "history": [],
         },
+    ).status_code == 403
+    assert client.get(
+        "/api/chat/operations/ownership-operation-001",
+        headers=other_user_headers,
+        params={"conversation_id": conversation_id},
     ).status_code == 403
 
 

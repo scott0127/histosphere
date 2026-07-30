@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from app.models.domain import utc_now
+from app.models.domain import ChatMessage, utc_now
 from app.schemas.requests import TaskSubmitRequest
 
 
@@ -292,6 +292,127 @@ def test_chat_stream_reports_failure_after_learner_message_is_saved(client):
         if message["content"] == "請保留這則失敗串流訊息。"
     )
     assert learner_message["metadata"]["response_status"] == "failed"
+
+
+def test_chat_request_id_is_idempotent_and_status_can_be_reloaded(client):
+    initialized = admin_initialize(client, "聊天冪等測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+    request_payload = {
+        "conversation_id": submitted["conversation_id"],
+        "user_message": "同一個回合只能生成一次。",
+        "client_request_id": "request-idempotent-001",
+    }
+    prompt_count = len(client.app.state.llm_provider.chat_prompts)
+
+    first = client.post("/api/chat", json=request_payload)
+    second = client.post("/api/chat", json=request_payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["message"]["id"] == first.json()["message"]["id"]
+    assert len(client.app.state.llm_provider.chat_prompts) == prompt_count + 1
+
+    operation = client.get(
+        "/api/chat/operations/request-idempotent-001",
+        params={"conversation_id": submitted["conversation_id"]},
+    )
+    assert operation.status_code == 200
+    assert operation.json()["status"] == "completed"
+    assert operation.json()["learner_message"]["operation_status"] == "completed"
+    assert operation.json()["response"]["message"]["id"] == first.json()["message"]["id"]
+
+    messages = client.app.state.repository.list_messages(submitted["conversation_id"])
+    learner_operations = [
+        message
+        for message in messages
+        if message.client_request_id == "request-idempotent-001"
+        and message.speaker_type == "learner"
+    ]
+    assert len(learner_operations) == 1
+
+
+def test_chat_blocks_a_second_operation_while_one_is_processing(client):
+    initialized = admin_initialize(client, "聊天並行防護測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+    repository = client.app.state.repository
+    conversation_id = submitted["conversation_id"]
+    repository.add_message(
+        ChatMessage(
+            conversation_id=conversation_id,
+            speaker_type="learner",
+            speaker_name="learner",
+            sequence_index=repository.next_message_sequence(conversation_id),
+            content="仍在處理中的訊息",
+            client_request_id="request-active-001",
+            operation_status="processing",
+            metadata={"response_status": "pending"},
+        )
+    )
+    prompt_count = len(client.app.state.llm_provider.chat_prompts)
+
+    blocked = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": conversation_id,
+            "user_message": "不應同時送入模型。",
+            "client_request_id": "request-active-002",
+        },
+    )
+
+    assert blocked.status_code == 409
+    assert "already processing" in blocked.json()["detail"]
+    assert len(client.app.state.llm_provider.chat_prompts) == prompt_count
+
+
+def test_failed_chat_operation_retries_without_duplicating_learner_message(client):
+    initialized = admin_initialize(client, "聊天安全重試測試", "no_ebl_no_roleplay")
+    submitted = submit_and_poll(client, initialized)
+    provider = client.app.state.llm_provider
+    repository = client.app.state.repository
+    original_generation = provider.generate_chat_response
+
+    async def fail_generation(**kwargs):
+        raise TimeoutError("simulated retryable timeout")
+
+    provider.generate_chat_response = fail_generation
+    request_payload = {
+        "conversation_id": submitted["conversation_id"],
+        "user_message": "這一回合失敗後要安全重試。",
+        "client_request_id": "request-retry-001",
+    }
+    failed = client.post("/api/chat", json=request_payload)
+    assert failed.status_code == 502
+
+    failed_status = client.get(
+        "/api/chat/operations/request-retry-001",
+        params={"conversation_id": submitted["conversation_id"]},
+    )
+    assert failed_status.status_code == 200
+    assert failed_status.json()["status"] == "failed"
+    assert failed_status.json()["retryable"] is True
+
+    provider.generate_chat_response = original_generation
+    retried = client.post(
+        "/api/chat",
+        json={**request_payload, "retry_failed": True},
+    )
+    assert retried.status_code == 200
+
+    messages = repository.list_messages(submitted["conversation_id"])
+    learner_operations = [
+        message
+        for message in messages
+        if message.client_request_id == "request-retry-001"
+        and message.speaker_type == "learner"
+    ]
+    assert len(learner_operations) == 1
+    assert learner_operations[0].operation_status == "completed"
+    assert learner_operations[0].metadata["retry_count"] == 1
+    assert any(
+        log.action_type == "response_generation_retried"
+        and log.message_id == learner_operations[0].id
+        for log in repository.list_research_logs()
+    )
 
 
 def test_chat_rejects_missing_session_or_condition_without_falling_back(client):

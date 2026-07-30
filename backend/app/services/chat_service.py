@@ -14,9 +14,9 @@ from fastapi import HTTPException, status
 
 from app.core.interaction_contract import InteractionRuntime, build_interaction_runtime
 from app.core.persona_prompt_contract import build_persona_runtime_context
-from app.models.domain import ChatMessage, Event, ExperimentCondition, Persona, RagSource, ResearchLog, TaskAttempt
+from app.models.domain import ChatMessage, Event, ExperimentCondition, Persona, RagSource, ResearchLog, TaskAttempt, new_id
 from app.schemas.requests import ChatRequest
-from app.schemas.responses import ChatResponse
+from app.schemas.responses import ChatOperationStatusResponse, ChatResponse
 from app.providers.llm.base import ChatGenerationResult, LLMProvider
 from app.crud.protocols import RepositoryProtocol
 from app.services.prompt_service import PromptService
@@ -50,7 +50,7 @@ class ChatService:
         request: ChatRequest,
         on_user_persisted: MessagePersistedCallback | None = None,
     ) -> ChatResponse:
-        """先保存 learner 訊息，再依照 2x2 condition 產生並保存 AI 回覆。"""
+        """以可重送的 learner operation 執行一次完整聊天回合。"""
         conversation = self.repository.get_conversation(request.conversation_id)
         if not conversation:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -85,67 +85,181 @@ class ChatService:
                 detail="Experiment condition snapshot is unavailable",
             )
 
-        # task_attempt 讓 EBL 條件可以引用 learner 的 productive error / misconception。
-        task_attempt = (
-            self.repository.get_task_attempt(conversation.task_attempt_id)
-            if conversation.task_attempt_id
-            else None
+        client_request_id = request.client_request_id or new_id()
+        stored_messages = self.repository.list_messages(conversation.id)
+        existing_operation = self.repository.get_learner_message_by_request(
+            conversation.id,
+            client_request_id,
         )
-        prior_messages = self.repository.list_messages(conversation.id)
-        personas = self.repository.list_personas(event.id)
-        selected = None
-        if condition.roleplay_enabled:
-            selected = self._select_persona(
-                event.id,
-                personas,
-                prior_messages,
-            )
-        # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
-        rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
-        interaction_runtime = build_interaction_runtime(condition, task_attempt, prior_messages)
-        modules = self.prompt_service.assemble_chat_modules(
-            event=event,
-            persona=selected,
-            condition=condition,
-            task_attempt=task_attempt,
-            user_message=request.user_message,
-            rag_sources=rag_sources,
-            conversation_history=prior_messages,
-            interaction_runtime=interaction_runtime,
-        )
-        prompt = self.prompt_service.render_modules(modules)
 
-        # learner 訊息必須先落盤。即使模型逾時或驗證失敗，重新載入仍能看到原始輸入。
-        user_message = self.repository.add_message(
-            ChatMessage(
+        if existing_operation:
+            if existing_operation.content != request.user_message:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="client_request_id was already used for different content",
+                )
+            operation_status = self._operation_state(existing_operation)
+            if operation_status == "completed":
+                if on_user_persisted:
+                    await on_user_persisted(existing_operation)
+                return self._completed_response(existing_operation)
+            if operation_status in {"pending", "processing"}:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This chat operation is still processing",
+                )
+            if not request.retry_failed:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This chat operation failed and requires an explicit retry",
+                )
+
+            # 重試沿用原 learner 訊息，避免產生第二筆相同研究資料。
+            retry_metadata = {
+                key: value
+                for key, value in existing_operation.metadata.items()
+                if key not in {"failure_type", "llm_call"}
+            }
+            user_message = existing_operation.model_copy(
+                update={
+                    "operation_status": "processing",
+                    "metadata": {
+                        **retry_metadata,
+                        "response_status": "pending",
+                        "retry_count": int(existing_operation.metadata.get("retry_count", 0)) + 1,
+                    },
+                }
+            )
+            self.repository.add_message(user_message)
+            prior_messages = [
+                message
+                for message in stored_messages
+                if message.id != existing_operation.id
+                and message.id != existing_operation.metadata.get("response_message_id")
+            ]
+            self.repository.log_research(
+                ResearchLog(
+                    user_id=conversation.user_id,
+                    session_id=conversation.session_id,
+                    event_id=event.id,
+                    attempt_id=conversation.task_attempt_id,
+                    conversation_id=conversation.id,
+                    message_id=user_message.id,
+                    action_type="response_generation_retried",
+                    payload={
+                        "client_request_id": client_request_id,
+                        "retry_count": user_message.metadata["retry_count"],
+                        "condition_key": condition.condition_key,
+                    },
+                )
+            )
+        else:
+            if request.retry_failed:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The failed chat operation no longer exists",
+                )
+            active_operation = self.repository.get_active_chat_operation(conversation.id)
+            if active_operation:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Another chat operation is already processing",
+                )
+
+            prior_messages = stored_messages
+            user_message = ChatMessage(
                 conversation_id=conversation.id,
                 speaker_type="learner",
                 speaker_name="learner",
                 sequence_index=self.repository.next_message_sequence(conversation.id),
                 content=request.user_message,
+                client_request_id=client_request_id,
+                operation_status="processing",
                 metadata={
                     "condition_key": condition.condition_key,
                     "response_status": "pending",
                     "persona_selection": "event_fixed",
+                    "client_request_id": client_request_id,
                 },
             )
-        )
-        self.repository.log_research(
-            ResearchLog(
-                user_id=conversation.user_id,
-                session_id=conversation.session_id,
-                event_id=event.id,
-                attempt_id=conversation.task_attempt_id,
-                conversation_id=conversation.id,
-                message_id=user_message.id,
-                action_type="message_sent",
-                payload={"persona_selection": "event_fixed", "condition_key": condition.condition_key},
+            try:
+                user_message = self.repository.add_message(user_message)
+            except Exception:
+                # 資料庫唯一約束處理不同程序同時送出的競爭；重新查詢後回傳一致語意。
+                raced_operation = self.repository.get_learner_message_by_request(
+                    conversation.id,
+                    client_request_id,
+                )
+                if raced_operation:
+                    if raced_operation.content != request.user_message:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="client_request_id was already used for different content",
+                        )
+                    if self._operation_state(raced_operation) == "completed":
+                        if on_user_persisted:
+                            await on_user_persisted(raced_operation)
+                        return self._completed_response(raced_operation)
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="This chat operation is still processing",
+                    )
+                if self.repository.get_active_chat_operation(conversation.id):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Another chat operation is already processing",
+                    )
+                raise
+
+            self.repository.log_research(
+                ResearchLog(
+                    user_id=conversation.user_id,
+                    session_id=conversation.session_id,
+                    event_id=event.id,
+                    attempt_id=conversation.task_attempt_id,
+                    conversation_id=conversation.id,
+                    message_id=user_message.id,
+                    action_type="message_sent",
+                    payload={
+                        "persona_selection": "event_fixed",
+                        "condition_key": condition.condition_key,
+                        "client_request_id": client_request_id,
+                    },
+                )
             )
+
+        task_attempt = (
+            self.repository.get_task_attempt(conversation.task_attempt_id)
+            if conversation.task_attempt_id
+            else None
         )
 
         try:
             if on_user_persisted:
                 await on_user_persisted(user_message)
+
+            personas = self.repository.list_personas(event.id)
+            selected = None
+            if condition.roleplay_enabled:
+                selected = self._select_persona(
+                    event.id,
+                    personas,
+                    prior_messages,
+                )
+            # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
+            rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
+            interaction_runtime = build_interaction_runtime(condition, task_attempt, prior_messages)
+            modules = self.prompt_service.assemble_chat_modules(
+                event=event,
+                persona=selected,
+                condition=condition,
+                task_attempt=task_attempt,
+                user_message=request.user_message,
+                rag_sources=rag_sources,
+                conversation_history=prior_messages,
+                interaction_runtime=interaction_runtime,
+            )
+            prompt = self.prompt_service.render_modules(modules)
 
             generation, interaction_metadata = await self.generate_validated_response(
                 event=event,
@@ -174,8 +288,10 @@ class ChatService:
                 content=generation.response,
                 annotations=generation.annotations,
                 rag_sources=rag_sources,
+                client_request_id=client_request_id,
                 metadata={
                     "condition_key": condition.condition_key,
+                    "client_request_id": client_request_id,
                     "response_policy": condition.response_policy,
                     "generation_status": "completed",
                     "delivery_mode": "validated_stream",
@@ -186,6 +302,11 @@ class ChatService:
                     "history_message_count": len(prior_messages),
                     "persona_profile_contract": profile_payload.get("contract_version") if selected else None,
                     "persona_profile_hash": profile_hash if selected else None,
+                    "related_events": [
+                        related_event.model_dump(mode="json")
+                        for related_event in generation.related_events
+                    ],
+                    "dynamic_context": generation.dynamic_context,
                     **interaction_metadata,
                     **generation.llm_metadata,
                 },
@@ -202,6 +323,7 @@ class ChatService:
                     message_id=model_message.id,
                     action_type="persona_response_generated" if selected else "assistant_response_generated",
                     payload={
+                        "client_request_id": client_request_id,
                         "condition_key": condition.condition_key,
                         "speaker_name": assistant_name,
                         "response_policy": condition.response_policy,
@@ -222,6 +344,7 @@ class ChatService:
 
             completed_user_message = user_message.model_copy(
                 update={
+                    "operation_status": "completed",
                     "metadata": {
                         **user_message.metadata,
                         "response_status": "completed",
@@ -265,6 +388,71 @@ class ChatService:
                 detail="AI 回覆產生失敗，但 learner 訊息已保存。",
             ) from exc
 
+    def get_operation_status(
+        self,
+        conversation_id: str,
+        client_request_id: str,
+    ) -> ChatOperationStatusResponse:
+        """供前端在斷線或重整後查詢同一聊天回合。"""
+        operation = self.repository.get_learner_message_by_request(
+            conversation_id,
+            client_request_id,
+        )
+        if not operation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat operation not found",
+            )
+        operation_status = self._operation_state(operation)
+        response = self._completed_response(operation) if operation_status == "completed" else None
+        return ChatOperationStatusResponse(
+            client_request_id=client_request_id,
+            status=operation_status,
+            retryable=operation_status == "failed",
+            learner_message=operation,
+            response=response,
+        )
+
+    @staticmethod
+    def _operation_state(message: ChatMessage) -> str:
+        """從正式欄位讀取狀態，並相容遷移前 metadata。"""
+        operation_status = message.operation_status or message.metadata.get("response_status")
+        if operation_status not in {"pending", "processing", "completed", "failed"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Chat operation status is unavailable",
+            )
+        return str(operation_status)
+
+    def _completed_response(self, operation: ChatMessage) -> ChatResponse:
+        """從已儲存的 AI 訊息重建回應，重送時不再次呼叫 LLM。"""
+        response_message_id = operation.metadata.get("response_message_id")
+        response_message = (
+            self.repository.get_message(str(response_message_id))
+            if response_message_id
+            else None
+        )
+        if not response_message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Completed chat response is unavailable",
+            )
+        selected_persona = (
+            self.repository.get_persona(response_message.persona_id)
+            if response_message.persona_id
+            else None
+        )
+        return ChatResponse(
+            response=response_message.content,
+            selected_persona=selected_persona,
+            assistant_name=response_message.speaker_name,
+            message=response_message,
+            annotations=response_message.annotations,
+            related_events=response_message.metadata.get("related_events", []),
+            dynamic_context=str(response_message.metadata.get("dynamic_context", "")),
+            rag_sources=response_message.rag_sources,
+        )
+
     def _record_generation_failure(
         self,
         *,
@@ -278,6 +466,7 @@ class ChatService:
         """保存失敗狀態，但不把例外內容或密鑰寫入研究資料。"""
         failed_user_message = user_message.model_copy(
             update={
+                "operation_status": "failed",
                 "metadata": {
                     **user_message.metadata,
                     "response_status": "failed",

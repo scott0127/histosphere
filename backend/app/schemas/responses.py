@@ -5,7 +5,7 @@
 與額外的 API-specific 欄位。
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -189,6 +189,16 @@ class ChatResponse(BaseModel):
     related_events: list[RelatedEvent] = Field(default_factory=list)
     dynamic_context: str = ""
     rag_sources: list[RagSource] = Field(default_factory=list)
+
+
+class ChatOperationStatusResponse(BaseModel):
+    """可供斷線後重新查詢的聊天回合狀態。"""
+
+    client_request_id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    retryable: bool = False
+    learner_message: ChatMessage
+    response: ChatResponse | None = None
 
 
 class AdminSnapshotResponse(BaseModel):

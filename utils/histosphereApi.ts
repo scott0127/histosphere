@@ -4,6 +4,7 @@ import type {
   AdminSnapshotResponse,
   AdminPromptPreviewResponse,
   ChatMessage,
+  ChatOperationStatusResponse,
   ChatResponse,
   ChatStreamEvent,
   ConditionKey,
@@ -56,6 +57,8 @@ export type ChatMessageInput = {
   conversationId: string;
   userMessage: string;
   history: ChatMessage[];
+  clientRequestId?: string;
+  retryFailed?: boolean;
 };
 
 export type PromptPreviewInput = {
@@ -255,8 +258,24 @@ export const sendChatMessage = (input: ChatMessageInput, fetcher: FrontendFetche
       conversation_id: input.conversationId,
       user_message: input.userMessage,
       history: input.history,
+      client_request_id: input.clientRequestId,
+      retry_failed: input.retryFailed || false,
     },
   });
+};
+
+export const fetchChatOperationStatus = (
+  conversationId: string,
+  clientRequestId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<ChatOperationStatusResponse>(
+    `/api/chat/operations/${encodeURIComponent(clientRequestId)}`,
+    {
+      ...learnerAuthOptions(),
+      query: { conversation_id: conversationId },
+    },
+  );
 };
 
 export const parseChatStreamFrame = (frame: string): ChatStreamEvent | null => {
@@ -285,6 +304,8 @@ export const sendChatMessageStream = async (
       conversation_id: input.conversationId,
       user_message: input.userMessage,
       history: input.history,
+      client_request_id: input.clientRequestId,
+      retry_failed: input.retryFailed || false,
     }),
   });
 

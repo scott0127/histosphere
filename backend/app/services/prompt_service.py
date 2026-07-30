@@ -12,6 +12,10 @@ from app.core.persona_prompt_contract import (
 from app.models.domain import ChatMessage, Event, ExperimentCondition, Persona, RagSource, TaskAttempt
 
 
+MAX_HISTORY_MESSAGE_CHARS = 1600
+MAX_HISTORY_TOTAL_CHARS = 16000
+
+
 GENERAL_PROMPT = (
     "You are the response engine for a controlled master's thesis experiment. "
     "Reply in Traditional Chinese. Historical accuracy and explicit uncertainty take priority over fluency. "
@@ -289,11 +293,35 @@ class PromptService:
     def _conversation_history(messages: list[ChatMessage]) -> str:
         if not messages:
             return "No prior conversation turns."
-        lines = [
-            f"{message.sequence_index} | {message.speaker_type} | {message.speaker_name}: {message.content[:1600]}"
-            for message in messages
-        ]
-        return "Authoritative prior messages from the database, oldest to newest:\n" + "\n".join(lines)
+        ordered_messages = sorted(messages, key=lambda message: message.sequence_index)
+        selected_lines: list[str] = []
+        used_characters = 0
+        omitted_count = 0
+
+        # 優先保留最新且連續的對話，避免長實驗回合無限制占用模型 context。
+        for reverse_index, message in enumerate(reversed(ordered_messages)):
+            line = (
+                f"{message.sequence_index} | {message.speaker_type} | "
+                f"{message.speaker_name}: {message.content[:MAX_HISTORY_MESSAGE_CHARS]}"
+            )
+            additional_characters = len(line) + (1 if selected_lines else 0)
+            if used_characters + additional_characters > MAX_HISTORY_TOTAL_CHARS:
+                omitted_count = len(ordered_messages) - reverse_index
+                break
+            selected_lines.append(line)
+            used_characters += additional_characters
+
+        selected_lines.reverse()
+        omission_note = (
+            f"{omitted_count} older messages were omitted because the total context budget was reached.\n"
+            if omitted_count
+            else ""
+        )
+        return (
+            "Authoritative prior messages from the database, oldest to newest:\n"
+            + omission_note
+            + "\n".join(selected_lines)
+        )
 
     @staticmethod
     def _persona_event_context(

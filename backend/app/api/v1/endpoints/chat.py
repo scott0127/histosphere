@@ -18,7 +18,7 @@ from app.api.deps import get_chat_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
 from app.models.domain import ChatMessage
 from app.schemas.requests import ChatRequest
-from app.schemas.responses import ChatResponse
+from app.schemas.responses import ChatOperationStatusResponse, ChatResponse
 from app.services import ChatService
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -30,7 +30,16 @@ def _require_conversation_access(
     service: ChatService,
 ) -> None:
     """確認 conversation 屬於目前 Auth user；admin mode 保留既有覆寫權限。"""
-    conversation = service.repository.get_conversation(request.conversation_id)
+    _require_conversation_id_access(request.conversation_id, actor, service)
+
+
+def _require_conversation_id_access(
+    conversation_id: str,
+    actor: AuthenticatedActor,
+    service: ChatService,
+) -> None:
+    """以 conversation ID 驗證讀寫權，供送出與狀態查詢共用。"""
+    conversation = service.repository.get_conversation(conversation_id)
     if not conversation:
         return
     owner_user_id = conversation.user_id
@@ -86,6 +95,21 @@ async def chat(
     return await service.chat(request)
 
 
+@router.get(
+    "/chat/operations/{client_request_id}",
+    response_model=ChatOperationStatusResponse,
+)
+async def chat_operation_status(
+    client_request_id: str,
+    conversation_id: str,
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
+    service: ChatService = Depends(get_chat_service),
+) -> ChatOperationStatusResponse:
+    """斷線或重整後查詢同一聊天回合，不會再次呼叫模型。"""
+    _require_conversation_id_access(conversation_id, actor, service)
+    return service.get_operation_status(conversation_id, client_request_id)
+
+
 @router.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
@@ -96,28 +120,29 @@ async def chat_stream(
     _require_conversation_access(request, actor, service)
 
     async def events() -> AsyncIterator[str]:
-        persisted_messages: asyncio.Queue[ChatMessage] = asyncio.Queue(maxsize=1)
+        persisted_message_future: asyncio.Future[ChatMessage] = (
+            asyncio.get_running_loop().create_future()
+        )
         message_was_persisted = False
 
         async def on_user_persisted(message: ChatMessage) -> None:
-            await persisted_messages.put(message)
+            if not persisted_message_future.done():
+                persisted_message_future.set_result(message)
 
         chat_task = asyncio.create_task(
             service.chat(request, on_user_persisted=on_user_persisted)
         )
-        persisted_waiter = asyncio.create_task(persisted_messages.get())
 
         try:
             done, _ = await asyncio.wait(
-                {chat_task, persisted_waiter},
+                {chat_task, persisted_message_future},
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            if persisted_waiter not in done:
+            if chat_task in done and not persisted_message_future.done():
                 # 代表請求在保存 learner 訊息前就被 session/condition 驗證拒絕。
                 await chat_task
-                return
 
-            persisted_message = persisted_waiter.result()
+            persisted_message = await persisted_message_future
             message_was_persisted = True
             yield _sse_event(
                 {
@@ -184,8 +209,8 @@ async def chat_stream(
                 }
             )
         finally:
-            if not persisted_waiter.done():
-                persisted_waiter.cancel()
+            if not persisted_message_future.done():
+                persisted_message_future.cancel()
             # 瀏覽器中途離線時仍讓後端完成生成與持久化。
             if not chat_task.done():
                 chat_task.add_done_callback(_consume_task_result)

@@ -518,6 +518,7 @@ test('frontend chat stream parses split SSE frames and keeps learner authenticat
       conversationId: 'conversation-1',
       userMessage: '請回答。',
       history: [],
+      clientRequestId: 'request-001',
     },
     (event) => eventTypes.push(event.type),
     fetcher,
@@ -532,5 +533,52 @@ test('frontend chat stream parses split SSE frames and keeps learner authenticat
     conversation_id: 'conversation-1',
     user_message: '請回答。',
     history: [],
+    client_request_id: 'request-001',
+    retry_failed: false,
   });
+});
+
+test('frontend chat operation status uses the same request id after reconnecting', async () => {
+  const operation = {
+    client_request_id: 'request-001',
+    status: 'completed',
+    retryable: false,
+    learner_message: {
+      id: 'message-user',
+      speaker_type: 'learner',
+      speaker_name: 'learner',
+      sequence_index: 1,
+      content: '請回答。',
+      client_request_id: 'request-001',
+      operation_status: 'completed',
+    },
+    response: {
+      response: '已完成。',
+      assistant_name: 'AI Assistant',
+      message: {
+        id: 'message-ai',
+        speaker_type: 'assistant',
+        speaker_name: 'AI Assistant',
+        sequence_index: 2,
+        content: '已完成。',
+      },
+    },
+  };
+  const { calls, fetcher } = createFetchRecorder({
+    'GET /api/chat/operations/request-001': operation,
+  });
+
+  assert.deepEqual(
+    await api.fetchChatOperationStatus('conversation-1', 'request-001', fetcher),
+    operation,
+  );
+  assert.deepEqual(calls, [
+    {
+      url: '/api/chat/operations/request-001',
+      options: {
+        headers: { Authorization: 'Bearer participant-jwt' },
+        query: { conversation_id: 'conversation-1' },
+      },
+    },
+  ]);
 });

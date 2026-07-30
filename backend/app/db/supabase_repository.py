@@ -635,6 +635,39 @@ class SupabaseRepository(RepositoryProtocol):
         """
         return self._upsert("messages", message)
 
+    def get_message(self, message_id: str) -> ChatMessage | None:
+        """依訊息 ID 取得單一訊息。"""
+        return self._select_one("messages", ChatMessage, {"id": f"eq.{message_id}"})
+
+    def get_learner_message_by_request(
+        self,
+        conversation_id: str,
+        client_request_id: str,
+    ) -> ChatMessage | None:
+        """依前端回合識別碼取得 learner 訊息。"""
+        return self._select_one(
+            "messages",
+            ChatMessage,
+            {
+                "conversation_id": f"eq.{conversation_id}",
+                "speaker_type": "eq.learner",
+                "client_request_id": f"eq.{client_request_id}",
+            },
+        )
+
+    def get_active_chat_operation(self, conversation_id: str) -> ChatMessage | None:
+        """取得對話中尚在處理的 learner 回合。"""
+        return self._select_one(
+            "messages",
+            ChatMessage,
+            {
+                "conversation_id": f"eq.{conversation_id}",
+                "speaker_type": "eq.learner",
+                "operation_status": "in.(pending,processing)",
+                "order": "created_at.desc",
+            },
+        )
+
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
         """列出指定 conversation 的訊息，依 sequence_index 排序。
 

@@ -468,6 +468,22 @@ class RepositoryProtocol(Protocol):
         """
         ...
 
+    def get_message(self, message_id: str) -> ChatMessage | None:
+        """依訊息 ID 取得單一訊息。"""
+        ...
+
+    def get_learner_message_by_request(
+        self,
+        conversation_id: str,
+        client_request_id: str,
+    ) -> ChatMessage | None:
+        """依前端回合識別碼取得 learner 訊息。"""
+        ...
+
+    def get_active_chat_operation(self, conversation_id: str) -> ChatMessage | None:
+        """取得對話中唯一一筆尚在生成的 learner 回合。"""
+        ...
+
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
         """列出指定 conversation 的所有訊息，依 sequence_index 排序。
 

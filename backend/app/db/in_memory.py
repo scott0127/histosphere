@@ -551,11 +551,74 @@ class InMemoryRepository(RepositoryProtocol):
             None,
         )
         if existing_index is None:
+            if message.speaker_type == "learner" and message.client_request_id:
+                duplicate_request = next(
+                    (
+                        item
+                        for item in messages
+                        if item.speaker_type == "learner"
+                        and item.client_request_id == message.client_request_id
+                    ),
+                    None,
+                )
+                if duplicate_request:
+                    raise ValueError("duplicate chat client_request_id")
+            if (
+                message.speaker_type == "learner"
+                and message.operation_status in {"pending", "processing"}
+            ):
+                active_operation = next(
+                    (
+                        item
+                        for item in messages
+                        if item.speaker_type == "learner"
+                        and item.operation_status in {"pending", "processing"}
+                    ),
+                    None,
+                )
+                if active_operation:
+                    raise ValueError("conversation already has an active chat operation")
             messages.append(message)
         else:
             messages[existing_index] = message
         messages.sort(key=lambda item: item.sequence_index)
         return message
+
+    def get_message(self, message_id: str) -> ChatMessage | None:
+        """依訊息 ID 取得單一訊息。"""
+        for messages in self.messages.values():
+            message = next((item for item in messages if item.id == message_id), None)
+            if message:
+                return message
+        return None
+
+    def get_learner_message_by_request(
+        self,
+        conversation_id: str,
+        client_request_id: str,
+    ) -> ChatMessage | None:
+        """依前端回合識別碼取得 learner 訊息。"""
+        return next(
+            (
+                item
+                for item in self.messages.get(conversation_id, [])
+                if item.speaker_type == "learner"
+                and item.client_request_id == client_request_id
+            ),
+            None,
+        )
+
+    def get_active_chat_operation(self, conversation_id: str) -> ChatMessage | None:
+        """取得對話中尚在處理的 learner 回合。"""
+        return next(
+            (
+                item
+                for item in self.messages.get(conversation_id, [])
+                if item.speaker_type == "learner"
+                and item.operation_status in {"pending", "processing"}
+            ),
+            None,
+        )
 
     def list_messages(self, conversation_id: str) -> list[ChatMessage]:
         """列出指定 conversation 的所有訊息，依 sequence_index 排序。

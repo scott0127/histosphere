@@ -162,6 +162,8 @@ export interface ChatMessage {
   annotations?: Annotation[];
   rag_sources?: RagSource[];
   metadata?: Record<string, unknown>;
+  client_request_id?: string | null;
+  operation_status?: 'pending' | 'processing' | 'completed' | 'failed' | null;
   created_at?: string;
 }
 
@@ -287,6 +289,14 @@ export interface ChatResponse {
   related_events?: RelatedEvent[];
   dynamic_context?: string;
   rag_sources?: RagSource[];
+}
+
+export interface ChatOperationStatusResponse {
+  client_request_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  retryable: boolean;
+  learner_message: ChatMessage;
+  response?: ChatResponse | null;
 }
 
 export type ChatStreamEvent =

@@ -206,3 +206,23 @@ def test_conversation_history_keeps_more_than_twelve_database_messages():
     assert "歷史訊息 01" in rendered_history
     assert "歷史訊息 20" in rendered_history
     assert rendered_history.count("歷史訊息") == 20
+
+
+def test_conversation_history_caps_total_context_and_keeps_the_newest_turns():
+    history = [
+        ChatMessage(
+            conversation_id="conversation-1",
+            speaker_type="learner" if index % 2 else "assistant",
+            speaker_name="learner" if index % 2 else "AI Assistant",
+            sequence_index=index,
+            content=f"歷史訊息 {index:02d} " + ("內容" * 750),
+        )
+        for index in range(1, 31)
+    ]
+
+    rendered_history = PromptService._conversation_history(history)
+
+    assert "older messages were omitted" in rendered_history
+    assert "歷史訊息 30" in rendered_history
+    assert "歷史訊息 01" not in rendered_history
+    assert len(rendered_history) < 17000
