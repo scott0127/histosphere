@@ -209,6 +209,12 @@ def test_conditions_reuse_same_event_materials_but_create_isolated_conversations
 
 def test_event_check_and_list_events(client):
     initialized = initialize_event(client, "法國大革命")
+    locked = client.post(
+        f"/api/admin/events/{initialized['event_id']}/material-lock",
+        headers={"x-admin-key": "test-admin"},
+        json={"locked": True},
+    )
+    assert locked.status_code == 200
 
     check = client.post("/api/event/check", json={"event_name": "法國大革命"})
     assert check.status_code == 200
@@ -632,6 +638,13 @@ def test_admin_updates_event_materials_and_logs(client):
     assert payload["start_year"] == 1789
     assert payload["end_year"] == 1799
     assert payload["source_summary"]["review_state"] == "teacher_modified"
+
+    locked = client.post(
+        f"/api/admin/events/{event_id}/material-lock",
+        headers={"x-admin-key": "test-admin"},
+        json={"locked": True},
+    )
+    assert locked.status_code == 200
 
     events = client.get("/api/events")
     assert events.status_code == 200

@@ -218,6 +218,26 @@ test('frontend api client archives and restores events through protected admin e
   ]);
 });
 
+test('frontend api client locks and unlocks formal event materials through the admin endpoint', async () => {
+  const lockedEvent = { ...sampleEvent, materials_locked_at: '2026-08-09T00:00:00Z' };
+  const { calls, fetcher } = createFetchRecorder({
+    'POST /api/admin/events/event-1/material-lock': lockedEvent,
+  });
+
+  assert.deepEqual(
+    await api.setAdminEventMaterialLock('test-admin', 'event-1', true, fetcher),
+    lockedEvent,
+  );
+  assert.deepEqual(calls, [{
+    url: '/api/admin/events/event-1/material-lock',
+    options: {
+      method: 'POST',
+      headers: { 'x-admin-key': 'test-admin' },
+      body: { locked: true },
+    },
+  }]);
+});
+
 test('frontend api client manages the complete persona lifecycle through admin endpoints', async () => {
   const inactivePersona = { ...samplePersona, active: false, archived_at: null };
   const { calls, fetcher } = createFetchRecorder({

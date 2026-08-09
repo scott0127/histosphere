@@ -228,6 +228,19 @@ export const restoreAdminEvent = (adminKey: string, eventId: string, fetcher: Fr
   });
 };
 
+export const setAdminEventMaterialLock = (
+  adminKey: string,
+  eventId: string,
+  locked: boolean,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<HistoricalEvent>(`/api/admin/events/${eventId}/material-lock`, {
+    method: 'POST',
+    headers: adminHeaders(adminKey),
+    body: { locked },
+  });
+};
+
 export const fetchUserProgress = (userId: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<UserProgressResponse>('/api/sessions/progress', {
     ...learnerAuthOptions(),

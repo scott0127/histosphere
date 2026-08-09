@@ -157,6 +157,7 @@
                   <div>
                     <div class="flex items-center gap-2">
                       <p class="admin-kicker">歷史事件</p>
+                      <span class="admin-badge">{{ event.materials_locked_at ? '素材已鎖定' : '素材草稿' }}</span>
                       <span v-if="event.archived_at" class="admin-badge">已封存</span>
                     </div>
                     <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ event.canonical_name }}</h2>
@@ -214,9 +215,22 @@
               <span class="admin-accordion-title">{{ selectedEvent.canonical_name }}</span>
             </span>
             <div class="flex flex-wrap items-center gap-2">
+              <span class="admin-badge">
+                {{ selectedEvent.materials_locked_at ? '素材已鎖定' : '素材草稿' }}
+              </span>
               <span class="admin-accordion-meta">
                 {{ eventYearRange(selectedEvent) }}
               </span>
+              <button
+                class="admin-button-primary px-3 py-2 text-xs font-bold"
+                type="button"
+                :disabled="changingMaterialLockEventId === selectedEvent.id || (hasUnsavedTaskChanges && !selectedEvent.materials_locked_at)"
+                @click="confirmMaterialLockChange(selectedEvent)"
+              >
+                {{ changingMaterialLockEventId === selectedEvent.id
+                  ? '處理中'
+                  : selectedEvent.materials_locked_at ? '解除素材鎖定' : '鎖定正式素材' }}
+              </button>
               <button class="admin-button-secondary px-3 py-2 text-xs font-bold" type="button" @click="selectedEventId = null">
                 返回事件列表
               </button>
@@ -250,15 +264,20 @@
                   <span class="admin-badge">{{ taskQuestionCount(selectedEvent.latest_task) }} 題</span>
                 </div>
 
-                <TaskControlEditor
-                  :evaluation-json="taskJson[selectedEvent.latest_task.id] || '{}'"
-                  class="mt-5"
-                  :dirty="isTaskDirty(selectedEvent.latest_task)"
-                  :saving="savingTaskId === selectedEvent.latest_task.id"
-                  :task="selectedEvent.latest_task"
-                  @update:evaluation-json="taskJson[selectedEvent.latest_task.id] = $event"
-                  @save="saveTask(selectedEvent.latest_task)"
-                />
+                <p v-if="selectedEvent.materials_locked_at" class="admin-caption mt-4 text-xs font-bold">
+                  正式素材已鎖定；解除鎖定後才能修改 Task。
+                </p>
+                <fieldset :disabled="Boolean(selectedEvent.materials_locked_at)" class="min-w-0 disabled:opacity-70">
+                  <TaskControlEditor
+                    :evaluation-json="taskJson[selectedEvent.latest_task.id] || '{}'"
+                    class="mt-5"
+                    :dirty="isTaskDirty(selectedEvent.latest_task)"
+                    :saving="savingTaskId === selectedEvent.latest_task.id"
+                    :task="selectedEvent.latest_task"
+                    @update:evaluation-json="taskJson[selectedEvent.latest_task.id] = $event"
+                    @save="saveTask(selectedEvent.latest_task)"
+                  />
+                </fieldset>
               </article>
 
               <div v-else class="admin-empty-state p-5">
@@ -305,7 +324,11 @@
                     </div>
                   </div>
 
-                  <div class="mt-4 grid gap-3 md:grid-cols-2">
+                  <p v-if="selectedEvent.materials_locked_at" class="admin-caption mt-4 text-xs font-bold">
+                    正式素材已鎖定；解除鎖定後才能修改事件內容。
+                  </p>
+                  <fieldset :disabled="Boolean(selectedEvent.materials_locked_at)" class="mt-4 disabled:opacity-70">
+                  <div class="grid gap-3 md:grid-cols-2">
                     <label class="block">
                       <span class="admin-label">事件名稱</span>
                       <input v-model="selectedEvent.canonical_name" class="admin-field mt-1 w-full px-3 py-2 text-sm font-bold" />
@@ -329,6 +352,7 @@
                       儲存事件資料
                     </button>
                   </div>
+                  </fieldset>
                 </article>
             </div>
           </div>
@@ -348,13 +372,16 @@
 
           <div v-show="openSections.personas" class="admin-accordion-body">
             <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-              <section class="space-y-4">
+              <fieldset :disabled="Boolean(selectedEvent.materials_locked_at)" class="min-w-0 space-y-4 disabled:opacity-70">
                 <article class="admin-panel-inner p-5">
                   <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div>
                       <p class="admin-kicker">歷史人物</p>
                       <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">{{ selectedEvent.canonical_name }}</h2>
                       <p class="admin-caption mt-2 text-xs">同一事件最多只能啟用一位人物；封存不會刪除既有研究資料。</p>
+                      <p v-if="selectedEvent.materials_locked_at" class="admin-caption mt-1 text-xs font-bold">
+                        正式素材已鎖定；解除鎖定後才能修改人物。
+                      </p>
                     </div>
                     <div class="flex items-center gap-2">
                       <span class="admin-badge">{{ selectedEvent.personas.length }} 人</span>
@@ -449,7 +476,7 @@
                     </div>
                   </div>
                 </article>
-              </section>
+              </fieldset>
 
               <section class="admin-panel-inner admin-panel-muted p-5">
                 <div class="flex items-start justify-between gap-4">
@@ -595,6 +622,7 @@ const {
   authUsers,
   authUsersError,
   changingParticipantStatusId,
+  changingMaterialLockEventId,
   changingPersonaStatusId,
   closeSessionResearch,
   createPersona,
@@ -628,6 +656,7 @@ const {
   saveCondition,
   saveEvent,
   setEventArchived,
+  setEventMaterialsLocked,
   savePersona,
   savingPersonaId,
   saveParticipant,
@@ -660,6 +689,15 @@ const personaStatusLabel = (persona: Persona) => {
 const confirmArchivePersona = async (persona: Persona) => {
   if (import.meta.client && !window.confirm(`確定封存「${persona.name}」？既有研究資料會保留。`)) return;
   await archivePersona(persona);
+};
+
+const confirmMaterialLockChange = async (event: NonNullable<typeof selectedEvent.value>) => {
+  const locking = !event.materials_locked_at;
+  const message = locking
+    ? `確定將「${event.canonical_name}」鎖定為正式實驗素材？鎖定後須先解除才能修改。`
+    : `確定解除「${event.canonical_name}」的素材鎖定？有進行中 Session 時後端會拒絕。`;
+  if (import.meta.client && !window.confirm(message)) return;
+  await setEventMaterialsLocked(event, locking);
 };
 
 const allowRouteLeave = ref(false);

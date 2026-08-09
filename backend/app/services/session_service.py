@@ -181,6 +181,7 @@ class SessionService:
                 condition_key_snapshot=source_session.condition_key_snapshot,
                 user_id=source_session.user_id,
                 event_id=source_session.event_id,
+                is_admin_test=source_session.is_admin_test,
             )
         )
         record_session_material_snapshot(self.repository, new_session)

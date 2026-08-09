@@ -43,6 +43,7 @@ import {
   restoreAdminParticipant,
   restartAdminSession,
   runAdminPromptDryRun,
+  setAdminEventMaterialLock,
   resetAdminSessionTimer,
   updateAdminCondition,
   updateAdminEvent,
@@ -68,6 +69,7 @@ export const useAdminWorkspace = () => {
   const creatingPersona = ref(false);
   const changingParticipantStatusId = ref<string | null>(null);
   const changingPersonaStatusId = ref<string | null>(null);
+  const changingMaterialLockEventId = ref<string | null>(null);
   const savingParticipantId = ref<string | null>(null);
   const savingPersonaId = ref<string | null>(null);
   const savingTaskId = ref<string | null>(null);
@@ -120,6 +122,7 @@ export const useAdminWorkspace = () => {
     personaJson.value = {};
     creatingPersona.value = false;
     changingPersonaStatusId.value = null;
+    changingMaterialLockEventId.value = null;
     savingPersonaId.value = null;
     promptPreview.value = null;
     promptDryRun.value = null;
@@ -452,6 +455,19 @@ export const useAdminWorkspace = () => {
     }
   };
 
+  const setEventMaterialsLocked = async (event: EventWithPersonas, locked: boolean) => {
+    changingMaterialLockEventId.value = event.id;
+    error.value = null;
+    try {
+      await setAdminEventMaterialLock(adminKey.value, event.id, locked);
+      await loadSnapshot({ preserveUnsavedTaskDrafts: true });
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, locked ? '素材鎖定失敗。' : '素材解除鎖定失敗。');
+    } finally {
+      changingMaterialLockEventId.value = null;
+    }
+  };
+
   const loadSessionResearch = async (sessionId: string) => {
     researchSessionLoading.value = true;
     error.value = null;
@@ -526,6 +542,7 @@ export const useAdminWorkspace = () => {
     authUsers,
     authUsersError,
     changingParticipantStatusId,
+    changingMaterialLockEventId,
     changingPersonaStatusId,
     closeSessionResearch,
     conditionModeLabel,
@@ -560,6 +577,7 @@ export const useAdminWorkspace = () => {
     saveCondition,
     saveEvent,
     setEventArchived,
+    setEventMaterialsLocked,
     savePersona,
     savingPersonaId,
     saveParticipant,

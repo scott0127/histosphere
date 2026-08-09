@@ -41,7 +41,13 @@ class ResearchExportService:
             if session.user_id
             else None
         )
-        participant_code = participant.code if participant else ("ADMIN_TEST" if not session.user_id else "UNMAPPED")
+        participant_bound = participant is not None and not session.is_admin_test
+        if session.is_admin_test:
+            participant_code = "ADMIN_TEST"
+        elif participant:
+            participant_code = participant.code
+        else:
+            participant_code = "UNMAPPED"
         attempt = self.repository.get_task_attempt_for_session(session.id)
         task = (
             self.repository.get_event_task(attempt.task_id)
@@ -54,7 +60,7 @@ class ResearchExportService:
 
         return AdminSessionResearchResponse(
             participant_code=participant_code,
-            participant_bound=participant is not None,
+            participant_bound=participant_bound,
             session=session.model_copy(update={"user_id": None}),
             event=event,
             condition=self.repository.get_condition_by_key(session.condition_key_snapshot),
@@ -73,8 +79,14 @@ class ResearchExportService:
         )
 
     def export(self, export_format: Literal["json", "csv"]) -> tuple[str, str, str]:
-        """輸出所有 Session；使用 participant code，不輸出 Auth user id。"""
-        records = [self.session_research(session.id) for session in self.repository.list_sessions()]
+        """只輸出已綁定受測者的正式 Session，不混入 Admin test 或孤兒資料。"""
+        records = [
+            record
+            for session in self.repository.list_sessions()
+            if not session.is_admin_test
+            for record in [self.session_research(session.id)]
+            if record.participant_bound
+        ]
         if export_format == "json":
             content = json.dumps(
                 [record.model_dump(mode="json") for record in records],

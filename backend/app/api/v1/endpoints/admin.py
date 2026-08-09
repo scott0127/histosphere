@@ -40,6 +40,7 @@ from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentS
 from app.schemas.requests import (
     AdminPromptDryRunRequest,
     EventUpdateRequest,
+    MaterialLockRequest,
     EventTaskUpdateRequest,
     ExperimentConditionUpdateRequest,
     ParticipantCreateRequest,
@@ -60,6 +61,7 @@ from app.schemas.responses import (
 )
 from app.services import ChatService, PersonaService, PromptService, RagPipelineService, SessionService
 from app.services.research_export_service import ResearchExportService
+from app.services.material_lock_service import assert_event_materials_editable, set_event_material_lock
 from app.core.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
@@ -342,6 +344,7 @@ def update_event(
     event = repository.get_event(event_id)
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    assert_event_materials_editable(repository, event_id)
 
     before = event.model_copy(deep=True)
     updates = request.model_dump(exclude_unset=True)
@@ -360,6 +363,34 @@ def update_event(
             ),
         )
     )
+    return saved
+
+
+@router.post("/events/{event_id}/material-lock", response_model=Event)
+def update_event_material_lock(
+    event_id: str,
+    request: MaterialLockRequest,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Event:
+    """鎖定正式素材，或在沒有進行中 Session 時解除鎖定。"""
+    before = repository.get_event(event_id)
+    if not before:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    before = before.model_copy(deep=True)
+    saved = set_event_material_lock(repository, event_id, locked=request.locked)
+    if before.materials_locked_at != saved.materials_locked_at:
+        repository.log_research(
+            ResearchLog(
+                event_id=saved.id,
+                action_type="event_materials_locked" if request.locked else "event_materials_unlocked",
+                payload=build_change_payload(
+                    before=before,
+                    after=saved,
+                    fields=["materials_locked_at"],
+                    subject={"event_id": saved.id, "event_name": saved.canonical_name},
+                ),
+            )
+        )
     return saved
 
 
@@ -443,6 +474,7 @@ def update_task(
     task = repository.get_event_task(task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    assert_event_materials_editable(repository, task.event_id)
     before = task.model_copy(deep=True)
     updates = request.model_dump(exclude_unset=True)
     required_field_issues = [

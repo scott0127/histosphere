@@ -66,6 +66,11 @@ class EventInitializationService:
             event = existing
             if not admin_override:
                 learner_session = self._learner_session_for_event(request.user_id, event.id)
+                if not learner_session and not event.materials_locked_at:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Historical event materials are not locked for the experiment.",
+                    )
             sources = self.repository.list_wiki_sources(event.id)
             task = self._ensure_task(event, sources)
             personas = self._ensure_personas(event, condition)
@@ -128,6 +133,7 @@ class EventInitializationService:
                 condition_key_snapshot=condition.condition_key,
                 user_id=request.user_id,
                 event_id=event.id,
+                is_admin_test=admin_override,
             )
         )
         record_session_material_snapshot(self.repository, session)

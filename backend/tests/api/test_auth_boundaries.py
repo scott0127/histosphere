@@ -16,7 +16,14 @@ def _admin_initialize(client: TestClient, event_name: str = "JWT 身分邊界測
         headers={"x-admin-key": "test-admin"},
     )
     assert response.status_code == 200
-    return response.json()
+    payload = response.json()
+    locked = client.post(
+        f"/api/admin/events/{payload['event_id']}/material-lock",
+        json={"locked": True},
+        headers={"x-admin-key": "test-admin"},
+    )
+    assert locked.status_code == 200
+    return payload
 
 
 def test_admin_key_is_required_from_environment(monkeypatch):

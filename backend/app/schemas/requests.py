@@ -67,6 +67,12 @@ class EventUpdateRequest(BaseModel):
     source_summary: dict[str, Any] | None = None
 
 
+class MaterialLockRequest(BaseModel):
+    """Admin 明確鎖定或解除鎖定一個事件的正式實驗素材。"""
+
+    locked: bool
+
+
 class TaskSubmitRequest(BaseModel):
     """Task 提交請求。
 

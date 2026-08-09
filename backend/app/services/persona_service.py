@@ -10,6 +10,7 @@ from app.core.research_audit import build_change_payload
 from app.models.domain import Persona, ResearchLog
 from app.schemas.requests import PersonaCreateRequest, PersonaUpdateRequest
 from app.crud.protocols import RepositoryProtocol
+from app.services.material_lock_service import assert_event_materials_editable
 
 
 class PersonaService:
@@ -34,6 +35,7 @@ class PersonaService:
         event = self.repository.get_event(request.event_id)
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        assert_event_materials_editable(self.repository, request.event_id)
         if request.active:
             self._assert_can_activate(request.event_id)
         persona = Persona(**request.model_dump())
@@ -69,6 +71,7 @@ class PersonaService:
         persona = self.repository.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        assert_event_materials_editable(self.repository, persona.event_id)
         before = persona.model_copy(deep=True)
         updates = request.model_dump(exclude_unset=True)
         if updates.get("active") is True:
@@ -101,6 +104,7 @@ class PersonaService:
         persona = self.repository.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        assert_event_materials_editable(self.repository, persona.event_id)
         before = persona.model_copy(deep=True)
         deleted = self.repository.delete_persona(persona_id)
         if not deleted:
@@ -129,6 +133,7 @@ class PersonaService:
         persona = self.repository.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
+        assert_event_materials_editable(self.repository, persona.event_id)
         before = persona.model_copy(deep=True)
         persona.archived_at = None
         persona.active = False

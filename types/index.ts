@@ -63,6 +63,7 @@ export interface HistoricalEvent {
   source_summary?: Record<string, unknown>;
   created_by?: string | null;
   archived_at?: string | null;
+  materials_locked_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -236,6 +237,7 @@ export interface ExperimentSession {
   condition_key_snapshot: ConditionKey;
   user_id?: string | null;
   event_id: string;
+  is_admin_test: boolean;
   status: 'initialized' | 'task_submitted' | 'conversation_started' | 'completed' | 'archived';
   timer_started_at?: string | null;
   timer_ends_at?: string | null;

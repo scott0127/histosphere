@@ -19,14 +19,17 @@ class EventService:
         self.repository = repository
 
     def check_exists(self, event_name: str) -> bool:
-        """檢查 canonical_name 是否已存在可重用事件。"""
+        """檢查 canonical_name 是否已有可供 learner 使用的鎖定素材。"""
         normalized_name = normalize_display_text(event_name.strip()) or event_name.strip()
-        return self.repository.find_event_by_name(normalized_name) is not None
+        event = self.repository.find_event_by_name(normalized_name)
+        return bool(event and event.materials_locked_at)
 
     def list_events(self) -> list[EventListItem]:
         """列出事件與非敏感 task 摘要，避免首頁回應提前暴露答案。"""
         items: list[EventListItem] = []
         for event in self.repository.list_events():
+            if not event.materials_locked_at:
+                continue
             payload = event.model_dump()
             payload["personas"] = self.repository.list_personas(event.id)
             payload["latest_task"] = self._learner_task_summary(

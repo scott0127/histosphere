@@ -73,6 +73,7 @@ class Event(BaseModel):
         context: LLM 生成的事件歷史脈絡。
         source_summary: 來源摘要與 LLM provider metadata。
         created_by: 建立者識別（可選）。
+        materials_locked_at: Admin 確認可供正式實驗使用的時間。
         created_at: 建立時間。
         updated_at: 最後更新時間。
     """
@@ -87,6 +88,7 @@ class Event(BaseModel):
     source_summary: dict[str, Any] = Field(default_factory=dict)
     created_by: str | None = None
     archived_at: datetime | None = None
+    materials_locked_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -260,6 +262,7 @@ class ExperimentSession(BaseModel):
         condition_key_snapshot: 建立時的 condition_key 快照。
         user_id: 受測者識別。
         event_id: 關聯事件 ID。
+        is_admin_test: 是否由 Admin 測試模式建立，不得混入正式研究匯出。
         status: Session 進度狀態。
         created_at: 建立時間。
         updated_at: 最後更新時間。
@@ -270,6 +273,7 @@ class ExperimentSession(BaseModel):
     condition_key_snapshot: ConditionKey
     user_id: str | None = None
     event_id: str
+    is_admin_test: bool = False
     status: Literal[
         "initialized",
         "task_submitted",

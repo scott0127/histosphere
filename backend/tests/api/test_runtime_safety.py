@@ -48,6 +48,11 @@ def submit_and_poll(client, initialized):
 
 def test_learner_may_only_reuse_assigned_existing_material(client):
     initialized = admin_initialize(client)
+    assert client.post(
+        f"/api/admin/events/{initialized['event_id']}/material-lock",
+        headers=ADMIN_HEADERS,
+        json={"locked": True},
+    ).status_code == 200
 
     allowed = client.post(
         "/api/event/initialize",
@@ -95,6 +100,11 @@ def test_event_archive_hides_without_deleting_and_can_restore(client):
     event_id = initialized["event_id"]
     task_id = initialized["task"]["id"]
     persona_id = initialized["personas"][0]["id"]
+    assert client.post(
+        f"/api/admin/events/{event_id}/material-lock",
+        headers=ADMIN_HEADERS,
+        json={"locked": True},
+    ).status_code == 200
 
     archived = client.post(f"/api/admin/events/{event_id}/archive", headers=ADMIN_HEADERS)
     assert archived.status_code == 200
@@ -566,6 +576,11 @@ def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client):
 
 def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):
     materials = admin_initialize(client, "同事件永久防重測試")
+    assert client.post(
+        f"/api/admin/events/{materials['event_id']}/material-lock",
+        headers=ADMIN_HEADERS,
+        json={"locked": True},
+    ).status_code == 200
 
     first = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
     assert first.status_code == 200
@@ -594,6 +609,11 @@ def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):
 
 def test_admin_restart_archives_old_runtime_and_preserves_research_data(client):
     materials = admin_initialize(client, "管理員重建 Session 測試")
+    assert client.post(
+        f"/api/admin/events/{materials['event_id']}/material-lock",
+        headers=ADMIN_HEADERS,
+        json={"locked": True},
+    ).status_code == 200
     learner = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
     assert learner.status_code == 200
     learner_payload = learner.json()

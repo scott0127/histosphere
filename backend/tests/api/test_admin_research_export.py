@@ -17,6 +17,12 @@ def _prepare_conversation(client):
         },
     )
     assert created.status_code == 200
+    locked = client.post(
+        f"/api/admin/events/{created.json()['event_id']}/material-lock",
+        headers=ADMIN_HEADERS,
+        json={"locked": True},
+    )
+    assert locked.status_code == 200
 
     initialized = client.post(
         "/api/event/initialize",
@@ -65,6 +71,8 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
     assert response.status_code == 200
     payload = response.json()
     assert payload["participant_code"] == "PTEST"
+    assert payload["participant_bound"] is True
+    assert payload["session"]["is_admin_test"] is False
     assert payload["session"]["user_id"] is None
     assert payload["attempt"]["user_id"] is None
     assert payload["conversation"]["user_id"] is None
@@ -116,6 +124,39 @@ def test_admin_research_export_is_anonymized_and_supports_json_and_csv(client):
     assert "PTEST" in exported_csv.text
     assert "請說明這個事件的背景。" in exported_csv.text
     assert "participant-001" not in exported_csv.text
+
+
+def test_admin_test_session_is_replayable_but_excluded_from_formal_export(client):
+    """Admin 測試可供後台檢查，但不得進入正式 JSON/CSV 研究資料。"""
+    initialized = client.post(
+        "/api/event/initialize",
+        headers=ADMIN_HEADERS,
+        json={
+            "event_name": "Admin test 匯出隔離測試",
+            "condition_key": "no_ebl_no_roleplay",
+            "rebuild": False,
+            "user_id": "admin-test-session",
+        },
+    )
+    assert initialized.status_code == 200
+    session_id = initialized.json()["session_id"]
+
+    replay = client.get(
+        f"/api/admin/sessions/{session_id}/research",
+        headers=ADMIN_HEADERS,
+    )
+    assert replay.status_code == 200
+    assert replay.json()["participant_code"] == "ADMIN_TEST"
+    assert replay.json()["participant_bound"] is False
+    assert replay.json()["session"]["is_admin_test"] is True
+
+    exported_json = client.get("/api/admin/research-export?format=json", headers=ADMIN_HEADERS)
+    assert exported_json.status_code == 200
+    assert session_id not in {record["session"]["id"] for record in json.loads(exported_json.text)}
+
+    exported_csv = client.get("/api/admin/research-export?format=csv", headers=ADMIN_HEADERS)
+    assert exported_csv.status_code == 200
+    assert session_id not in exported_csv.text
 
 
 def test_research_routes_require_admin_key_and_restart_captures_new_snapshot(client):

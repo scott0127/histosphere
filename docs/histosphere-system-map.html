@@ -962,6 +962,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       background: var(--muted-foreground);
     }
 
+    #histosphere-system-map [data-status="not-needed"] .dot {
+      background: conic-gradient(
+        from 30deg,
+        #d87777,
+        #d7a75f,
+        #9caf72,
+        #67a99a,
+        #6f98c4,
+        #9b82bd,
+        #c977a4,
+        #d87777
+      );
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 18%, transparent);
+    }
+
     #histosphere-system-map .branches {
       position: relative;
       display: grid;
@@ -1057,6 +1072,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       border-block-end: 1px solid var(--border);
       border-radius: 0.375rem;
       transition: background-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    #histosphere-system-map .function[data-status="not-needed"] {
+      border-block-end-color: color-mix(in srgb, var(--muted-foreground) 30%, var(--border));
+      background: color-mix(in srgb, var(--muted) 72%, var(--background));
     }
 
     #histosphere-system-map .function:last-child {
@@ -1192,6 +1212,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
     <span class="legend-item" data-status="critical"><span class="dot"></span>最高優先待做</span>
     <span class="legend-item" data-status="deferred"><span class="dot"></span>已暫緩</span>
     <span class="legend-item" data-status="accepted"><span class="dot"></span>已接受風險</span>
+    <span class="legend-item" data-status="not-needed"><span class="dot"></span>本研究不需要</span>
   </div>
 
   <div class="branches">
@@ -1224,7 +1245,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">Admin key 環境變數強制設定<span class="function-note text-small">後端沒有預設 fallback；缺少 HISTOSPHERE_ADMIN_KEY 時拒絕啟動</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="accepted">
+        <div class="function" data-status="not-needed">
           <span class="function-name">多管理員角色與個別撤銷<span class="function-note text-small">受控實驗目前採研究者共用 Admin key，此項暫不開發</span></span>
           <span class="status text-small"><span class="dot"></span>目前不需要</span>
         </div>
@@ -1264,13 +1285,17 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">自動建立素材的 task 格式<span class="function-note text-small">LLM structured schema 與缺漏 fallback 均強制使用 {{blank:qNN}} + evaluation_payload.questions[]</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">素材 readiness / publish 工作流與修改前後版本紀錄<span class="function-note text-small">指事件介紹、task、題目答案與 persona 是否齊全並鎖定成正式實驗素材；目前決定暫緩</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        <div class="function" data-status="done">
+          <span class="function-name">最低限度正式素材鎖定<span class="function-note text-small">Task 通過檢查且恰有一位啟用人物後，Admin 才能鎖定；Learner 只看得到已鎖定事件，鎖定後禁止修改事件、Task 與人物</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">事件背景圖重新生成<span class="function-note text-small">相容 endpoint 目前固定回傳 background_url=null；依研究需求決定暫緩</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">完整 publish／版本比較與一鍵回滾平台<span class="function-note text-small">目前以素材鎖定、Session 快照與 hash 滿足正式收案；不建立額外版本平台</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
+        </div>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">事件背景圖重新生成<span class="function-note text-small">既有插圖已足夠支援本研究，不增加自動重新生成端點</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
       </div>
     </details>
@@ -1372,9 +1397,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">同事件同條件的 session 冪等語意</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">Admin 強制完成、重新開啟原 Session 與 Debrief<span class="function-note text-small">目前五分鐘實驗流程不需要；如需重做，由 Admin 封存舊 Session 後建立新 Session</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">Admin 強制完成與重新開啟原 Session<span class="function-note text-small">固定五分鐘流程不需要手動完成；如需重做，由 Admin 封存舊 Session 後建立新 Session。正式 Debrief 另列為研究重要待辦</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
       </div>
     </details>
@@ -1416,9 +1441,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">題目資料轉換、Undo / Redo 與 dirty state 單元測試</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
+        <div class="function" data-status="not-needed">
           <span class="function-name">逐題 CRUD API、持久化操作歷程與完整 publish/readiness<span class="function-note text-small">目前整包 Task 儲存、validation 與本機 Undo / Redo 已足夠；複雜發布平台暫不實作</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
       </div>
     </details>
@@ -1448,9 +1473,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">每題正式計分語意<span class="function-note text-small">目前先擱置，但正式收案前必須定案 accepted answers、同義詞、錯字、人工覆核與答案版本</span></span>
           <span class="status text-small"><span class="dot"></span>最高優先待做</span>
         </div>
-        <div class="function" data-status="accepted">
+        <div class="function" data-status="not-needed">
           <span class="function-name">背景工作耐久性<span class="function-note text-small">單機、單一受測者可由持久化 processing 狀態與 polling 重掛；多 instance queue 暫不實作</span></span>
-          <span class="status text-small"><span class="dot"></span>目前足夠</span>
+          <span class="status text-small"><span class="dot"></span>不做多機佇列</span>
         </div>
       </div>
     </details>
@@ -1580,9 +1605,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">時代知識邊界與基本史實防錯<span class="function-note text-small">人物遇到生存年代之後的人物、物件或概念時，不得假裝認識或用後世知識作答</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">情緒／情境圖片變化<span class="function-note text-small">不影響目前主要實驗流程，低優先暫緩</span></span>
-          <span class="status text-small"><span class="dot"></span>低優先暫緩</span>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">情緒／情境圖片變化<span class="function-note text-small">固定肖像已足以控制實驗變因，本研究不開發動態表情圖片</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
         <div class="function" data-status="critical">
           <span class="function-name">受控歷史錯誤與正式 Debrief<span class="function-note text-small">目前暫緩，但正式採用受控歷史錯誤前必須完成揭露與說明流程</span></span>
@@ -1632,9 +1657,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">Condition fail-closed<span class="function-note text-small">session 或 condition snapshot 缺失時回 409，不會默認套用 04 或其他模式</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">Dynamic context／related events<span class="function-note text-small">屬 related-event／RAG 延伸範圍，正式 UI 與 message metadata 目前暫緩</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">Dynamic context／related events<span class="function-note text-small">屬 related-event／RAG 延伸範圍，不納入本研究正式流程</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
       </div>
     </details>
@@ -1677,7 +1702,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>研究資料與可重現性</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1696,13 +1721,17 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">實際 Prompt 與素材 hash 可回查快照<span class="function-note text-small">每次呼叫保存實際 Prompt；Session 建立時保存事件、Task、Condition 與 Persona 快照</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">完整 material version lock 與發布平台<span class="function-note text-small">目前已有每場 Session 快照與 hash；跨場次版本發布、比較與回滾暫緩</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        <div class="function" data-status="done">
+          <span class="function-name">正式素材鎖定與研究場次快照<span class="function-note text-small">事件鎖定後才可供 Learner 開始；每場 Session 另保存素材與 Prompt 快照及 hash，避免後續修改混淆研究資料</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="accepted">
+        <div class="function" data-status="not-needed">
+          <span class="function-name">跨場次版本比較與一鍵回滾平台<span class="function-note text-small">最低限度鎖定與快照已滿足本研究，不建立完整版本管理產品</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
+        </div>
+        <div class="function" data-status="done">
           <span class="function-name">後測／測量工具的系統邊界<span class="function-note text-small">後測維持外部工具，之後以 participant code 合併；系統匯出已提供穩定代號</span></span>
-          <span class="status text-small"><span class="dot"></span>邊界已定義</span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
       </div>
     </details>
@@ -1713,7 +1742,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Supabase 資料層</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1724,13 +1753,13 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">事件封存、participant Auth mapping、timer 與 async task migration</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Schema 約束<span class="function-note text-small">多個 application-required FK 仍允許 NULL；目前靠 domain/service 驗證</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">研究主鏈 NOT NULL／FK／刪除限制<span class="function-note text-small">Session、Task attempt、答案、Conversation、Message 等歸屬欄位由資料庫強制檢查；既有舊 research log 保留，但新寫入的 session_id 必須存在</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="accepted">
+        <div class="function" data-status="not-needed">
           <span class="function-name">RLS<span class="function-note text-small">所有 public tables 目前 disabled；架構依 FastAPI + service role 保護</span></span>
-          <span class="status text-small"><span class="dot"></span>已知設計</span>
+          <span class="status text-small"><span class="dot"></span>目前架構不需要</span>
         </div>
       </div>
     </details>
@@ -1741,28 +1770,28 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>測試與品質保證</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">48 項前端單元測試與 production build 通過</span></span>
+          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">49 項前端單元測試與 production build 通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">124 項後端測試全部通過</span></span>
+          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">126 項後端測試全部通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
           <span class="function-name">Supabase 現行 schema 唯讀 smoke test<span class="function-note text-small">14 個資料表與必要欄位已通過檢查，過程不寫入資料</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
-        <div class="function" data-status="deferred">
-          <span class="function-name">全空資料庫 migration smoke test<span class="function-note text-small">自動建立 disposable database 並重跑所有 migration 的測試暫緩，避免目前階段過度工程</span></span>
-          <span class="status text-small"><span class="dot"></span>已暫緩</span>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">全空資料庫 migration smoke test<span class="function-note text-small">現行 migration 已實際套用與檢查，不再增加每日 disposable database 測試</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Vue DOM/component tests 與完整瀏覽器 E2E<span class="function-note text-small">管理員研究紀錄 UI 已由實際瀏覽器驗證；登入到整場實驗的完整自動化 E2E 暫緩</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="not-needed">
+          <span class="function-name">完整五分鐘實驗的每日自動化 E2E<span class="function-note text-small">關鍵介面已用實際瀏覽器驗收；不另維護一支每天自動操作整場實驗的腳本</span></span>
+          <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
         <div class="function" data-status="done">
           <span class="function-name">Runtime smoke 與管理員研究紀錄 UI 驗證<span class="function-note text-small">首頁、Admin、後端 health、OpenAPI 與逐筆研究紀錄視窗皆以實際執行環境驗證</span></span>
@@ -1781,7 +1810,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>開發啟動與文件</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
+        <span class="status text-small" data-status="done"><span class="dot"></span>已完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1872,13 +1901,17 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "自動產生的 Task 使用現行文中題目格式，不再產生舊式底線與鬆散 JSON。",
         "建立填空題時會產生 {{blank:q01}}，並在 questions[] 建立對應的 q01 題目資料。"
       ]],
-      ["素材 readiness / publish 工作流與修改前後版本紀錄", [
-        "尚未建立「素材已審核、可正式收案」的發布狀態，也沒有鎖定每次修改前後的正式版本；目前暫緩。",
-        "修改法國大革命正解後會直接影響現行素材，現在還不能指定以「正式版 v1」繼續收案。"
+      ["最低限度正式素材鎖定", [
+        "Admin 審核 Task 與人物後可鎖定事件；鎖定後 Learner 才能看到並開始，事件、Task 與人物也不能再被修改。",
+        "法國大革命的 Task 通過檢查且只有一位啟用人物後，研究者按下鎖定；之後若要修改，必須在沒有進行中受測場次時先解除鎖定。"
+      ]],
+      ["完整 publish／版本比較與一鍵回滾平台", [
+        "最低限度素材鎖定及 Session 快照已能防止正式收案時混用素材，因此不再建立額外的版本管理產品。",
+        "研究者可以證明 P001 使用哪一份素材，但不需要在系統裡比較 v1、v2 差異或一鍵回滾。"
       ]],
       ["事件背景圖重新生成", [
-        "系統目前不會自動重新生成事件背景圖，相容端點只回傳空結果；此功能暫緩。",
-        "Admin 呼叫重新生成鴉片戰爭背景圖時，不會真的請圖片模型產生新圖。"
+        "既有事件插圖已足以支援本研究，因此不建立自動重新生成背景圖的功能。",
+        "需要更換鴉片戰爭插圖時，由研究者直接更新既有素材，不另呼叫圖片模型。"
       ]],
       ["01：Standard Chat + 無 Role-play", [
         "一般 AI 歷史助教自然對話，不使用 Historical EBL scaffold，也不扮演歷史人物。",
@@ -1944,9 +1977,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "同一受測者重複初始化同一事件時會接續既有 Session，不重複建立，也不改變已固定的 Condition。",
         "P001 先以 01 開始，再誤送 03 初始化請求，後端仍回傳原 Session 與原本的 01。"
       ]],
-      ["Admin 強制完成、重新開啟原 Session 與 Debrief", [
-        "目前五分鐘倒數已負責正式結束，因此不額外建立受測者手動完成或重新開啟原 Session 的複雜狀態。",
-        "若 P001 需要重做，Admin 會封存舊 Session 並建立新 Session；正式 Debrief 待研究流程確定後再加入。"
+      ["Admin 強制完成與重新開啟原 Session", [
+        "本研究固定五分鐘且不讓 Learner 手動完成，因此不需要提早結束或重新開啟同一場 Session。正式 Debrief 仍保留在研究重要待辦。",
+        "若 P001 需要重做，Admin 封存舊 Session 並建立新 Session，不修改原研究紀錄。"
       ]],
       ["故事優先的可編輯文本與 inline 題目 badge", [
         "研究者直接編輯完整故事，題目在文中顯示為 badge，不必手動操作原始 token 字串。",
@@ -2093,7 +2126,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "拿破崙被問到愛因斯坦時，不能評論相對論或聲稱認識他；應以拿破崙的第一人稱語氣表示不知道此人。"
       ]],
       ["情緒／情境圖片變化", [
-        "目前使用固定肖像，不依每則對話切換人物表情或背景；這不影響主要實驗操作，因此低優先暫緩。",
+        "目前使用固定肖像，不依每則對話切換人物表情或背景；固定畫面也更容易控制實驗變因，因此本研究不開發。",
         "人物面對衝突或反思問題時仍使用同一張肖像，不另外產生憤怒或沉思版本。"
       ]],
       ["受控歷史錯誤與正式 Debrief", [
@@ -2133,7 +2166,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "一筆缺少 Condition 的錯誤 Session 不會默認套用 04，因此不會污染實驗分組資料。"
       ]],
       ["Dynamic context／related events", [
-        "這是 related-event／RAG 的延伸能力，目前暫緩；正式介面不呈現，訊息 metadata 也尚未保存使用內容。",
+        "這是 related-event／RAG 的延伸能力，不屬於本研究目前要操弄或測量的功能，因此不納入正式流程。",
         "後端即使找到「恐怖統治」作為相關事件，目前也不把它當作正式多輪 Chat 必備流程。"
       ]],
       ["事件列表優先，再進入單一事件的 task／事件／persona 管理", [
@@ -2172,9 +2205,13 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "系統保存每次真正送給模型的完整 Prompt、模型資訊與 hash，Session 建立時也保存當時素材快照。",
         "即使之後研究者修改 Task，仍可由該場 Session 查回受測時使用的事件、題目、人物與 Prompt。"
       ]],
-      ["完整 material version lock 與發布平台", [
-        "每場 Session 已有不可混淆的素材快照與 hash，但尚未建立跨場次的版本發布、比較與一鍵回滾平台。",
-        "可以證明 P001 當時看過哪一版內容；但目前還不能在 Admin 選擇「正式版 v1」後鎖住所有新場次。"
+      ["正式素材鎖定與研究場次快照", [
+        "事件必須先鎖定才能供 Learner 開始，每場 Session 同時保存事件、Task、人物與 Prompt 的快照及 hash。",
+        "日後即使解除鎖定並修改 Task，也能查回 P001 實驗當時真正使用的內容。"
+      ]],
+      ["跨場次版本比較與一鍵回滾平台", [
+        "目前的鎖定與快照已足夠支援碩士實驗，不建立跨場次視覺比較、版本標籤與一鍵回滾平台。",
+        "研究者能追溯 P001 使用的素材，但不會在 Admin 中操作類似文件版本管理器。"
       ]],
       ["後測／測量工具的系統邊界", [
         "後測維持在外部量表或表單，本系統不重做一套後測工具；資料以 participant code 對應。",
@@ -2188,9 +2225,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "事件封存、帳號綁定、計時器與非同步 Task 所需的資料庫欄位及遷移已建立。",
         "封存事件或保存 Task 背景處理狀態時，都有對應的資料庫結構。"
       ]],
-      ["Schema 約束", [
-        "部分業務上必填的關聯欄位仍允許空值，目前主要由後端服務檢查。",
-        "正常 API 會拒絕缺少 Session 的 attempt，但直接寫入資料庫仍可能產生不完整資料。"
+      ["研究主鏈 NOT NULL／FK／刪除限制", [
+        "資料庫會直接要求 Session、Task attempt、答案、Conversation 與 Message 等研究主鏈具備有效歸屬，並限制刪除仍被引用的紀錄。",
+        "新增一筆指向不存在 Session 的 Task attempt 或 research log 時，資料庫會拒絕寫入；既有舊 log 則原樣保留。"
       ]],
       ["RLS", [
         "public tables 尚未啟用 RLS，目前依賴 FastAPI 與後端 service role 控制存取。",
@@ -2201,7 +2238,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "測試會驗證 condition mapping、Task payload，以及 01 模式等待時不會誤顯示歷史人物。"
       ]],
       ["Backend API／interaction／persona／provider tests", [
-        "本次完整執行 124 項後端測試，API、互動政策、Persona、Provider、Chat operation 與研究匯出皆通過。",
+        "本次完整執行 126 項後端測試，API、互動政策、Persona、Provider、Chat operation、素材鎖定與研究匯出皆通過。",
         "測試會驗證相同 request 重播、失敗重試、Condition 缺失拒絕及後端重啟恢復。"
       ]],
       ["Supabase 現行 schema 唯讀 smoke test", [
@@ -2209,12 +2246,12 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "執行 pnpm test:supabase:schema 已確認現行資料庫結構與後端預期一致。"
       ]],
       ["全空資料庫 migration smoke test", [
-        "尚未自動建立一個全空的臨時資料庫，再從第一份 migration 重建；目前刻意暫緩。",
-        "現行資料庫結構已驗證，但還沒有每天自動證明一台全新電腦能從零套用所有 migration。"
+        "本研究使用固定的本機資料庫，現行 migration 與 schema 已實際套用並驗證，因此不另外維護每日建立臨時資料庫的測試。",
+        "新電腦仍可依既有 migration 建立資料庫，但不會在每次測試時再建立一套 disposable database。"
       ]],
-      ["Vue DOM/component tests 與完整瀏覽器 E2E", [
-        "前端單元測試及管理員研究紀錄視窗已在實際瀏覽器驗證；完整登入到五分鐘實驗的自動化 E2E 暫緩。",
-        "目前可確認 Admin 能查看 PTEST 完整對話與統計，但還沒有一支腳本每天自動操作整場實驗。"
+      ["完整五分鐘實驗的每日自動化 E2E", [
+        "關鍵前端單元測試、production build 與實際瀏覽器驗收已涵蓋目前風險，不再維護每日自動操作完整五分鐘實驗的腳本。",
+        "正式收案前仍會人工走過登入、Task、Chat 與結束流程，但不要求 CI 每天等待五分鐘重播一次。"
       ]],
       ["Runtime smoke 與管理員研究紀錄 UI 驗證", [
         "檢查首頁、Admin、後端健康狀態與 API 規格都能回應，並實際操作完整對話紀錄視窗。",
