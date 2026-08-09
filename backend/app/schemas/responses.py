@@ -358,3 +358,63 @@ class ParticipantMeResponse(BaseModel):
 
     participant: Participant
     progress: list[UserProgressItem] = Field(default_factory=list)
+
+
+class AdminConversationStats(BaseModel):
+    """單一 Session 對話的可驗證統計。"""
+
+    total_messages: int = 0
+    learner_messages: int = 0
+    assistant_messages: int = 0
+    completed_exchanges: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    llm_messages_total: int = 0
+    llm_messages_with_usage: int = 0
+    token_usage_coverage: float = 0.0
+    token_usage_complete: bool = False
+    first_message_at: str | None = None
+    last_message_at: str | None = None
+    duration_seconds: int | None = None
+
+
+class AdminMaterialSnapshot(BaseModel):
+    """Session 建立時素材快照；舊 Session 會明確標示缺少。"""
+
+    status: Literal["captured", "legacy_missing"]
+    material_hash: str | None = None
+    hash_verified: bool = False
+    captured_at: str | None = None
+    materials: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminPromptRecord(BaseModel):
+    """一次正式 LLM 回覆所使用的 Prompt 紀錄。"""
+
+    stage: str
+    message_id: str | None = None
+    prompt_hash: str
+    hash_verified: bool = False
+    prompt: str
+    modules: list[dict[str, str]] = Field(default_factory=list)
+    llm_call: dict[str, Any] | None = None
+    created_at: str
+
+
+class AdminSessionResearchResponse(BaseModel):
+    """Admin 檢視單一受測者 Session 的完整研究資料。"""
+
+    participant_code: str
+    participant_bound: bool = False
+    session: ExperimentSession
+    event: Event
+    condition: ExperimentCondition | None = None
+    task: EventTask | None = None
+    attempt: TaskAttempt | None = None
+    conversation: Conversation | None = None
+    messages: list[ChatMessage] = Field(default_factory=list)
+    stats: AdminConversationStats
+    material_snapshot: AdminMaterialSnapshot
+    prompt_records: list[AdminPromptRecord] = Field(default_factory=list)
+    research_logs: list[ResearchLog] = Field(default_factory=list)

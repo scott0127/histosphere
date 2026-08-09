@@ -163,6 +163,39 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
   assert.equal(calls[4].options.body.revision_state, 'teacher_modified');
 });
 
+test('frontend api client loads one session research record through the protected admin endpoint', async () => {
+  const research = {
+    session: { id: 'session-1' },
+    participant_code: 'P001',
+    transcript: [],
+    stats: {
+      total_messages: 0,
+      learner_messages: 0,
+      assistant_messages: 0,
+      completed_exchanges: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      llm_messages_with_usage: 0,
+      llm_messages_without_usage: 0,
+      token_usage_coverage: 1,
+      token_usage_complete: true,
+    },
+  };
+  const { calls, fetcher } = createFetchRecorder({
+    'GET /api/admin/sessions/session-1/research': research,
+  });
+
+  assert.deepEqual(
+    await api.fetchAdminSessionResearch('test-admin', 'session-1', fetcher),
+    research,
+  );
+  assert.deepEqual(calls, [{
+    url: '/api/admin/sessions/session-1/research',
+    options: { headers: { 'x-admin-key': 'test-admin' } },
+  }]);
+});
+
 test('frontend api client archives and restores events through protected admin endpoints', async () => {
   const archivedEvent = { ...sampleEvent, archived_at: '2026-07-11T00:00:00Z' };
   const restoredEvent = { ...sampleEvent, archived_at: null };

@@ -644,25 +644,17 @@ def test_admin_updates_event_materials_and_logs(client):
     assert any(item["action_type"] == "event_updated" for item in logs.json())
 
 
-def test_compatibility_endpoints(client):
+def test_removed_noop_endpoints_return_not_found(client):
     initialized = initialize_event(client)
     event_id = initialized["event_id"]
     persona_id = initialized["personas"][0]["id"]
 
-    stats = client.post("/api/stats/view-count/increment")
-    assert stats.status_code == 200
-    assert stats.json()["success"] is True
-
-    background = client.post(f"/api/event/{event_id}/regenerate-background")
-    assert background.status_code == 200
-    assert "background_url" in background.json()
-
-    avatar = client.post(
+    assert client.post("/api/stats/view-count/increment").status_code == 404
+    assert client.post(f"/api/event/{event_id}/regenerate-background").status_code == 404
+    assert client.post(
         f"/api/personas/{persona_id}/regenerate_avatar",
         headers={"x-admin-key": "test-admin"},
-    )
-    assert avatar.status_code == 200
-    assert avatar.json()["success"] is True
+    ).status_code == 404
 
     assert client.delete(f"/api/event/{event_id}").status_code == 404
     archived = client.post(

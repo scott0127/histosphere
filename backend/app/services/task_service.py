@@ -8,6 +8,7 @@ from datetime import timedelta
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
+from app.core.research_reproducibility import record_prompt_snapshot
 from app.models.domain import ChatMessage, Conversation, ResearchLog, TaskAttempt, utc_now
 from app.providers.llm.base import LLMProvider
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
@@ -360,4 +361,20 @@ class TaskService:
                 **opening.generation.llm_metadata,
             },
         )
-        return self.repository.add_message(message)
+        message = self.repository.add_message(message)
+        if attempt.session_id:
+            record_prompt_snapshot(
+                self.repository,
+                session_id=attempt.session_id,
+                event_id=attempt.event_id,
+                task_id=attempt.task_id,
+                attempt_id=attempt.id,
+                conversation_id=conversation_id,
+                message_id=message.id,
+                user_id=attempt.user_id,
+                stage="conversation_opening",
+                prompt=opening.prompt,
+                modules=opening.modules,
+                llm_call=opening.generation.llm_metadata.get("llm_call"),
+            )
+        return message

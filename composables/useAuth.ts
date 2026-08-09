@@ -1,6 +1,6 @@
 /**
  * Supabase Auth Composable
- * 管理用戶認證狀態 (登入/登出/註冊/密碼重設/個人資料)
+ * 管理研究帳號認證狀態（登入、登出、密碼重設與個人資料）。
  */
 import { createClient, type User, type Session } from '@supabase/supabase-js'
 import { clearAdminSession } from '~/utils/adminSession'
@@ -123,49 +123,6 @@ export function useAuth() {
       // 明確登入 learner 時一律離開既有 Admin mode，避免後續 API 誤用 admin key。
       clearSharedBrowserSessionState()
       return { success: true }
-    } catch (e: any) {
-      error.value = e.message
-      return { success: false, error: e.message }
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /**
-   * Email/Password 註冊
-   */
-  async function signUp(email: string, password: string, displayName?: string) {
-    if (!client) {
-      error.value = 'Supabase 未設定'
-      return { success: false, error: error.value }
-    }
-
-    error.value = null
-    loading.value = true
-
-    try {
-      const { data, error: authError } = await client.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            display_name: displayName || email.split('@')[0]
-          }
-        }
-      })
-
-      if (authError) {
-        error.value = authError.message
-        return { success: false, error: authError.message }
-      }
-
-      // 注意: Supabase 預設需要 email 驗證
-      // 可在 Supabase Dashboard 關閉
-      return { 
-        success: true, 
-        needsVerification: !data.session,
-        user: data.user
-      }
     } catch (e: any) {
       error.value = e.message
       return { success: false, error: e.message }
@@ -322,7 +279,6 @@ export function useAuth() {
     // 方法
     initialize,
     signIn,
-    signUp,
     signOut,
     resetPasswordForEmail,
     updatePassword,

@@ -8,6 +8,7 @@ create_conversation 主要保留給相容舊 API 或管理端手動建立。
 from fastapi import HTTPException, status
 
 from app.models.domain import ChatMessage, Conversation
+from app.core.research_reproducibility import prompt_text_hash, record_prompt_snapshot
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.crud.protocols import RepositoryProtocol
 from app.services.conversation_opening_service import ConversationOpeningService
@@ -99,10 +100,27 @@ class ConversationService:
             metadata={
                 "condition_key": condition.condition_key,
                 "task_attempt_id": attempt.id,
+                "prompt_hash": prompt_text_hash(opening.prompt),
+                "prompt_modules": [module.name for module in opening.modules],
                 **opening.metadata,
+                **opening.generation.llm_metadata,
             },
         )
-        self.repository.add_message(greeting_message)
+        greeting_message = self.repository.add_message(greeting_message)
+        record_prompt_snapshot(
+            self.repository,
+            session_id=session.id,
+            event_id=event.id,
+            task_id=attempt.task_id,
+            attempt_id=attempt.id,
+            conversation_id=conversation.id,
+            message_id=greeting_message.id,
+            user_id=user_id or session.user_id,
+            stage="conversation_opening",
+            prompt=opening.prompt,
+            modules=opening.modules,
+            llm_call=opening.generation.llm_metadata.get("llm_call"),
+        )
         session.status = "conversation_started"
         self.repository.save_session(session)
         return ConversationCreateResponse(

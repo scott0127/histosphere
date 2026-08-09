@@ -35,6 +35,7 @@ export type ParticipantDashboardRow = {
   updatedAt?: string;
   latestActiveSession?: ExperimentSession;
   currentSessions: ParticipantSessionSummary[];
+  sessionHistory: ParticipantSessionSummary[];
 };
 
 export const filterParticipantDashboardRows = (
@@ -152,6 +153,19 @@ export const buildParticipantDashboardRows = (
               };
             })
         : [];
+      const sessionHistory = participant.auth_user_id
+        ? [...(sessionsByUser.get(participant.auth_user_id) || [])]
+            .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+            .map((session) => {
+              const code = experimentConditionCodeByKey[session.condition_key_snapshot] || '??';
+              return {
+                session,
+                eventName: eventNamesById.get(session.event_id) || '未知事件',
+                conditionCode: code,
+                conditionLabel: conditionName(code),
+              };
+            })
+        : [];
 
       return {
         participant,
@@ -166,6 +180,7 @@ export const buildParticipantDashboardRows = (
         updatedAt,
         latestActiveSession,
         currentSessions,
+        sessionHistory,
       };
     });
 };

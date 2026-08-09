@@ -1,104 +1,56 @@
 # Development Gaps
 
-Updated: 2026-07-11
+最後更新：2026-08-09
 
-This document separates locally verified behavior from remaining or explicitly deferred work. The current runtime was verified on 2026-07-11 with backend tests, frontend contract tests, Nuxt typecheck/build, real local Supabase reads, and browser smoke tests.
+本文件只列目前仍存在的功能邊界，不把已完成項目繼續列成待辦。Histosphere 是研究者現場控制的碩士實驗系統，因此優先確保 Condition、Session、Task、Chat 與研究資料語意正確，不建立沒有明確研究用途的大型平台功能。
 
-## Current Working Tree
+## 已完成的主要能力
 
-### Runtime And Data Safety
+- Supabase Auth learner 登入、JWT 驗證、participant 綁定與 condition assignment fail-closed。
+- 共用 Admin key、Admin test mode、Participant 建立／綁定／封存／恢復。
+- Event、Task、Persona 的 Admin 管理；Learner 只能使用既有且未封存素材。
+- Session 中斷恢復、固定五分鐘倒數、到期後進入下一階段，以及 Admin 重設 Session／倒數。
+- Story-first Task 編輯器、inline 題型、預覽、Undo/Redo、草稿、非同步送出與失敗恢復。
+- 四種 2x2 Condition、Historical EBL／Disclosure、Persona 邊界與離題重新導向。
+- DB-backed 多輪 Chat、持久化 operation、SSE 等待回饋、重複送出保護、同模型暫時性錯誤重試。
+- 每次 LLM 呼叫的 provider、model、latency、token、Prompt 與 hash 紀錄。
+- Admin 單一 Session 回放、完整逐句對話、Task、訊息／來回／Token 統計及 JSON／CSV 匯出。
+- Session 建立時素材快照與每次實際 Prompt 快照；匯出時驗證 SHA-256。
+- 前端單元測試、後端測試、Nuxt build、唯讀 Supabase schema smoke 與 runtime smoke 指令。
 
-- Local development keeps the standard Supabase `54320-54329` port block. `pnpm dev:full` releases `3000`/`8000`, reuses a healthy Supabase stack, waits for readiness, and reports startup duration.
-- A one-time elevated Windows repair command prevents WinNAT from dynamically excluding the official Supabase port block; normal startup does not repeatedly stop WinNAT.
-- Events are archived and restored through Admin endpoints. Public event listing excludes archived materials; Admin snapshot includes them for recovery.
-- Learners can only start an existing active event. Creating new historical event materials requires an Admin override.
-- Learner session initialization requires a bound, active participant and verifies that the requested condition code is present in `participants.condition_list`.
-- Admin test flow can explicitly bypass participant assignment so researchers can test every condition without changing learner semantics.
-- Session timers are opt-in. Admin can start or cancel a timer; elapsed sessions are completed by both a background worker and lazy runtime checks at task/chat boundaries.
+## 正式收案前仍需決定
 
-### Task And Conversation Runtime
+### 每題正式計分語意（最高優先）
 
-- Task drafts persist in `task_attempts.response_payload`.
-- Task submit returns `202 Accepted`, persists a `processing` attempt, runs LLM judgement/conversation/greeting work in a background task, and exposes a polling endpoint.
-- Attempt state is `in_progress -> processing -> submitted`, with `failed` retained as a retryable error state.
-- Frontend polling resumes a persisted processing attempt after page reload and re-schedules orphaned work after a backend restart.
-- Chat loads authoritative multi-turn history from DB `messages`, not from client-submitted history.
-- Prompt context is bounded to the latest 12 messages and 1600 characters per message.
-- Generated message metadata records prompt/profile hashes, module names, history message ids, provider and model.
+目前保留每題作答與整體 judgement，但研究者尚未確認填空同義詞、拼字、accepted answers、AI judgement 與 deterministic scoring 的責任邊界。這會改變研究資料語意，不能由工程端自行決定。
 
-### Prompt And Persona
+### 受控歷史錯誤與 Debrief（最高優先）
 
-- Condition-level prompt logic remains backend-managed rather than stored in Supabase.
-- Canonical modules are `general_prompt`, `independent_1_prompt`, `independent_2_prompt`, `event_context`, `learner_task`, `conversation_history`, `persona_context`, `source_context`, `runtime_policy`, and `user_message`.
-- `persona_prompt_v1` validates speaking style, social position, temporal/geographic/knowledge boundaries, stance, source policy, forbidden claims and researcher notes.
-- Admin prompt preview renders the exact runtime modules without calling the LLM.
-- Admin prompt dry-run calls the same provider/modules without saving messages or research logs.
-- RAG is explicitly disabled in `source_context`; runtime must not imply that sources were retrieved.
+功能維持停用。若要刻意讓歷史人物說出錯誤，必須先定義錯誤清單、適用 Condition、揭露紀錄、修正成功條件與 Session 結束前的 Debrief，避免受測者帶著錯誤離開。
 
-## Gap Summary
+### 是否顯示事件介紹
 
-| Area | Current State | Remaining |
-| --- | --- | --- |
-| Task authoring | Story-first UI, token/question validation, whole-payload save, draft autosave | Structured CRUD API, durable operation history, publish/readiness state |
-| Task answers | Full answer bundle and async judgement state in `task_attempts` | Detailed design discussion: per-question normalized scoring, accepted-answer policy, answer-key audit trail |
-| Event materials | Edit, archive and restore are available | Version history, before/after audit diff, publish snapshot/readiness |
-| Prompt runtime | Versioned persona contract, canonical modules, DB history, preview/dry-run and hashes | Retry/fallback contract, stable provider errors, usage/latency metrics, content version registry |
-| Participant/session | Auth mapping and condition assignment enforced; progress recovery and opt-in timer exist | Detailed design discussion: formal session close/debrief flow; stronger ownership checks are not a near-term priority in the supervised experiment setting |
-| RAG/source | Source/chunk schema exists; runtime reports RAG disabled | Deferred ingestion, chunking, embedding, retrieval and citation UI |
-| Admin auth/audit | `x-admin-key` protects `/api/admin/*`; key plus Supabase Auth used by frontend | Shared-key hygiene and per-field audit diff; multi-admin roles are not required for the current researcher-supervised deployment |
-| Tests | Backend API tests and frontend contract/pure-function tests exist | Supabase integration tests, migration smoke test, DOM-level Vue tests, provider failure/concurrency tests |
+Learner 目前只在事件首頁看到必要辨識資訊，不顯示事件介紹，以免提前提供 Task 背景。正式收案前研究者需確認這是否符合實驗操弄；Admin 管理視角仍可查看完整介紹。
 
-## Required Next Work
+## 建議要，但可在目前實驗規模暫緩
 
-### Provider Reliability And Observability
+- 完整 draft/readiness/publish 版本平台。目前已有 Session 素材與 Prompt 快照，可支援稽核，但不提供視覺化版本比較或回滾。
+- 自動化 Vue DOM／端對端瀏覽器測試。目前使用純函式／API contract 測試、build 與人工瀏覽器驗收。
+- 隔離資料庫的 migration-up 測試。目前 schema smoke 對既有 Supabase 只讀，不重設或刪除研究資料。
+- 多機 durable queue。單一受測者、單一 backend 的實驗場景以 DB operation + process worker 足夠。
+- 外部後測匯入。現階段可依 participant code 在分析時合併。
 
-- Move chat generation off the long-lived request path and prevent duplicate submission for the same conversation turn.
-- Add a minimal retry action for failed task/chat generation. Preserve the learner message and reuse the same operation id instead of creating duplicate formal messages.
-- Keep automatic retry conservative: at most one bounded retry for clearly transient timeout/rate-limit/provider-5xx failures; authentication and invalid-request errors must fail immediately.
-- Return a stable failed state that the frontend can present with an explicit retry button.
-- Guarantee one learner turn creates at most one formal model message, even after retry or duplicate clicks.
-- Optional production hardening: replace client-driven orphan recovery with startup reconciliation or a durable queue if the experiment is ever deployed with multiple backend instances.
-- Persist correlation id, latency, token usage, fallback reason and provider attempt count.
-- Add a per-conversation concurrency guard.
-- Give task judgement, greeting, chat and persona generation separate runtime policies.
+## 明確暫緩
 
-### Experiment Reproducibility
+- RAG ingestion、embedding、retrieval 與 citation UI。
+- 歷史人物情緒／情境圖片動態變化。
+- 多管理員角色、個別撤銷與 per-admin audit identity。
+- 複雜題目 CRUD API；現有整包 Task PATCH 足以支援研究者編輯規模。
 
-- Add event/task/persona/answer-key version history.
-- Design draft, readiness and publish semantics.
-- Make stored prompt hashes resolvable to reviewed prompt content.
-- Add export format for thesis analysis.
-- Decide whether animation/typewriter behavior should be disabled during measured sessions.
+## 已接受的風險邊界
 
-### Authorization And Ownership
+- 實驗由研究者現場監督，不以惡意猜測其他 Session ID 為主要威脅模型；JWT ownership 與 Admin key 仍保留基本隔離。
+- Token 只採 Provider 實際回報值。舊訊息缺 usage 時顯示覆蓋率，不做不可靠估算。
+- Persona 生成內容具有模型隨機性；系統固定 Condition policy、Historical Thinking 操作、Disclosure、素材與 Prompt 並留下實際輸出供後測與人工稽核，不追求 02／04 逐字相同。
 
-- The experiment is performed under researcher supervision, so hostile participant behavior and cross-session guessing are accepted low-priority risks.
-- Keep the existing participant mapping and condition-assignment enforcement; do not add a large authorization framework without a concrete deployment need.
-- Replace generic errors with stable field/error codes where the frontend needs actionable states.
-- Add before/after payload diff to Admin write logs.
-
-### Test Coverage
-
-- Add Supabase repository integration tests without resetting or deleting real local research data.
-- Add migration-up smoke tests against an isolated disposable database.
-- Add DOM-level component tests for archive/restore, Admin-only create, async polling, timer banner and expired-session controls.
-- Add prompt regression tests for all four condition cells and persona boundary violations.
-- Add async idempotency, failure recovery and duplicate-submit tests.
-
-## Explicitly Deferred
-
-- **Material version lock:** deferred until snapshot schema, publish semantics and migration strategy are approved. Message-level hashes are not a substitute for a locked material snapshot.
-- **RAG:** deferred. `knowledge_chunks` and `messages.rag_sources` remain preparatory schema only.
-- **Requirement item 6:** deferred because no concrete behavior or acceptance criteria were specified.
-- **Requirement item 8:** deferred; if it refers to RAG, the RAG decision above applies. If it means another feature, requirements must be supplied first.
-- **Controlled deliberate historical errors:** disabled until a reviewed error contract, exposure log and debrief policy exist.
-- **Multi-admin roles:** not required while the researcher and advisor intentionally share one Admin key. Revisit only if separate revocation, permission levels, or per-admin attribution becomes necessary.
-
-Detailed discussion items and accepted research-context decisions are maintained in `docs/research-experiment-backlog.md`.
-
-## Suggested Order
-
-1. Implement minimal asynchronous chat operation, duplicate protection, and explicit retry.
-2. Add missing automated Supabase/DOM/provider-failure tests.
-3. Discuss task scoring and formal session completion semantics before implementing them.
-4. Keep RAG, controlled historical errors, and material-version schema in the discussion backlog.
+研究匯出細節見 `docs/research-data-export.md`，啟動與品質指令見 `docs/local-development.md`。

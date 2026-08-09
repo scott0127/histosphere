@@ -16,9 +16,10 @@ Routes:
 """
 
 import os
+from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import ValidationError
 
 from app.api.deps import (
@@ -51,12 +52,14 @@ from app.schemas.responses import (
     AdminAuthUsersResponse,
     AdminPromptDryRunResponse,
     AdminPromptPreviewResponse,
+    AdminSessionResearchResponse,
     AdminSnapshotResponse,
     EventListItem,
     PromptPreviewModule,
     SessionRestartResponse,
 )
 from app.services import ChatService, PersonaService, PromptService, RagPipelineService, SessionService
+from app.services.research_export_service import ResearchExportService
 from app.core.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
@@ -287,7 +290,7 @@ async def prompt_dry_run(
         interaction_runtime=interaction_runtime,
     )
     prompt = prompt_service.render_modules(modules)
-    generation, interaction_metadata = await chat_service.generate_validated_response(
+    generation, interaction_metadata, _final_prompt = await chat_service.generate_validated_response(
         event=event,
         selected=persona,
         condition=condition,
@@ -788,3 +791,26 @@ def list_research_logs(
         list[ResearchLog]: 依時間倒序的流程行為紀錄清單。
     """
     return repository.list_research_logs(limit=limit)
+
+
+@router.get("/sessions/{session_id}/research", response_model=AdminSessionResearchResponse)
+def session_research(
+    session_id: str,
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> AdminSessionResearchResponse:
+    """以受測者代號載入單一 Session 的完整對話與研究統計。"""
+    return ResearchExportService(repository).session_research(session_id)
+
+
+@router.get("/research-export")
+def export_research_data(
+    format: Literal["json", "csv"] = "json",
+    repository: RepositoryProtocol = Depends(get_repository),
+) -> Response:
+    """匯出正式研究資料；不包含 Supabase Auth user id 或 email。"""
+    content, media_type, filename = ResearchExportService(repository).export(format)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

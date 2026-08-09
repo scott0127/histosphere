@@ -59,6 +59,10 @@ class FakeLLMProvider:
                 "schema_repair_count": 0,
                 "provider_switching_enabled": False,
                 "fallback_reason": None,
+                "prompt_tokens": 11,
+                "completion_tokens": 7,
+                "total_tokens": 18,
+                "finish_reason": "stop",
             },
         }
 

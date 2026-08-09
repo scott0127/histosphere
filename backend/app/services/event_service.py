@@ -64,12 +64,6 @@ class EventService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
         return event
 
-    def regenerate_background(self, event_id: str) -> dict[str, str | None]:
-        """舊圖片背景功能的相容入口；新版研究 UI 不再產生背景圖。"""
-        event = self.repository.get_event(event_id)
-        if not event:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-        return {"background_url": None}
 
     @staticmethod
     def build_event_from_profile(event_name: str, profile: dict) -> Event:

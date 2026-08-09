@@ -715,14 +715,10 @@ class SupabaseRepository(RepositoryProtocol):
         """
         return self._select_many("research_logs", ResearchLog, {"order": "created_at.desc", "limit": str(limit)})
 
-    # ── ViewCount ──────────────────────────────────────────────
-
-    def increment_view_count(self) -> int:
-        """V1 不在 Supabase 追蹤 view count，固定回傳 0。
-
-        Returns:
-            int: 固定回傳 0。
-        """
-        # View count is intentionally local-process only in V1 because it is not
-        # part of the thesis experiment data model.
-        return 0
+    def list_research_logs_for_session(self, session_id: str) -> list[ResearchLog]:
+        """列出指定 Session 的完整研究紀錄，依時間正序。"""
+        return self._select_many(
+            "research_logs",
+            ResearchLog,
+            {"session_id": f"eq.{session_id}", "order": "created_at.asc"},
+        )

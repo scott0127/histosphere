@@ -2,7 +2,7 @@
 
 最後更新：2026-07-18
 
-狀態：研究與 prompt 規格草案，尚未實作
+狀態：核心 Prompt／Historical EBL／Disclosure runtime 已實作；受控歷史錯誤與 Debrief 仍是待研究確認的規格草案
 
 ## 1. 文件目的
 

@@ -109,6 +109,7 @@
               @save="saveParticipant"
               @reset-timer="resetSessionTimer"
               @restart-session="restartSession"
+              @view-research="loadSessionResearch"
             />
           </div>
         </section>
@@ -129,6 +130,7 @@
             <AdminResearchLogPanel
               :events="snapshot.events"
               :logs="snapshot.research_logs"
+              @export-research="exportResearchData"
             />
           </div>
         </section>
@@ -547,6 +549,20 @@
         </template>
       </section>
     </main>
+
+    <div
+      v-if="researchSessionLoading"
+      class="fixed inset-0 z-[65] flex items-center justify-center bg-[rgba(47,41,36,0.35)] backdrop-blur-sm"
+    >
+      <div class="admin-panel-inner inline-flex items-center gap-3 px-5 py-4 text-sm font-bold text-[var(--admin-copy-strong)]">
+        <Icon name="mdi:loading" class="h-5 w-5 animate-spin" />
+        載入完整 Session 紀錄
+      </div>
+    </div>
+    <AdminParticipantResearchDialog
+      :research="selectedResearchSession"
+      @close="closeSessionResearch"
+    />
   </div>
 </template>
 
@@ -580,6 +596,7 @@ const {
   authUsersError,
   changingParticipantStatusId,
   changingPersonaStatusId,
+  closeSessionResearch,
   createPersona,
   createParticipant,
   creatingPersona,
@@ -587,17 +604,20 @@ const {
   conditionModeLabel,
   conditionOrdinal,
   error,
+  exportResearchData,
   eventYearRange,
   hasUnsavedTaskChanges,
   isTaskDirty,
   loadSnapshot,
   loadPromptPreview,
+  loadSessionResearch,
   personaJson,
   promptDryRun,
   promptDryRunLoading,
   promptPreview,
   promptPreviewLoading,
   promptPreviewMessage,
+  researchSessionLoading,
   promptConditions,
   resetWorkspace,
   restartSession,
@@ -621,6 +641,7 @@ const {
   selectedConditionId,
   selectedEvent,
   selectedEventId,
+  selectedResearchSession,
   snapshot,
   taskJson,
   taskQuestionCount,

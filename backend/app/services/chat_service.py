@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 
 from app.core.interaction_contract import InteractionRuntime, build_interaction_runtime
 from app.core.persona_prompt_contract import build_persona_runtime_context
+from app.core.research_reproducibility import record_prompt_snapshot
 from app.models.domain import ChatMessage, Event, ExperimentCondition, Persona, RagSource, ResearchLog, TaskAttempt, new_id
 from app.schemas.requests import ChatRequest
 from app.schemas.responses import ChatOperationStatusResponse, ChatResponse
@@ -261,7 +262,7 @@ class ChatService:
             )
             prompt = self.prompt_service.render_modules(modules)
 
-            generation, interaction_metadata = await self.generate_validated_response(
+            generation, interaction_metadata, final_prompt = await self.generate_validated_response(
                 event=event,
                 selected=selected,
                 condition=condition,
@@ -274,7 +275,7 @@ class ChatService:
 
             assistant_name = self._assistant_name(condition, selected)
             # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
-            prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            prompt_hash = hashlib.sha256(final_prompt.encode("utf-8")).hexdigest()
             profile_payload = selected.prompt_profile if selected else {}
             profile_hash = hashlib.sha256(
                 json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -312,6 +313,21 @@ class ChatService:
                 },
             )
             model_message = self.repository.add_message(model_message)
+
+            record_prompt_snapshot(
+                self.repository,
+                session_id=session.id,
+                event_id=event.id,
+                task_id=task_attempt.task_id if task_attempt else None,
+                attempt_id=conversation.task_attempt_id,
+                conversation_id=conversation.id,
+                message_id=model_message.id,
+                user_id=conversation.user_id,
+                stage="chat_response",
+                prompt=final_prompt,
+                modules=modules,
+                llm_call=generation.llm_metadata.get("llm_call"),
+            )
 
             self.repository.log_research(
                 ResearchLog(
@@ -580,7 +596,7 @@ class ChatService:
         base_prompt: str,
         rag_sources: list[RagSource],
         interaction_runtime: InteractionRuntime,
-    ) -> tuple[ChatGenerationResult, dict[str, Any]]:
+    ) -> tuple[ChatGenerationResult, dict[str, Any], str]:
         """Generate without persistence; shared by runtime chat and Admin dry-run."""
         persona_context = build_persona_runtime_context(event, selected) if selected else None
         rejected_candidates: list[dict[str, Any]] = []
@@ -619,6 +635,7 @@ class ChatService:
                         llm_metadata=generation.llm_metadata,
                     ),
                     metadata,
+                    prompt,
                 )
 
             audit_id = record_rejected_generation(

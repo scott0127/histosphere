@@ -10,6 +10,7 @@ from datetime import timedelta
 from fastapi import HTTPException, status
 
 from app.core.research_audit import build_change_payload
+from app.core.research_reproducibility import record_session_material_snapshot
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
 from app.schemas.responses import (
@@ -182,6 +183,7 @@ class SessionService:
                 event_id=source_session.event_id,
             )
         )
+        record_session_material_snapshot(self.repository, new_session)
         self.repository.log_research(
             ResearchLog(
                 user_id=new_session.user_id,

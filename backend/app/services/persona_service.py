@@ -151,13 +151,6 @@ class PersonaService:
         )
         return saved
 
-    def regenerate_avatar(self, persona_id: str) -> dict[str, str | bool | None]:
-        """保留 avatar 擴充點；影片與 persona card 已棄用。"""
-        persona = self.repository.get_persona(persona_id)
-        if not persona:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Persona not found")
-        return {"success": True, "avatar_url": persona.avatar_url}
-
     def _assert_can_activate(self, event_id: str, persona_id: str | None = None) -> None:
         """確保同一事件同時只有一位可供受測者使用的 active persona。"""
         conflict = next(

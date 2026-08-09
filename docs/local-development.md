@@ -79,6 +79,27 @@ pnpm dev:cleanup:supabase
 
 停止 Supabase 時保留 CLI database backup。不要用 `supabase db reset` 當成一般啟動修復手段，因為它會重建 local database；本專案的日常 port/程序清理不應刪除研究資料。
 
+## 品質檢查
+
+程式碼層完整檢查：
+
+```powershell
+pnpm test:quality:code
+```
+
+會依序執行前端單元測試、後端 pytest 與 Nuxt build。
+
+前後端及 Supabase 已由 `pnpm dev:full` 啟動後，可再執行：
+
+```powershell
+pnpm test:supabase:schema
+pnpm test:runtime:smoke
+```
+
+- `test:supabase:schema` 只讀取 PostgREST OpenAPI，檢查 14 個 public tables 與關鍵欄位，不新增、修改或刪除資料。
+- `test:runtime:smoke` 檢查首頁、Admin、FastAPI health 與 OpenAPI 是否可連線。
+- `pnpm test:quality` 會將以上檢查全部串起來，因此需要服務已經啟動。
+
 ## 故障判斷
 
 | 現象 | 處理 |

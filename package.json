@@ -18,7 +18,11 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "test:frontend:unit": "node scripts/tests/run-frontend-unit-tests.mjs",
-    "test:backend": "cd backend && python -m pytest -q"
+    "test:backend": "cd backend && python -m pytest -q",
+    "test:supabase:schema": "node scripts/tests/check-supabase-schema.mjs",
+    "test:runtime:smoke": "node scripts/tests/check-runtime-smoke.mjs",
+    "test:quality:code": "pnpm test:frontend:unit && pnpm test:backend && pnpm build",
+    "test:quality": "pnpm test:quality:code && pnpm test:supabase:schema && pnpm test:runtime:smoke"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

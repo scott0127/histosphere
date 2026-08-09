@@ -373,3 +373,66 @@ export interface AdminPromptDryRunResponse extends AdminPromptPreviewResponse {
   dynamic_context: string;
   rag_sources: RagSource[];
 }
+
+export interface AdminConversationStats {
+  total_messages: number;
+  learner_messages: number;
+  assistant_messages: number;
+  completed_exchanges: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  llm_messages_total: number;
+  llm_messages_with_usage: number;
+  token_usage_coverage: number;
+  token_usage_complete: boolean;
+  first_message_at?: string | null;
+  last_message_at?: string | null;
+  duration_seconds?: number | null;
+}
+
+export interface AdminMaterialSnapshot {
+  status: 'captured' | 'legacy_missing';
+  material_hash?: string | null;
+  hash_verified: boolean;
+  captured_at?: string | null;
+  materials: Record<string, unknown>;
+}
+
+export interface AdminPromptRecord {
+  stage: string;
+  message_id?: string | null;
+  prompt_hash: string;
+  hash_verified: boolean;
+  prompt: string;
+  modules: Array<{ name: string; content: string }>;
+  llm_call?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdminSessionResearchResponse {
+  participant_code: string;
+  participant_bound: boolean;
+  session: ExperimentSession;
+  event: HistoricalEvent;
+  condition?: ExperimentCondition | null;
+  task?: EventTask | null;
+  attempt?: TaskAttempt | null;
+  conversation?: {
+    id: string;
+    event_id: string;
+    task_attempt_id?: string | null;
+    session_id?: string | null;
+    user_id?: string | null;
+    status: 'active' | 'archived';
+    started_at: string;
+    archived_at?: string | null;
+    created_at: string;
+    updated_at: string;
+  } | null;
+  messages: ChatMessage[];
+  stats: AdminConversationStats;
+  material_snapshot: AdminMaterialSnapshot;
+  prompt_records: AdminPromptRecord[];
+  research_logs: ResearchLog[];
+}

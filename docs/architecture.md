@@ -461,10 +461,9 @@ Frontend caller: `pages/admin.vue`
 
 ## Data Model
 
-The active schema lives in:
+The active schema lives in `supabase/migrations/` (single source of truth):
 
 - `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
-- `backend/migrations/001_ebl_roleplay_schema.sql`
 - `supabase/migrations/202607110001_runtime_safety_and_async.sql`
 
 See `supabase-schema.md` for the full table/column/FK/index reference.

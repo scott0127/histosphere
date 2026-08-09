@@ -1,27 +1,26 @@
 # Research Experiment Backlog
 
-更新日期：2026-07-12
+更新日期：2026-08-09
 
 ## 文件目的
 
 本系統用於研究者現場控制的碩士實驗，不是公開 SaaS。此文件區分：近期必須完成、需要先詳細設計、已接受的低風險，以及暫緩研究功能。避免依照一般大型產品假設過度設計。
 
-## 近期實作
+## 已完成的近期實作
 
 ### 1. Chat 非同步 operation 與重複送出保護
 
-目前 `POST /api/chat` 雖使用 Python `async/await`，瀏覽器仍會等待完整 LLM JSON 回覆；沒有 SSE、WebSocket 或 polling。
+Learner 訊息會先保存成可持久化 operation；前端使用 SSE 取得保存、生成、驗證與完成狀態，重新整理後可用相同 request id 查詢或重試。
 
 最小實作目標：
 
-- learner message 先保存，再建立一個可持久化 chat operation。
-- API 立即回傳 operation id 與 processing 狀態。
-- 前端以 polling 取得 completed / failed；做法與 task submit 保持一致。
+- learner message 先保存，再建立可持久化 chat operation。
+- SSE 提供等待狀態；operation status endpoint 支援重新連線。
 - 同一 conversation 同一 operation 不得因連點或重新整理重複建立正式 model message。
 - 失敗時保留 learner message、錯誤狀態及可重試資訊。
 - 不引入 Redis、Celery、Kafka 或大型 queue framework；目前單機研究環境使用資料庫狀態加 process-local worker 即可。
 
-為維持實驗呈現一致性，第一版不做逐 token streaming。若未來要使用 SSE，應只作為顯示層，DB 中的 operation/message 仍是 authoritative state。
+目前 SSE 只傳送通過後端驗證後的顯示 delta；DB 中的 operation/message 仍是 authoritative state。
 
 ### 2. 最小 Provider 失敗與重試
 
@@ -34,19 +33,17 @@
 
 行為：
 
-- timeout、rate limit、provider 5xx：最多自動 retry 一次。
+- timeout、rate limit、provider 5xx：同一 model 最多自動 retry 一次。
 - authentication、invalid request：不自動 retry，直接顯示固定錯誤。
 - 自動 retry 或使用者按「重試」都沿用相同 operation id，不新增第二則 learner message。
 - 前端顯示明確失敗狀態與重試按鈕，不建立複雜的 retry policy UI。
-- 保存 provider、model、attempt count、failure category；token/latency 指標可隨實作成本一併加入。
+- 保存 provider、model、attempt count、failure category、token 與 latency；正式研究禁止自動切換 Provider。
 
-### 3. 必要測試
+### 3. 必要測試與檢查
 
-- 真實 Supabase repository integration tests，但不可刪除正式研究資料。
-- Disposable database migration-up smoke test。
-- Vue DOM tests：Admin-only create、archive/restore、async polling、retry、timer expired state。
-- Provider failure tests：timeout、一次 retry、永久失敗、重複按鈕、同一 operation idempotency。
-- 四種 condition 的 prompt module regression tests。
+- 已有後端 API／service、前端純函式／API contract、Provider failure、重複 operation 與四種 Condition regression tests。
+- 已有唯讀 Supabase OpenAPI schema smoke、runtime smoke 與 Nuxt build 指令。
+- Disposable database migration-up 與自動化 Vue DOM／瀏覽器 E2E 因目前單機研究規模暫緩；正式變更仍需人工瀏覽器驗收。
 
 ## 待詳細討論後實作
 
@@ -75,14 +72,9 @@
 - 中途離開、重新登入與恢復流程。
 - completion reason、completed_at 與研究紀錄匯出的正式定義。
 
-### 研究資料匯出
+### 研究資料匯出（已完成）
 
-優先度較低。未來需討論：
-
-- participant、condition、session、task answers、judgement、chat messages、timestamps 的整合格式。
-- CSV、JSON 或研究分析工具需要的寬表/長表形式。
-- 是否匿名化 Auth user id，只輸出 participant code。
-- 排除或標記 Admin test mode 資料。
+Admin 可查看單一 Session 的 Task、完整逐句對話、時間、訊息／來回／Token 統計，並匯出只含 participant code 的 JSON／CSV。素材與完整 Prompt 快照附 SHA-256；詳細定義見 `docs/research-data-export.md`。
 
 ### RAG
 

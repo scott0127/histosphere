@@ -140,7 +140,7 @@ Messages use:
 - `speaker_name`: display-name snapshot
 - `sequence_index`: stable replay order
 
-Each completion loads the latest persisted conversation turns from `messages`. The current bounded window is 12 messages, up to 1600 characters per message. Generated-message metadata records prompt/profile hashes, module names, history message ids and actual provider/model.
+Each completion loads persisted conversation turns from `messages` and fills a 16,000-character history budget from newest to oldest, with at most 1,600 characters per message. Generated-message metadata records prompt/profile hashes, module names, history message ids, actual provider/model, latency and provider-reported token usage.
 
 ### Admin
 
@@ -293,7 +293,7 @@ Potential future providers:
 
 ### Material Version Lock
 
-Formal event/task/persona/prompt snapshots are deferred until draft/publish semantics and migration strategy are approved. Current prompt/profile hashes improve auditing but do not prevent Admin edits from changing material read by a later turn in an active session.
+Each new or restarted Session records an event/task/condition/persona material snapshot, and every formal LLM call records the exact Prompt/modules used. SHA-256 verification plus Admin JSON/CSV export supports audit and replay without a new version table. A complete draft/readiness/publish platform and visual rollback remain deferred.
 
 ### Unspecified Requirements
 

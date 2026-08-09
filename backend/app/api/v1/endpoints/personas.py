@@ -9,7 +9,6 @@ Routes:
     PATCH  /api/personas/{persona_id}:      更新 persona。
     DELETE /api/personas/{persona_id}:      刪除 persona。
     POST   /api/personas/{persona_id}/restore: 恢復已封存 persona。
-    POST   /api/personas/{persona_id}/regenerate_avatar: 重新生成 avatar。
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -114,24 +113,3 @@ def restore_persona(
 ) -> Persona:
     """恢復已封存人物，但不直接啟用，避免意外取代正式人物。"""
     return service.restore_persona(persona_id)
-
-
-@router.post("/{persona_id}/regenerate_avatar")
-def regenerate_avatar(
-    persona_id: str,
-    _admin: None = Depends(require_admin_key),
-    service: PersonaService = Depends(get_persona_service),
-) -> dict[str, str | bool | None]:
-    """保留 avatar 擴充入口；V1 不重新生成影片或 persona card。
-
-    預留給未來版本的 avatar 圖片/影片重新生成功能。
-    目前僅回傳現有狀態，不執行實際生成操作。
-
-    Args:
-        persona_id: 目標 persona 的 UUID 字串。
-        service: 由 Dependency Injection 注入的 PersonaService 實例。
-
-    Returns:
-        dict[str, str | bool | None]: 包含 avatar 狀態資訊。
-    """
-    return service.regenerate_avatar(persona_id)

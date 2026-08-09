@@ -1,6 +1,6 @@
 # Persona Completion Flow
 
-最後更新：2026-07-11
+最後更新：2026-08-09
 
 ## 目的
 
@@ -29,7 +29,7 @@ flowchart LR
     B -.-> B1["conversation / session / condition"]
     B -.-> B2["event / task attempt / selected persona"]
 
-    C -.-> C1["last 12 DB messages"]
+    C -.-> C1["DB messages within 16,000-char budget"]
     C -.-> C2["persona_prompt_v1 profile"]
     C -.-> C3["RAG sources: currently empty"]
 
@@ -79,7 +79,7 @@ flowchart TD
 
 ### 2. Load DB-backed Context
 
-後端從 `messages` 讀取既有對話，依 `sequence_index` 還原順序，並將最近 12 則訊息帶入 prompt。每則內容最多取 1600 字元，避免歷史訊息無限制擴張。
+後端從 `messages` 讀取既有對話，依 `sequence_index` 還原順序，從最新訊息往前裝入最多 16,000 字元的 history budget；每則內容最多取 1,600 字元。系統不再以固定 12 則截斷長時間 EBL 對話。
 
 這是目前的「多輪記憶」：
 
@@ -141,7 +141,7 @@ Runtime 透過既有 LLM provider 呼叫模型。Prompt modules 是唯一 condit
 Admin 有兩種檢查方式：
 
 - `GET /api/admin/prompt-preview`：顯示實際 modules 與完整 prompt，不呼叫 LLM、不寫入對話。
-- `POST /api/admin/prompt-dry-run`：以同一套 modules 呼叫 LLM，但不保存 message 或 research log。
+- `POST /api/admin/prompt-dry-run`：以同一套 modules 呼叫 LLM，但不保存正式 message 或 Session 研究紀錄。
 
 ### 6. Persist Completion Metadata
 
@@ -153,13 +153,14 @@ Admin 有兩種檢查方式：
 - `history_message_ids`
 - `provider`
 - `model`
+- `latency_ms`、實際 token usage 與 retry metadata
 
-這些欄位用於重建「當時使用哪一套 context」，但不是完整 material version lock。事件、task、persona 或 prompt module 內容在 session 開始後仍可能被修改，因此 material snapshot/version lock 仍是 deferred。
+正式 Session 另外在 `research_logs` 保存建立當下的 event/task/condition/persona 素材快照，以及每次實際送給 Provider 的完整 Prompt。兩者都附 SHA-256，Admin 匯出時會重新驗證。這是可稽核快照，不是完整 draft/publish 版本平台。
 
 ## 目前邊界
 
-- 已完成：ordered prompt modules、`persona_prompt_v1`、DB-backed bounded multi-turn history、prompt/profile hash、provider/model metadata、Admin preview、Admin dry-run。
-- Deferred：正式 experiment material version lock。
+- 已完成：ordered prompt modules、`persona_prompt_v1`、DB-backed bounded multi-turn history、Prompt/素材快照與 hash、provider/model/token/latency metadata、Admin preview、Admin dry-run及研究匯出。
+- Deferred：完整 draft/readiness/publish 版本平台與視覺化版本比較。
 - Deferred：RAG ingestion、embedding、retrieval、citation rendering。
 - Deferred：需求清單中尚未定義驗收條件的第 6 與第 8 項；第 8 若指 RAG，仍依本文件的 RAG deferred 決策處理。
 - Deferred：經研究審核的 deliberate-error contract；目前不得自動產生受控錯誤。

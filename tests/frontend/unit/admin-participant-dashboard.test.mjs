@@ -60,6 +60,11 @@ test('participant dashboard exposes only non-archived sessions for admin restart
   assert.equal(rows[0].currentSessions[0].session.id, 'session-current');
   assert.equal(rows[0].currentSessions[0].eventName, '法國大革命');
   assert.equal(rows[0].currentSessions[0].conditionCode, '04');
+  assert.equal(rows[0].sessionHistory.length, 2);
+  assert.deepEqual(
+    rows[0].sessionHistory.map((item) => item.session.id),
+    ['session-current', 'session-archived'],
+  );
 });
 
 test('participant dashboard marks a completed non-archived session as completed', () => {

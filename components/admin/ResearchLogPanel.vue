@@ -59,12 +59,26 @@
         </button>
         <button
           type="button"
-          class="admin-button-primary min-h-10 px-3 text-xs font-bold"
+          class="admin-button-secondary min-h-10 px-3 text-xs font-bold"
           :disabled="!filteredLogs.length"
           @click="downloadCsv"
         >
           <Icon name="mdi:download-outline" class="h-4 w-4" />
-          匯出目前結果
+          匯出目前稽核
+        </button>
+        <button
+          type="button"
+          class="admin-button-primary min-h-10 px-3 text-xs font-bold"
+          @click="$emit('export-research', 'csv')"
+        >
+          完整研究 CSV
+        </button>
+        <button
+          type="button"
+          class="admin-button-primary min-h-10 px-3 text-xs font-bold"
+          @click="$emit('export-research', 'json')"
+        >
+          完整研究 JSON
         </button>
       </div>
     </div>
@@ -139,6 +153,7 @@ const props = defineProps<{
   logs: ResearchLog[];
   events: EventWithPersonas[];
 }>();
+defineEmits<{ (event: 'export-research', format: 'json' | 'csv'): void }>();
 
 const filters = reactive({
   search: '',

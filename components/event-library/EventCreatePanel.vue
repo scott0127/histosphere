@@ -103,13 +103,9 @@
             {{ loginError }}
           </p>
 
-          <div class="flex items-center justify-between text-sm font-semibold text-[var(--admin-copy)]">
+          <div class="flex items-center justify-center text-sm font-semibold text-[var(--admin-copy)]">
             <NuxtLink to="/auth/forgot-password" class="hover:text-[var(--admin-text)] hover:underline">
               忘記密碼
-            </NuxtLink>
-            <NuxtLink to="/auth/register" class="inline-flex items-center gap-1.5 hover:text-[var(--admin-text)] hover:underline">
-              <Icon name="mdi:account-plus" class="h-4 w-4" />
-              建立帳號
             </NuxtLink>
           </div>
         </form>

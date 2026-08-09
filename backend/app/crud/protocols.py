@@ -523,12 +523,6 @@ class RepositoryProtocol(Protocol):
         """
         ...
 
-    # ── ViewCount ──────────────────────────────────────────────
-
-    def increment_view_count(self) -> int:
-        """遞增舊版 view count 並回傳新值。
-
-        Returns:
-            int: 遞增後的計數值。
-        """
+    def list_research_logs_for_session(self, session_id: str) -> list[ResearchLog]:
+        """列出指定 Session 的完整研究紀錄，依時間正序。"""
         ...

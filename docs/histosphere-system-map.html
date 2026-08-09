@@ -939,6 +939,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       font-weight: 600;
     }
 
+    #histosphere-system-map details.critical-deferred > summary {
+      margin-block: 0.25rem;
+      padding-inline: 0.75rem;
+      border: 1px solid color-mix(in srgb, var(--red) 42%, var(--border));
+      border-inline-start: 4px solid var(--red);
+      border-radius: 0.375rem;
+      background: color-mix(in srgb, var(--red) 12%, var(--background));
+      color: var(--red);
+    }
+
+    #histosphere-system-map details.critical-deferred > summary .status {
+      color: var(--red);
+      font-weight: 600;
+    }
+
     #histosphere-system-map [data-status="deferred"] .dot {
       background: var(--viz-series-4);
     }
@@ -1480,13 +1495,13 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </div>
     </details>
 
-    <details open>
+    <details open class="critical-deferred">
       <summary>
         <span class="summary-label">
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Historical EBL 與 Disclosure</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="critical"><span class="dot"></span>非常重要 · 暫緩實作</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1662,7 +1677,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>研究資料與可重現性</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1673,21 +1688,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">實際 provider、model、prompt modules、history message IDs 與互動 metadata 保存</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">研究資料 CSV／JSON 匯出與 participant code 匿名化整併</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">研究資料 CSV／JSON 匯出與 participant code 匿名化整併<span class="function-note text-small">可匯出完整逐筆對話、Task 作答、Condition、時間、模型與 Token；不含 Auth user id</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Prompt hash 可回查的 reviewed content registry</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">實際 Prompt 與素材 hash 可回查快照<span class="function-note text-small">每次呼叫保存實際 Prompt；Session 建立時保存事件、Task、Condition 與 Persona 快照</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="deferred">
-          <span class="function-name">Event／Task／answer key／persona／prompt material version lock</span>
+          <span class="function-name">完整 material version lock 與發布平台<span class="function-note text-small">目前已有每場 Session 快照與 hash；跨場次版本發布、比較與回滾暫緩</span></span>
           <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">後測／測量工具的系統邊界<span class="function-note text-small">程式內沒有 post-test；若採外部量表，仍需文件化對應與資料合併方式</span></span>
-          <span class="status text-small"><span class="dot"></span>待決策</span>
+        <div class="function" data-status="accepted">
+          <span class="function-name">後測／測量工具的系統邊界<span class="function-note text-small">後測維持外部工具，之後以 participant code 合併；系統匯出已提供穩定代號</span></span>
+          <span class="status text-small"><span class="dot"></span>邊界已定義</span>
         </div>
       </div>
     </details>
@@ -1726,24 +1741,32 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>測試與品質保證</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">本次完整前端單元測試與 production build 通過</span></span>
+          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">48 項前端單元測試與 production build 通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">本次 117 項後端測試全部通過</span></span>
+          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">124 項後端測試全部通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">真實 Supabase repository integration 與 disposable migration smoke tests<span class="function-note text-small">已實測 operation 寫入、失敗與重啟恢復；乾淨資料庫 migration smoke test 尚未建立</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Supabase 現行 schema 唯讀 smoke test<span class="function-note text-small">14 個資料表與必要欄位已通過檢查，過程不寫入資料</span></span>
+          <span class="status text-small"><span class="dot"></span>已通過</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">全空資料庫 migration smoke test<span class="function-note text-small">自動建立 disposable database 並重跑所有 migration 的測試暫緩，避免目前階段過度工程</span></span>
+          <span class="status text-small"><span class="dot"></span>已暫緩</span>
         </div>
         <div class="function" data-status="partial">
-          <span class="function-name">Vue DOM/component tests 與完整瀏覽器 E2E<span class="function-note text-small">前端單元測試及實際瀏覽器中斷恢復已驗證；完整自動化 E2E 尚未建立</span></span>
+          <span class="function-name">Vue DOM/component tests 與完整瀏覽器 E2E<span class="function-note text-small">管理員研究紀錄 UI 已由實際瀏覽器驗證；登入到整場實驗的完整自動化 E2E 暫緩</span></span>
           <span class="status text-small"><span class="dot"></span>部分完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Runtime smoke 與管理員研究紀錄 UI 驗證<span class="function-note text-small">首頁、Admin、後端 health、OpenAPI 與逐筆研究紀錄視窗皆以實際執行環境驗證</span></span>
+          <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
           <span class="function-name">Provider failure、chat concurrency、idempotency 與 recovery tests<span class="function-note text-small">自動測試及真實重複送出、斷線、重整與強制終止後恢復均已通過</span></span>
@@ -1758,7 +1781,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>開發啟動與文件</span>
         </span>
-        <span class="status text-small" data-status="partial"><span class="dot"></span>部分完成</span>
+        <span class="status text-small" data-status="partial"><span class="dot"></span>主要完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1769,17 +1792,17 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">健康 Supabase stack 重用、log lock 重試與啟動時間輸出</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">文件與程式一致性<span class="function-note text-small">多份文件仍寫「最近 12 則」與舊 prompt module order；EBL 設計文件仍標示尚未實作</span></span>
-          <span class="status text-small"><span class="dot"></span>需更新</span>
+        <div class="function" data-status="done">
+          <span class="function-name">文件與程式一致性<span class="function-note text-small">已同步多輪歷史、Prompt/素材快照、研究匯出、Provider 與 Historical EBL 現況</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Legacy routes／帳號頁<span class="function-note text-small">/task、/chat 與開放註冊頁仍保留；正式實驗是否對受測者開放尚未整理</span></span>
-          <span class="status text-small"><span class="dot"></span>需決策</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Legacy routes／帳號頁<span class="function-note text-small">公開註冊已移除；/task 與 /chat 僅保留導向正式事件流程的相容轉址</span></span>
+          <span class="status text-small"><span class="dot"></span>已整理</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Compatibility endpoints<span class="function-note text-small">view-count、regenerate-background、regenerate-avatar 等仍保留部分 no-op 行為</span></span>
-          <span class="status text-small"><span class="dot"></span>需清理</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Compatibility endpoints<span class="function-note text-small">view-count、regenerate-background、regenerate-avatar 等無作用端點已移除並以 404 測試鎖定</span></span>
+          <span class="status text-small"><span class="dot"></span>已清理</span>
         </div>
       </div>
     </details>
@@ -2142,20 +2165,20 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "研究者可確認某則回答由 Gemini 產生，且使用了哪些先前對話。"
       ]],
       ["研究資料 CSV／JSON 匯出與 participant code 匿名化整併", [
-        "目前沒有把研究資料整理成可分析檔案並以 P001 等代號合併的正式工具。",
-        "實驗結束後，研究者尚不能一鍵下載所有受測者的匿名化資料集。"
+        "Admin 可下載 JSON 或逐筆訊息 CSV。匯出以 P001 等 participant code 表示受測者，不包含 Auth user id。",
+        "研究者可匯出 P001 的 Task 作答、完整對話、Condition、時間、模型、Token 與重現性 hash。"
       ]],
-      ["Prompt hash 可回查的 reviewed content registry", [
-        "雖然已保存 Prompt hash，但沒有正式清單能由 hash 找回當時經審核的完整 Prompt。",
-        "看到一筆資料使用 hash abc123，目前無法直接開啟對應的核准內容。"
+      ["實際 Prompt 與素材 hash 可回查快照", [
+        "系統保存每次真正送給模型的完整 Prompt、模型資訊與 hash，Session 建立時也保存當時素材快照。",
+        "即使之後研究者修改 Task，仍可由該場 Session 查回受測時使用的事件、題目、人物與 Prompt。"
       ]],
-      ["Event／Task／answer key／persona／prompt material version lock", [
-        "尚未把整套實驗素材凍結成不可變版本；此功能目前暫緩。",
-        "第一批受測後修改 Task，系統目前沒有完整的「第一版素材」鎖定機制。"
+      ["完整 material version lock 與發布平台", [
+        "每場 Session 已有不可混淆的素材快照與 hash，但尚未建立跨場次的版本發布、比較與一鍵回滾平台。",
+        "可以證明 P001 當時看過哪一版內容；但目前還不能在 Admin 選擇「正式版 v1」後鎖住所有新場次。"
       ]],
       ["後測／測量工具的系統邊界", [
-        "系統內沒有後測；若使用外部量表，仍需決定如何透過 participant code 對應與合併。",
-        "P001 在外部表單完成後測，尚未定義如何與系統資料合併。"
+        "後測維持在外部量表或表單，本系統不重做一套後測工具；資料以 participant code 對應。",
+        "P001 在外部表單完成後測後，可用 P001 與系統匯出的匿名化資料合併。"
       ]],
       ["14 個 public tables、UUID PK、關聯索引與 service-role repository", [
         "主要資料表、識別碼、查詢索引及後端資料存取層已建立。",
@@ -2178,16 +2201,24 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "測試會驗證 condition mapping、Task payload，以及 01 模式等待時不會誤顯示歷史人物。"
       ]],
       ["Backend API／interaction／persona／provider tests", [
-        "本次完整執行 117 項後端測試，API、互動政策、Persona、Provider 與 Chat operation 皆通過。",
+        "本次完整執行 124 項後端測試，API、互動政策、Persona、Provider、Chat operation 與研究匯出皆通過。",
         "測試會驗證相同 request 重播、失敗重試、Condition 缺失拒絕及後端重啟恢復。"
       ]],
-      ["真實 Supabase repository integration 與 disposable migration smoke tests", [
-        "已在真實本機 Supabase 驗證 operation 寫入、重複防護、失敗與重啟恢復；從空資料庫套用所有 migration 的自動 smoke test 仍未建立。",
-        "目前可確認現有資料庫上的 Chat Runtime 正常，但尚未自動證明全新資料庫可一次建置完成。"
+      ["Supabase 現行 schema 唯讀 smoke test", [
+        "以只讀方式檢查 Supabase 目前的 14 個資料表與關鍵欄位，不新增、修改或刪除任何資料。",
+        "執行 pnpm test:supabase:schema 已確認現行資料庫結構與後端預期一致。"
+      ]],
+      ["全空資料庫 migration smoke test", [
+        "尚未自動建立一個全空的臨時資料庫，再從第一份 migration 重建；目前刻意暫緩。",
+        "現行資料庫結構已驗證，但還沒有每天自動證明一台全新電腦能從零套用所有 migration。"
       ]],
       ["Vue DOM/component tests 與完整瀏覽器 E2E", [
-        "前端單元測試與實際瀏覽器的重新整理、斷線恢復、失敗重試已驗證；登入到整場實驗的自動化 E2E 尚未建立。",
-        "目前已人工確認 Chat Runtime 真實操作，但仍沒有一支自動腳本完整跑完登入、Task 與聊天流程。"
+        "前端單元測試及管理員研究紀錄視窗已在實際瀏覽器驗證；完整登入到五分鐘實驗的自動化 E2E 暫緩。",
+        "目前可確認 Admin 能查看 PTEST 完整對話與統計，但還沒有一支腳本每天自動操作整場實驗。"
+      ]],
+      ["Runtime smoke 與管理員研究紀錄 UI 驗證", [
+        "檢查首頁、Admin、後端健康狀態與 API 規格都能回應，並實際操作完整對話紀錄視窗。",
+        "測試場次顯示 5 筆訊息、2 次完整來回、54 Token，且瀏覽器沒有執行錯誤。"
       ]],
       ["Provider failure、chat concurrency、idempotency 與 recovery tests", [
         "自動測試及真實執行均涵蓋模型失敗、同時請求、相同 request 重播、重整與後端程序中斷恢復。",
@@ -2199,19 +2230,19 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       ]],
       ["健康 Supabase stack 重用、log lock 重試與啟動時間輸出", [
         "已健康的 Supabase 不會重啟；log 被占用時會重試，並支援目前 CLI 的 Secret key 與舊版 service-role key 輸出。",
-        "第二次執行 pnpm dev:full 時會沿用現有資料庫；本次已實際確認前端、後端與 Supabase 都能啟動。"
+        "第二次執行 pnpm dev:full 時會沿用現有資料庫；目前啟動腳本已完成，本次真實 Supabase 驗證因 Docker daemon 未啟動而未執行。"
       ]],
       ["文件與程式一致性", [
-        "部分文件仍描述舊的 12 則對話限制、Prompt 順序或尚未實作的 EBL 狀態。",
-        "開發者依舊文件理解系統時，可能誤以為只會傳入最近 12 則訊息。"
+        "文件已同步目前的對話歷史上限、Prompt 組裝、Historical EBL、研究快照與資料匯出行為。",
+        "開發者可由文件確認 Token 是 provider 實報值，並知道如何查回當時使用的 Prompt 與素材。"
       ]],
       ["Legacy routes／帳號頁", [
-        "舊 /task、/chat 路由及開放註冊頁仍存在，尚未決定正式實驗是否保留。",
-        "受測者可能繞過正式事件流程，直接開啟舊聊天頁。"
+        "受測者不能自行註冊研究帳號；舊 /task 與 /chat 只負責導回正式事件流程，不再是獨立入口。",
+        "受測者開啟 /chat 時會回到正式事件流程，無法繞過 Session 與 Condition 控制。"
       ]],
       ["Compatibility endpoints", [
-        "部分為舊前端保留的 API 仍存在，但只回傳空結果或沒有實際作用。",
-        "呼叫重新生成 avatar 的 endpoint 會成功回應，實際上卻不會產生圖片。"
+        "只回傳空結果的舊 API 已移除，測試會要求它們回傳 404，避免前端誤以為操作成功。",
+        "呼叫舊的 regenerate-avatar 或 view-count endpoint 會明確得到 404，不會假裝已完成。"
       ]]
     ]);
 

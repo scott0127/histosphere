@@ -47,7 +47,6 @@ class InMemoryRepository(RepositoryProtocol):
         conversations: 對話存儲。
         messages: 對話訊息存儲，key 為 conversation_id。
         research_logs: 流程行為紀錄存儲。
-        view_count: 舊版 view count 計數器。
     """
 
     def __init__(self) -> None:
@@ -66,7 +65,6 @@ class InMemoryRepository(RepositoryProtocol):
         self.conversations: dict[str, Conversation] = {}
         self.messages: dict[str, list[ChatMessage]] = {}
         self.research_logs: dict[str, ResearchLog] = {}
-        self.view_count = 0
         self._seed_conditions()
 
     @staticmethod
@@ -668,11 +666,9 @@ class InMemoryRepository(RepositoryProtocol):
         logs = sorted(self.research_logs.values(), key=lambda item: item.created_at, reverse=True)
         return logs[:limit]
 
-    def increment_view_count(self) -> int:
-        """遞增 view count 並回傳新值。
-
-        Returns:
-            int: 遞增後的計數值。
-        """
-        self.view_count += 1
-        return self.view_count
+    def list_research_logs_for_session(self, session_id: str) -> list[ResearchLog]:
+        """列出指定 Session 的完整研究紀錄，依時間正序。"""
+        return sorted(
+            (log for log in self.research_logs.values() if log.session_id == session_id),
+            key=lambda log: log.created_at,
+        )

@@ -107,7 +107,8 @@ class ConversationOpeningService:
                     ),
                     metadata=metadata,
                     persona=persona,
-                    prompt=base_prompt,
+                    # 若曾因規則驗證重試，保存最後一次真正送給 LLM 的 Prompt。
+                    prompt=prompt,
                     modules=tuple(modules),
                 )
 

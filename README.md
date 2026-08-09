@@ -147,10 +147,9 @@ Check status:
 pnpm supabase:status
 ```
 
-Migration files:
+Migration files (single source of truth: `supabase/migrations/`):
 
 - `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
-- `backend/migrations/001_ebl_roleplay_schema.sql`
 
 ### Tests
 
@@ -354,10 +353,9 @@ pnpm supabase:reset
 pnpm supabase:status
 ```
 
-Migration 檔案：
+Migration 檔案（唯一來源：`supabase/migrations/`）：
 
 - `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
-- `backend/migrations/001_ebl_roleplay_schema.sql`
 
 ### 測試
 

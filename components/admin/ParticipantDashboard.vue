@@ -123,18 +123,18 @@
         </div>
 
         <div
-          v-if="row.currentSessions.length"
+          v-if="row.sessionHistory.length"
           class="mt-4 border-t border-[var(--admin-border-soft)] pt-4"
         >
           <div class="mb-2 flex items-center justify-between gap-3">
-            <p class="admin-kicker">有效 Session</p>
-            <span class="admin-caption text-xs font-bold">{{ row.currentSessions.length }} 筆</span>
+            <p class="admin-kicker">Session 紀錄</p>
+            <span class="admin-caption text-xs font-bold">{{ row.sessionHistory.length }} 筆</span>
           </div>
           <div class="divide-y divide-[var(--admin-border-soft)]">
             <div
-              v-for="item in row.currentSessions"
+              v-for="item in row.sessionHistory"
               :key="item.session.id"
-              class="grid min-h-12 gap-2 py-2 lg:grid-cols-[minmax(180px,1fr)_minmax(190px,1fr)_minmax(150px,0.8fr)_116px_130px] lg:items-center"
+              class="grid min-h-12 gap-2 py-2 lg:grid-cols-[minmax(160px,1fr)_minmax(180px,1fr)_minmax(145px,0.8fr)_100px_116px_130px] lg:items-center"
             >
               <span class="admin-copy text-sm font-black">{{ item.eventName }}</span>
               <span class="admin-caption text-xs font-bold">
@@ -145,8 +145,16 @@
               </span>
               <button
                 type="button"
+                class="admin-button-secondary inline-flex min-h-9 items-center justify-center gap-2 px-3 text-xs font-bold"
+                @click="$emit('view-research', item.session.id)"
+              >
+                <Icon name="mdi:file-document-outline" class="h-4 w-4" />
+                查看紀錄
+              </button>
+              <button
+                type="button"
                 class="admin-button-primary inline-flex min-h-9 items-center justify-center gap-2 px-3 text-xs font-bold"
-                :disabled="!canResetTimer(item.session) || updatingTimerSessionId === item.session.id"
+                :disabled="item.session.status === 'archived' || !canResetTimer(item.session) || updatingTimerSessionId === item.session.id"
                 :title="canResetTimer(item.session) ? '從現在重新開始五分鐘倒數' : '進入 Chat 後才會自動開始倒數'"
                 @click="$emit('reset-timer', item.session.id)"
               >
@@ -160,7 +168,7 @@
               <button
                 type="button"
                 class="admin-button-secondary inline-flex min-h-9 items-center justify-center gap-2 px-3 text-xs font-bold"
-                :disabled="restartingSessionId === item.session.id"
+                :disabled="item.session.status === 'archived' || restartingSessionId === item.session.id"
                 @click="restartTarget = item"
               >
                 <Icon
@@ -412,6 +420,7 @@ const emit = defineEmits<{
   (event: 'save', participantId: string, payload: ParticipantUpdateInput): void;
   (event: 'reset-timer', sessionId: string): void;
   (event: 'restart-session', sessionId: string): void;
+  (event: 'view-research', sessionId: string): void;
 }>();
 
 const stages: ParticipantStage[] = ['not_started', 'task', 'chat', 'completed'];

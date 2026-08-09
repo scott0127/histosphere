@@ -1,6 +1,6 @@
 # LLM Runtime Roadmap
 
-最後更新：2026-07-11
+最後更新：2026-08-09
 
 ## Scope
 
@@ -35,7 +35,7 @@ general_prompt
 
 - 來源：Supabase `messages`。
 - 順序：`sequence_index`。
-- Window：最近 12 則，每則最多 1600 字元。
+- Window：由最新訊息往前裝入最多 16,000 字元；每則最多 1,600 字元，不以固定訊息數截斷。
 - 前端 history：不作為 authoritative memory。
 - 保存：每次 model message 記錄本次使用的 history message ids。
 
@@ -44,9 +44,9 @@ general_prompt
 ### Current Transport Boundary
 
 - Task judgement/greeting: `202 Accepted` + persisted attempt + FastAPI BackgroundTask + HTTP polling.
-- Chat completion: one non-streaming `POST /api/chat`; the request remains open until the provider returns the complete JSON payload.
-- No current path uses SSE, WebSocket, Redis, or Redis Streams.
-- Python `async/await` prevents blocking the event loop during provider I/O, but it does not by itself make the browser request resumable or streamed.
+- Chat completion: learner message 先保存成持久化 operation；`POST /api/chat/stream` 以 SSE 回報保存、生成、驗證與完成狀態，重新整理後可依相同 request id 查詢或重試。
+- SSE delta 是等待體驗，不會把未通過後端驗證的原始 Provider token 直接交給 Learner。DB 中的 message/operation 仍是 authoritative state。
+- 目前不使用 WebSocket、Redis 或外部 queue；單機研究環境以資料庫 operation 與 process worker 控制重複送出。
 
 ### Async Task Submission
 
@@ -66,8 +66,8 @@ in_progress -> processing -> submitted
 ### Admin Review Tools
 
 - Prompt preview：檢視實際 modules 與 rendered prompt，不呼叫 LLM。
-- Prompt dry-run：呼叫同一 provider，但不保存 message 或 research log。
-- Runtime metadata：保存 prompt hash、persona profile hash、module names、provider、model 與 history ids。
+- Prompt dry-run：呼叫同一 provider，但不保存正式 message 或 Session 研究紀錄。
+- Runtime metadata：保存完整 Prompt snapshot/hash、persona profile hash、module names、provider、model、latency、token usage、retry 與 history ids。
 
 ## Runtime Invariants
 
@@ -102,15 +102,14 @@ Acceptance criteria：
 
 ### Phase 2: Provider Reliability And Observability
 
-Status: next recommended LLM milestone.
+Status: implemented for the current single-provider research deployment.
 
-- 將 chat 改為可持久化 operation，避免瀏覽器長時間保持單一 request，並加入同一 turn 的 duplicate guard。
-- 提供前端明確的失敗狀態與「重試」按鈕；重試沿用同一 operation/learner message。
-- 僅對 timeout、rate limit、provider 5xx 做最多一次自動 retry；authentication、content filter 與 invalid request 不自動重試。
-- 保留現有 provider candidate 基礎，但只實作研究環境必要的穩定錯誤分類，不建立大型 queue/orchestration framework。
+- Chat 使用可持久化 operation、同一 turn duplicate guard 與明確失敗／重試狀態。
+- timeout、rate limit、provider 5xx 最多在同一 model 自動 retry 一次；authentication、content filter 與 invalid request 不自動重試。
+- 正式實驗禁止自動切換 Provider/model，避免 Condition 以外的新變因；metadata 的 `provider_switching_enabled` 固定為 false。
 - 若未來需要無 client poll 也能恢復，增加 startup reconciliation worker 或 durable queue；多 instance 時使用資料庫 atomic claim。
-- 加入 request correlation id、latency、token usage、fallback reason 與 attempt count。
-- 對 task judgement、greeting、chat、persona generation 分別設定 temperature、token budget 與 timeout policy。
+- 已保存 request correlation id、latency、token usage、retry reason 與 attempt count。
+- 各功能目前共用全域模型設定與 4096 max output tokens；除非實際驗證顯示截斷，不增加每功能參數 UI。
 - 加入 concurrency guard，避免同一 conversation 同時送出兩個 turn。
 
 Acceptance criteria：
@@ -121,13 +120,12 @@ Acceptance criteria：
 
 ### Phase 3: Research Reproducibility
 
-Status: discussion backlog. The supervised experiment will freeze a final release before participant sessions, so runtime version locking is not a current implementation priority.
+Status: minimal reproducibility implemented; full publishing platform deferred.
 
-- 建立 experiment material snapshot/version：event、task、answer key、persona profile、condition prompt modules。
-- Session 開始時鎖定 material version，而不是永遠讀最新 row。
-- 保存 model configuration snapshot，包括 model、temperature、token budget 與 provider-specific parameters。
-- Prompt hash 必須可回查到實際 prompt content/version，而不只是不可逆 hash。
-- 建立 admin publish/readiness flow，區分 draft 與正式實驗 material。
+- Session 建立時保存 event、task、condition、personas 的完整素材快照與 SHA-256。
+- 每次正式 LLM 呼叫保存實際 Prompt、modules、model metadata 與 SHA-256，可由 hash 回查內容。
+- Admin 可按 Session 回放 Task、完整對話與 token/message 統計，並匯出匿名化 JSON／CSV。
+- 完整 draft/readiness/publish、視覺化版本比較與 material rollback 仍暫緩。
 
 這一階段是 **material version lock/schema**，目前只保留為待討論設計，不應在沒有研究者確認 schema 與 publish semantics 前直接實作。
 
@@ -162,7 +160,7 @@ Status: deferred; this roadmap does not implement it.
 - RAG：deferred。
 - Task per-question scoring / accepted-answer / answer-key audit：待詳細討論後實作。
 - Formal session completion / debrief：待詳細討論後實作。
-- Research data export：低優先度，待討論後實作。
+- Research data export：已完成；格式與統計邊界見 `docs/research-data-export.md`。
 - Controlled deliberate historical errors：待討論，維持 disabled。
 - Multi-admin roles：目前不需要；共用 Admin key 符合研究部署方式。
 - 原需求中未提供具體定義與驗收條件的第 6 項：deferred，等待產品/研究語意確認。

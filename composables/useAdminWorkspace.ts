@@ -5,6 +5,7 @@ import { taskControlQuestions } from '~/composables/useTaskControl';
 import type {
   AdminPromptPreviewResponse,
   AdminPromptDryRunResponse,
+  AdminSessionResearchResponse,
   AdminSnapshotResponse,
   AdminAuthUserSummary,
   EventTask,
@@ -35,6 +36,8 @@ import {
   fetchAdminAuthUsers,
   fetchAdminSnapshot,
   fetchAdminPromptPreview,
+  fetchAdminSessionResearch,
+  downloadAdminResearchExport,
   restoreAdminEvent,
   restoreAdminPersona,
   restoreAdminParticipant,
@@ -75,6 +78,8 @@ export const useAdminWorkspace = () => {
   const promptDryRunLoading = ref(false);
   const promptPreviewLoading = ref(false);
   const promptPreviewMessage = ref('請說明這個事件的重要性。');
+  const selectedResearchSession = ref<AdminSessionResearchResponse | null>(null);
+  const researchSessionLoading = ref(false);
 
   const selectedEvent = computed<EventWithPersonas | null>(() => {
     if (!snapshot.value || !selectedEventId.value) return null;
@@ -120,6 +125,8 @@ export const useAdminWorkspace = () => {
     promptDryRun.value = null;
     selectedConditionId.value = null;
     selectedEventId.value = null;
+    selectedResearchSession.value = null;
+    researchSessionLoading.value = false;
     if (clearStoredKey) {
       clearAdminSessionKey();
     }
@@ -445,6 +452,32 @@ export const useAdminWorkspace = () => {
     }
   };
 
+  const loadSessionResearch = async (sessionId: string) => {
+    researchSessionLoading.value = true;
+    error.value = null;
+    try {
+      selectedResearchSession.value = await fetchAdminSessionResearch(adminKey.value, sessionId);
+    } catch (e: any) {
+      selectedResearchSession.value = null;
+      error.value = formatAdminApiError(e, 'Session 研究紀錄載入失敗。');
+    } finally {
+      researchSessionLoading.value = false;
+    }
+  };
+
+  const closeSessionResearch = () => {
+    selectedResearchSession.value = null;
+  };
+
+  const exportResearchData = async (format: 'json' | 'csv') => {
+    error.value = null;
+    try {
+      await downloadAdminResearchExport(adminKey.value, format);
+    } catch (e: any) {
+      error.value = formatAdminApiError(e, '研究資料匯出失敗。');
+    }
+  };
+
   const loadPromptPreview = async (event: EventWithPersonas, condition: ExperimentCondition) => {
     promptPreviewLoading.value = true;
     error.value = null;
@@ -494,6 +527,7 @@ export const useAdminWorkspace = () => {
     authUsersError,
     changingParticipantStatusId,
     changingPersonaStatusId,
+    closeSessionResearch,
     conditionModeLabel,
     conditionOrdinal,
     createPersona,
@@ -501,18 +535,21 @@ export const useAdminWorkspace = () => {
     creatingPersona,
     creatingParticipant,
     error,
+    exportResearchData,
     eventYearRange,
     hasUnsavedTaskChanges,
     isTaskDirty,
     loadSnapshot,
     loadAuthUsers,
     loadPromptPreview,
+    loadSessionResearch,
     personaJson,
     promptPreview,
     promptDryRun,
     promptDryRunLoading,
     promptPreviewLoading,
     promptPreviewMessage,
+    researchSessionLoading,
     promptConditions,
     resetWorkspace,
     restartSession,
@@ -537,6 +574,7 @@ export const useAdminWorkspace = () => {
     selectedConditionId,
     selectedEvent,
     selectedEventId,
+    selectedResearchSession,
     snapshot,
     taskJson,
     taskQuestionCount,

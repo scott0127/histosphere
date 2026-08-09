@@ -8,7 +8,6 @@ Routes:
     POST   /api/event/check:                     檢查事件名稱是否已存在。
     POST   /api/event/initialize:                初始化事件學習工作區。
     GET    /api/events:                          列出所有歷史事件摘要。
-    POST   /api/event/{event_id}/regenerate-background: 重新生成背景圖。
 """
 
 from fastapi import APIRouter, Depends
@@ -82,23 +81,3 @@ def list_events(service: EventService = Depends(get_event_service)) -> list[Even
         list[EventListItem]: 含 personas 與 latest_task 的事件清單。
     """
     return service.list_events()
-
-
-@router.post("/event/{event_id}/regenerate-background")
-def regenerate_background(
-    event_id: str,
-    service: EventService = Depends(get_event_service),
-) -> dict[str, str | None]:
-    """相容舊前端的背景更新 endpoint；新版 UI 目前不依賴圖片背景。
-
-    保留此入口以避免舊版前端呼叫 404。新版 UI 改用 CSS 漸層
-    或主題色彩，不再依賴動態生成的背景圖片。
-
-    Args:
-        event_id: 目標事件的 UUID 字串。
-        service: 由 Dependency Injection 注入的 EventService 實例。
-
-    Returns:
-        dict[str, str | None]: 包含 background_url（可能為 None）。
-    """
-    return service.regenerate_background(event_id)

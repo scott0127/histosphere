@@ -1,6 +1,7 @@
 import type {
   AdminAuthUsersResponse,
   AdminPromptDryRunResponse,
+  AdminSessionResearchResponse,
   AdminSnapshotResponse,
   AdminPromptPreviewResponse,
   ChatMessage,
@@ -129,6 +130,33 @@ export const fetchAdminSnapshot = (adminKey: string, fetcher: FrontendFetcher = 
   return fetcher<AdminSnapshotResponse>('/api/admin/snapshot', {
     headers: adminHeaders(adminKey),
   });
+};
+
+export const fetchAdminSessionResearch = (
+  adminKey: string,
+  sessionId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<AdminSessionResearchResponse>(`/api/admin/sessions/${sessionId}/research`, {
+    headers: adminHeaders(adminKey),
+  });
+};
+
+export const downloadAdminResearchExport = async (
+  adminKey: string,
+  format: 'json' | 'csv',
+) => {
+  const response = await fetch(`/api/admin/research-export?format=${format}`, {
+    headers: adminHeaders(adminKey),
+  });
+  if (!response.ok) throw new Error(`研究資料匯出失敗（${response.status}）`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `histosphere-research.${format}`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 };
 
 export const fetchAdminAuthUsers = (adminKey: string, fetcher: FrontendFetcher = $fetch) => {

@@ -8,6 +8,7 @@
 from fastapi import HTTPException, status
 
 from app.core.experiment_conditions import condition_code_for_key
+from app.core.research_reproducibility import record_session_material_snapshot
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, ResearchLog
 from app.providers.llm.base import LLMProvider
@@ -129,6 +130,7 @@ class EventInitializationService:
                 event_id=event.id,
             )
         )
+        record_session_material_snapshot(self.repository, session)
         material_llm_calls = [
             call
             for call in (

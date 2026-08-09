@@ -95,12 +95,8 @@
         <span>以訪客身份繼續</span>
       </NuxtLink>
 
-      <!-- 註冊連結 -->
-      <p class="text-center text-sm text-history-brown/70 mt-6">
-        還沒有帳號？
-        <NuxtLink to="/auth/register" class="text-history-accent hover:underline font-medium">
-          立即註冊
-        </NuxtLink>
+      <p class="mt-6 text-center text-sm text-history-brown/70">
+        研究帳號由研究團隊統一提供
       </p>
     </div>
   </div>
