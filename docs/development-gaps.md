@@ -6,7 +6,7 @@
 
 ## 已完成的主要能力
 
-- Supabase Auth learner 登入、JWT 驗證、participant 綁定與 condition assignment fail-closed。
+- Supabase Auth learner 登入、JWT 驗證、participant 綁定，以及由 Admin 設定並由後端強制執行的有序 condition assignment。
 - 共用 Admin key、Admin test mode、Participant 建立／綁定／封存／恢復。
 - Event、Task、Persona 的 Admin 管理；Learner 只能使用既有且未封存素材。
 - Session 中斷恢復、固定五分鐘倒數、到期後進入下一階段，以及 Admin 重設 Session／倒數。
@@ -23,6 +23,20 @@
 ### 每題正式計分語意（最高優先）
 
 目前保留每題作答與整體 judgement，但研究者尚未確認填空同義詞、拼字、accepted answers、AI judgement 與 deterministic scoring 的責任邊界。這會改變研究資料語意，不能由工程端自行決定。
+
+### Disclosure D0／D1 的資訊邊界
+
+目前已實作 D0–D4、相鄰升降及輸出洩漏檢查，但單次 structured completion 為判斷 learner progress 仍需要 context。研究者需確認 D0／D1 時 `correct_answer`、`source_text` 與 evidence 是否可進入模型 context，以及不可進入時的一次呼叫策略。
+
+### Historical EBL 的完成標準
+
+目前可依序處理 Task error 並保存推理階段與 Disclosure。仍需確認 `RESOLVED` 是否要求「答案正確 + 證據／理由／反思」，以及 D4 後仍未成功時要持續、跳題或記錄 `unresolved_after_max_support`。
+
+### 前後測與 Historical Thinking 測量整合
+
+目前把前後測留在外部工具，依 participant code 與系統匯出合併。仍需確認施測時點、量表或 rubric、Historical Thinking 維度、計分方法與缺漏資料處理，才能建立正式 outcome protocol。
+
+## 其他既有研究決策
 
 ### 受控歷史錯誤與 Debrief（最高優先）
 

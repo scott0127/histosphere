@@ -1,6 +1,6 @@
 # Histosphere System Design
 
-Updated: 2026-06-25
+Updated: 2026-08-09
 
 Histosphere is a thesis prototype for studying how Error-Based Learning (EBL) and AI historical persona role-play can support historical thinking and AI literacy.
 
@@ -22,16 +22,17 @@ The following terms should be used consistently across documentation and UI:
 ## V1 User Flow
 
 ```text
-select 2x2 experiment condition
--> input historical event
--> fetch Wikipedia zh/en
--> create event workspace
--> generate editable task / cloze-style text
--> generate one primary historical persona
+Admin creates and reviews historical event / Task / one active persona
+-> Admin locks the material
+-> Admin assigns an ordered Condition list to a Participant
+-> learner logs in with the bound Supabase Auth account
+-> system shows only the active or next assigned Condition
 -> learner submits task
--> LLM judges correct / incorrect / partial
+-> LLM judges the response asynchronously
 -> conversation unlocks
 -> chat follows selected condition policy
+-> fixed five-minute countdown completes the stage
+-> learner explicitly enters the next stage
 ```
 
 ## 2x2 Experiment Design
@@ -50,7 +51,7 @@ Condition keys:
 
 The abandoned 1x3 condition design is not part of the current system.
 
-Condition selection changes interaction policy only. For the same canonical historical event, all four conditions must reuse the same `events`, `wiki_sources`, `event_tasks`, and primary `personas` data. Generic-chat conditions do not create separate persona resources; they simply present the response as a generic assistant. EBL conditions use scaffold prompts; non-EBL conditions do not. Each learner/session receives isolated `task_attempts`, `conversations`, `messages`, and `research_logs`.
+Condition assignment changes interaction policy only. Admin stores the permitted Conditions in `participants.condition_list`; its array order is the formal execution order. The learner cannot select another Condition, skip the next item, or start a new one while a formal Session is active. For the same canonical historical event, all four conditions reuse the same `events`, `wiki_sources`, `event_tasks`, and active `personas` material. Generic-chat conditions do not create separate persona resources; they present the response as a generic assistant. EBL conditions use scaffold prompts; non-EBL conditions do not. Each learner/session receives isolated `task_attempts`, `conversations`, `messages`, and `research_logs`.
 
 ## Implemented Milestone
 
@@ -63,12 +64,12 @@ Backend:
 - Supabase PostgREST repository for local/cloud runtime.
 - Wikipedia provider with `summary` and `full` fetch modes.
 - Event initialization returns event/task/primary persona/session, not conversation.
-- Learner initialization enforces Auth-to-participant mapping and assigned condition; only Admin can create new event materials.
+- Learner initialization enforces Auth-to-participant mapping, ordered Condition assignment and active-Session resume; only Admin can create or lock new event materials.
 - Event material uses reversible archive/restore instead of learner-facing permanent deletion.
 - Task submit persists a processing attempt and returns `202`; judgement, conversation and greeting complete asynchronously behind a polling endpoint.
 - Chat service switches generic/persona and direct/EBL behavior from condition and loads bounded multi-turn history from DB messages.
 - `persona_prompt_v1` and canonical prompt modules are shared by runtime, Admin preview and non-persisting Admin dry-run.
-- Session timer is disabled by default and may be started/cancelled by Admin; backend enforces expiry.
+- A fixed five-minute timer starts when Chat becomes ready, survives refresh, and is enforced by the backend; Admin may reset it.
 - Research logs record event/task/conversation/message actions.
 - Admin key endpoints manage conditions, tasks, personas, events, and logs.
 - Session progress and state reload endpoints.
@@ -76,12 +77,11 @@ Backend:
 
 Frontend:
 
-- `/` event library and condition start flow.
+- `/` event library and current assigned Condition start/resume flow.
 - `/sessions/[sessionId]/task` required task submission gate.
 - `/conversations/[conversationId]` generic/persona-aware chat UI.
 - `/admin` admin-key dashboard with structured task editor.
-- `/tutorial` legacy tutorial/demo (candidate for rewrite into experiment onboarding).
-- `/profile`, `/auth/*` Supabase auth pages (keep only if participant accounts are required).
+- `/profile`, `/auth/*` Supabase Auth pages for pre-created participant accounts.
 
 ## Backend Responsibilities
 
@@ -99,7 +99,7 @@ The backend should not fabricate uncertain historical metadata. Store nullable f
 
 Learner runtime can only reuse an existing, non-archived event. A valid Admin override is required to generate new event/task/persona material. Archiving sets `events.archived_at`; restoring clears it, so related sessions and research data are never removed as part of ordinary event management.
 
-Each event should have one primary historical persona in V1. Runtime generation uses LiteLLM so prototype testing follows the same provider path as production-like execution. Formal experiment material should still be reviewed or edited by teacher/admin users. If the teacher has not specified the persona, the LLM provider should select the most historically central or representative figure for the event.
+Each event may contain multiple archived/inactive persona records but can have at most one active persona. Learners cannot choose or switch persona; Admin controls the single active figure. Runtime generation uses LiteLLM so prototype testing follows the same provider path as production-like execution. Formal experiment material must be reviewed and locked by Admin before learners can start it.
 
 ### Task Gate
 
@@ -158,7 +158,7 @@ Admin can edit:
 - persona profile and prompt profile
 - persona active state
 
-Admin can also archive/restore events, preview prompt modules, run a non-persisting prompt dry-run, and start/cancel an optional session timer.
+Admin can also archive/restore and lock events, manage the single active persona, assign and reorder each Participant's Conditions, preview prompt modules, run a non-persisting prompt dry-run, reset a Session countdown, and restart a Session without deleting its prior research records.
 
 ## Frontend Responsibilities
 
@@ -168,8 +168,8 @@ Purpose: start a research session.
 
 Controls:
 
-- 2x2 condition selector.
-- existing event list.
+- current assigned 01–04 Condition code; the underlying experimental label remains hidden from learners.
+- existing locked event list with the introduction text hidden.
 - Admin-only historical event creation input.
 - Admin archive confirmation; learners cannot create or archive event materials.
 
@@ -204,9 +204,9 @@ Controls:
 
 - message list.
 - input box.
-- persona selector only when `condition.roleplay_enabled = true`.
+- fixed active persona identity and portrait when `condition.roleplay_enabled = true`; no learner selector.
 - task judgement side panel.
-- optional session countdown banner when Admin has enabled a timer.
+- fixed five-minute countdown, expired-stage alert and explicit next-stage button.
 
 ### `/admin`
 
@@ -219,9 +219,10 @@ Controls:
 - event editor with metadata fields.
 - structured task editor with story-first blank tokens, undo/redo, validation, and learner preview.
 - persona `prompt_profile` editor (advanced JSON).
+- Participant Auth binding plus ordered Condition assignment controls.
 - read-only backend prompt preview for the selected event and condition.
 - non-persisting prompt dry-run using the actual provider.
-- event archive/restore and per-session timer controls.
+- event archive/restore/material lock and per-session timer reset/restart controls.
 - research log preview.
 
 ## Database Decisions
@@ -293,7 +294,16 @@ Potential future providers:
 
 ### Material Version Lock
 
-Each new or restarted Session records an event/task/condition/persona material snapshot, and every formal LLM call records the exact Prompt/modules used. SHA-256 verification plus Admin JSON/CSV export supports audit and replay without a new version table. A complete draft/readiness/publish platform and visual rollback remain deferred.
+Implemented minimum scope: Admin locks reviewed event material before learner use; each new or restarted Session records an event/task/condition/persona snapshot, and every formal LLM call records the exact Prompt/modules used. SHA-256 verification plus Admin JSON/CSV export supports audit and replay without a new version table. A complete draft/readiness/publish platform and visual rollback remain deferred.
+
+### Research Decisions Still Open
+
+The following change research semantics and require agreement with the supervisor before implementation:
+
+- Task per-question scoring: accepted synonyms, typos, partial credit, deterministic/LLM/manual responsibilities and answer-key version.
+- Disclosure D0/D1 boundary: whether `correct_answer`, `source_text` or evidence may enter model context at those levels.
+- Historical EBL completion: whether `RESOLVED` requires a correct answer plus evidence/reason/reflection, and what happens after unsuccessful D4 support.
+- Pre/post-test and Historical Thinking measurement: instrument, timing, dimensions, scoring, missing data and participant-code merge protocol.
 
 ### Unspecified Requirements
 

@@ -45,6 +45,20 @@ Learner 訊息會先保存成可持久化 operation；前端使用 SSE 取得保
 - 已有唯讀 Supabase OpenAPI schema smoke、runtime smoke 與 Nuxt build 指令。
 - Disposable database migration-up 與自動化 Vue DOM／瀏覽器 E2E 因目前單機研究規模暫緩；正式變更仍需人工瀏覽器驗收。
 
+### 4. Admin 分派與 Condition 執行順序
+
+- `participants.condition_list` 同時保存可執行 Conditions 與 Admin 指定順序，不新增 assignment table。
+- Learner 只會看到進行中的 Condition，或清單中第一個尚未完成的 Condition。
+- 後端拒絕跳號；存在進行中的正式 Session 時必須先續接。
+- Admin test Session 不計入 learner 進度、完成判斷或正式研究匯出。
+
+### 5. Session 五分鐘階段完成
+
+- Chat 準備完成時由後端自動開始固定五分鐘倒數。
+- 重整或重新登入會沿用原本結束時間，不會重新取得五分鐘。
+- 時間到後 Session 標記為完成，Learner 看到「本階段已結束」並主動進入下一階段。
+- 不提供 Learner「提前完成實驗」按鈕；Admin 可重置倒數或封存舊 Session 後重建。
+
 ## 待詳細討論後實作
 
 ### Task 每題評分與答案稽核
@@ -62,15 +76,26 @@ Learner 訊息會先保存成可持久化 operation；前端使用 SSE 取得保
 
 在規格確認前，維持現有完整 answer bundle 與整體 judgement。
 
-### Session 正式完成與 Debrief
+### Disclosure D0／D1 的資訊邊界
+
+需要確認在 D0／D1 時，`correct_answer`、`source_text` 與 evidence 是否可進入模型 context。現在已有相鄰升降、結構化輸出及洩漏檢查，但單次呼叫仍需足夠資訊判斷 learner progress；這項規則會直接改變 EBL 的漸進揭露強度。
+
+### Historical EBL 的完成標準
 
 需要決定：
 
-- learner 主動完成、timer 到期、Admin 強制完成的狀態轉移。
-- Chat 結束後是否需要確認畫面與 debrief。
-- 完成後是否禁止繼續發言，以及 Admin test mode 是否可重新開啟。
-- 中途離開、重新登入與恢復流程。
-- completion reason、completed_at 與研究紀錄匯出的正式定義。
+- `RESOLVED` 是否只看答案，或必須包含證據、理由與反思。
+- 正確但沒有論證時應停在哪個階段。
+- D4 後仍未成功時，是繼續互動、由 learner 選擇下一個錯誤，或記錄 `unresolved_after_max_support`。
+
+### 前後測與 Historical Thinking 測量整合
+
+前後測目前維持外部工具，透過 participant code 與正式匯出合併。正式收案前仍需決定：
+
+- 施測時點與操作流程。
+- 量表或 rubric、Historical Thinking 維度與計分方式。
+- 缺漏資料與無效樣本的處理。
+- 外部資料與系統 Session 的正式合併規則。
 
 ### 研究資料匯出（已完成）
 

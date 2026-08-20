@@ -72,9 +72,9 @@ in_progress -> processing -> submitted
 ## Runtime Invariants
 
 1. Condition mapping 只能來自 backend canonical condition definitions。
-2. Learner 建立 session 前必須通過 `participants.auth_user_id` 綁定、`status=active` 與 `condition_list` 指派檢查。
-3. Admin override 可測試所有 condition，但不能改寫 learner assignment 語意。
-4. Session timer 預設關閉；只有 Admin 明確啟動才有 `timer_started_at` / `timer_ends_at`。
+2. Learner 建立 Session 前必須通過 `participants.auth_user_id` 綁定、`status=active` 與有序 `condition_list` 檢查；進行中的正式 Session 優先續接，否則只能開始第一個尚未完成的 Condition。
+3. Admin override 可測試所有 Condition，但 `is_admin_test=true`，不計入 learner 進度、完成判斷或正式研究匯出。
+4. Chat 建立後由 backend 自動開始固定五分鐘倒數；Admin 只能重置倒數或重建 Session。
 5. Timer 到期後 backend worker 與 task/chat runtime boundary 都會執行 completion，不能只依賴前端倒數。
 6. RAG disabled 時 `source_context` 必須明示沒有 retrieval，不得產生假 citation。
 7. 正式 chat 保存 message 與 audit metadata；dry-run 不污染研究資料。

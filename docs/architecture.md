@@ -121,7 +121,8 @@ Admin authorization:
 
 - Header: `x-admin-key`
 - Env: `HISTOSPHERE_ADMIN_KEY`
-- Do not document or commit a real deployment key. Local fallback values are development-only and must be overridden for a formal experiment deployment.
+- The backend has no fallback Admin key. Missing `HISTOSPHERE_ADMIN_KEY` prevents startup.
+- Do not document or commit a real deployment key.
 
 ## Feature Inventory
 
@@ -129,15 +130,17 @@ Admin authorization:
 
 Purpose: create or reuse an event workspace and start an experiment session.
 
-Input: `event_name`, `condition_key`, `rebuild`, `user_id`
+Input: `event_name`, `condition_key`, `rebuild`; learner identity is taken from the Supabase JWT rather than trusting a request `user_id`.
 
 Output: `event_id`, `session_id`, `event`, `task`, `personas`, `condition`
 
 Important rules:
 
 - This endpoint does not create a conversation.
-- Learner runtime must resolve `user_id` to an active participant and the requested condition must appear in that participant's assigned condition list.
-- Learners may only start existing, non-archived event materials. Creating a new event requires the Admin override header.
+- Learner runtime must resolve the JWT user to an active participant and the requested condition must appear in that participant's ordered `condition_list`.
+- `condition_list` order is the formal execution order. An active formal Session must be resumed first; otherwise only the first assigned Condition without a completed Session may start.
+- Admin test Sessions are excluded from learner progress, completion checks and formal research export.
+- Learners may only start existing, non-archived, material-locked events. Creating or locking new material requires the Admin override header.
 - Admin test mode may bypass participant assignment for research verification without changing learner assignment data.
 - V1 creates or reuses one primary historical persona per event.
 - Event profile, prototype task, and primary persona are generated through LiteLLM when no teacher/manual material exists.
@@ -258,7 +261,7 @@ Response body:
 
 Error cases: `400` empty event name, `404` condition not found, `5xx` Wikipedia/provider/Supabase failures.
 
-Learner authorization errors: `403` missing participant mapping, inactive participant, unassigned condition, or attempt to create new material. Archived events return `409` until an Admin restores them. A valid `x-admin-key` enables the explicit Admin test/create override.
+Learner authorization errors: `403` missing participant mapping, inactive participant, unassigned condition, or attempt to create new material. `409` is returned for archived/unlocked material, skipping the assigned order, failing to resume an active Session, or completing every assigned Condition. A valid `x-admin-key` enables the explicit Admin test/create override.
 
 Frontend caller: `pages/index.vue` through `useExperimentSession`
 
@@ -415,7 +418,6 @@ Frontend caller: `useConversationSession`
 - `POST /api/personas`
 - `PATCH /api/personas/{persona_id}`
 - `DELETE /api/personas/{persona_id}`
-- `POST /api/personas/{persona_id}/regenerate_avatar` (compatibility endpoint only)
 
 ---
 
@@ -426,16 +428,11 @@ Frontend caller: `useConversationSession`
 
 Admin-only timer controls:
 
-- `POST /api/admin/sessions/{session_id}/timer` — opt in and set duration.
-- `DELETE /api/admin/sessions/{session_id}/timer` — cancel the timer without closing the session.
+- The fixed five-minute timer starts automatically when Task processing creates the Chat conversation.
+- `POST /api/admin/sessions/{session_id}/timer` — reset a Chat-ready or timer-completed Session to a new five-minute countdown.
+- `POST /api/admin/sessions/{session_id}/restart` — archive the existing Session/conversation and create a clean Session while retaining research records.
 
 Response: `UserProgressResponse` / `SessionStateResponse`
-
----
-
-### Stats Endpoints
-
-- `POST /api/stats/view-count/increment` — increment page/event view counter.
 
 ---
 
@@ -449,11 +446,15 @@ All admin endpoints require `x-admin-key`.
 - `PATCH /api/admin/events/{event_id}`
 - `POST /api/admin/events/{event_id}/archive`
 - `POST /api/admin/events/{event_id}/restore`
+- `POST /api/admin/events/{event_id}/material-lock`
 - `PATCH /api/admin/tasks/{task_id}` — validates structured `display_text` blank tokens against `evaluation_payload.questions` before saving. Validation errors return `422` with `detail.message` and `detail.issues[]`.
 - `PATCH /api/admin/personas/{persona_id}`
+- `POST /api/admin/participants`
 - `PATCH /api/admin/participants/{participant_id}`
+- `POST /api/admin/participants/{participant_id}/archive`
+- `POST /api/admin/participants/{participant_id}/restore`
 - `POST /api/admin/sessions/{session_id}/timer`
-- `DELETE /api/admin/sessions/{session_id}/timer`
+- `POST /api/admin/sessions/{session_id}/restart`
 - `PATCH /api/admin/conditions/{condition_id}`
 - `GET /api/admin/research-logs?limit=200`
 
@@ -465,6 +466,8 @@ The active schema lives in `supabase/migrations/` (single source of truth):
 
 - `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
 - `supabase/migrations/202607110001_runtime_safety_and_async.sql`
+- `supabase/migrations/202608090001_research_integrity_and_material_lock.sql`
+- `supabase/migrations/202608090002_admin_test_session_classification.sql`
 
 See `supabase-schema.md` for the full table/column/FK/index reference.
 
@@ -478,12 +481,14 @@ Key comments:
 - `task_attempts.judgement_payload`: LLM result and misconception summary.
 - `task_attempts.status`: includes `processing` and `failed` for asynchronous work.
 - `events.archived_at`: reversible material visibility state; not deletion.
-- `experiment_sessions.timer_started_at` / `timer_ends_at`: null unless Admin enables the timer.
+- `experiment_sessions.timer_started_at` / `timer_ends_at`: set automatically when Chat becomes ready; Admin may reset the fixed five-minute timer.
+- `experiment_sessions.is_admin_test`: separates Admin verification Sessions from formal learner progress and export.
+- `events.materials_locked_at`: only reviewed/locked material is available to learners.
 - `personas.prompt_profile`: validated by the `persona_prompt_v1` persona/context contract.
 - `messages.metadata`: prompt/profile hashes, module names, history ids, provider/model and research flags.
 - `research_logs`: behavioral trace table, not a replacement for `messages`.
 
-Material version lock and RAG remain deferred. Message-level hashes improve auditability but do not freeze event/task/persona content for a session.
+Each formal Session stores a material snapshot and hashes, while `events.materials_locked_at` blocks edits during formal use. A full cross-version comparison/rollback platform and RAG remain deferred.
 
 ## Research Logs
 
@@ -516,7 +521,7 @@ Current coverage:
 - task draft save persists recoverable in-progress attempts.
 - admin task update rejects corrupt story tokens/questions and logs `task_updated` on success.
 - admin prompt preview returns runtime prompt modules without calling external LLM providers; dry-run persistence safety is part of runtime-safety coverage.
-- learner event creation/condition assignment, event archive/restore, DB-backed history and opt-in timer require runtime-safety regression coverage.
+- learner event creation, ordered condition assignment, event archive/restore, DB-backed history and the fixed timer have runtime-safety regression coverage.
 - session state reload returns event/task/personas/condition/attempt/conversation id for `/sessions/[sessionId]/task`.
 - session progress returns per-user event/condition status for homepage recovery.
 - invalid UUID route parameters return validation errors instead of backend 500s.
@@ -539,7 +544,7 @@ Current frontend unit coverage:
 
 Frontend orchestration boundaries:
 
-- `useExperimentSession` owns participant/session initialization, progress recovery, and route handoff to task/conversation.
+- `useExperimentSession` owns participant/session initialization, formal progress recovery, current assigned Condition selection, and route handoff to task/conversation.
 - `useEventLibrary` owns homepage condition/event list loading, refresh, lookup, Admin-only creation, and archive state.
 - `useTaskGate` owns task state reload, draft autosave, async submit polling/resume, and route handoff to conversation.
 - `useConversationSession` owns conversation reload and chat send.

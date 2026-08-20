@@ -113,6 +113,8 @@ To what extent do learners apply historical thinking when evaluating standardize
 - 每位 participant 完成兩個 rounds。
 - 同一 participant 不會同時經歷 With EBL 與 Without EBL，降低 EBL 策略 carryover 到 control condition 的風險。
 
+程式目前把 condition list 的陣列順序視為正式執行順序，由 Admin 逐位設定並由後端禁止跳號；若研究設計要 counterbalance，可改存 `[03,01]` 或 `[04,02]`，不需新增資料表。
+
 分組：
 
 ```text
@@ -1121,9 +1123,9 @@ Material version lock 目前可不實作，但正式收案前必須能固定：
 2. `deliberate_error_enabled` 在主 conversation 保持 `false`。
 3. controlled AI inaccuracies 只出現在所有 conditions 共用的 standardized post-test。
 4. EBL 是 between-subject，role-play 是 within-subject。
-5. 每位 participant 的 condition list 使用 `[01,03]` 或 `[02,04]`。
+5. 每位 participant 的 condition list 使用 `[01,03]` 或 `[02,04]`，實際先後順序由 Admin 分派並由後端強制執行。
 6. persona 只控制 identity 與 knowledge boundary。
 7. EBL router 由 backend 控制 state；LLM 只實現指定 dialogue move。
 8. V1 使用一位 primary persona，加上 multi-perspective evidence cards。
 9. historical thinking 是 primary outcome；AI literacy transfer 是 exploratory outcome。
-10. 正式收案前再完成 material version lock，不把尚未鎖定的 prompt 當成正式實驗材料。
+10. 正式收案只使用 Admin 已鎖定素材；每個 Session 另保存 material/prompt snapshot 與 hash。

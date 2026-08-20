@@ -1173,6 +1173,71 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       line-height: 1.55;
     }
 
+    #histosphere-system-map .open-questions {
+      margin-block-start: 1.5rem;
+      padding-block-start: 1.25rem;
+      border-block-start: 2px solid color-mix(in srgb, var(--accent-foreground) 34%, var(--border));
+    }
+
+    #histosphere-system-map .open-questions-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-block-end: 1rem;
+    }
+
+    #histosphere-system-map .open-questions-title {
+      margin: 0;
+      font-size: 1.125rem;
+      font-weight: 650;
+    }
+
+    #histosphere-system-map .open-questions-note {
+      margin: 0.25rem 0 0;
+      color: var(--muted-foreground);
+    }
+
+    #histosphere-system-map .question-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    #histosphere-system-map .question-card {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-inline-start: 3px solid color-mix(in srgb, var(--accent-foreground) 62%, var(--border));
+      border-radius: 0.375rem;
+      background: color-mix(in srgb, var(--muted) 46%, var(--background));
+    }
+
+    #histosphere-system-map .question-status {
+      display: block;
+      margin-block-end: 0.375rem;
+      color: var(--accent-foreground);
+      font-size: 0.75rem;
+      font-weight: 650;
+    }
+
+    #histosphere-system-map .question-title {
+      margin: 0;
+      font-weight: 650;
+    }
+
+    #histosphere-system-map .question-detail {
+      margin: 0.5rem 0 0;
+      color: var(--muted-foreground);
+      font-size: 0.8125rem;
+      line-height: 1.6;
+    }
+
+    #histosphere-system-map .question-detail strong {
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
     @media (max-width: 620px) {
       #histosphere-system-map .branches {
         grid-template-columns: minmax(0, 1fr);
@@ -1193,6 +1258,14 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       #histosphere-system-map .function {
         grid-template-columns: minmax(0, 1fr);
         gap: 0.25rem;
+      }
+
+      #histosphere-system-map .open-questions-header {
+        display: block;
+      }
+
+      #histosphere-system-map .question-grid {
+        grid-template-columns: minmax(0, 1fr);
       }
     }
   </style>
@@ -1342,15 +1415,15 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">受測者代號、Auth 綁定、condition list 與 active 狀態保存</span>
+          <span class="function-name">受測者代號、Auth 綁定、有序 condition list 與 active 狀態保存</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Admin 綁定 Auth user、編輯 condition list、查看目前階段</span>
+          <span class="function-name">Admin 綁定 Auth user、分派 Condition 與執行順序、查看目前階段<span class="function-note text-small">condition list 的排列就是正式執行順序，可用上下按鈕調整</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">建立 session 前強制檢查綁定、active 與 condition assignment</span>
+          <span class="function-name">建立 Session 前強制檢查綁定、active、assignment 與執行順序<span class="function-note text-small">進行中的正式 Session 必須先續接；否則只能開始清單中第一個尚未完成的 Condition</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1837,6 +1910,50 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
     </details>
   </div>
 
+  <section class="open-questions" aria-labelledby="open-questions-title">
+    <div class="open-questions-header">
+      <div>
+        <h2 id="open-questions-title" class="open-questions-title">待解決疑問</h2>
+        <p class="open-questions-note text-small">下列項目會改變研究操作或資料語意；部分已有暫行方案，仍需與指導教授確認後定案。</p>
+      </div>
+      <span class="status text-small" data-status="deferred"><span class="dot"></span>待研究設計共識</span>
+    </div>
+
+    <div class="question-grid">
+      <article class="question-card">
+        <span class="question-status">待與教授確認 01</span>
+        <h3 class="question-title">Task 每題正式計分語意</h3>
+        <p class="question-detail"><strong>目前：</strong>系統保存每題原始作答與整體 LLM judgement，但尚未把每題正誤當成正式研究分數。</p>
+        <p class="question-detail"><strong>需決定：</strong>同義詞、錯字、部分正確、accepted answers，以及 deterministic、LLM 與人工覆核各自負責什麼。</p>
+        <p class="question-detail"><strong>影響：</strong>決定 Task 成績與錯誤分類能否作為可信的研究變項。</p>
+      </article>
+
+      <article class="question-card">
+        <span class="question-status">暫採最小方案 02</span>
+        <h3 class="question-title">Disclosure D0／D1 的資訊邊界</h3>
+        <p class="question-detail"><strong>暫行方案：</strong>單次 structured completion 可在私有 context 讀取 correct answer、source_text 與 evidence IDs，用來判斷 learner progress；這些資料不代表可對受測者揭露。</p>
+        <p class="question-detail"><strong>可見邊界：</strong>D0 不增加新史實；D1 只指出檢查位置。正解提前出現在回覆時，後端拒絕候選內容並重新生成。</p>
+        <p class="question-detail"><strong>保留風險：</strong>目前採最低限度字面與固定句型攔截；語意改寫風險以 Prompt 限制、重生與 audit 紀錄管理，不增加第二次 LLM 審查。</p>
+      </article>
+
+      <article class="question-card">
+        <span class="question-status">待與教授確認 03</span>
+        <h3 class="question-title">Historical EBL 的完成標準</h3>
+        <p class="question-detail"><strong>目前：</strong>系統會依序處理 Task error，並保存推理階段與 Disclosure 狀態。</p>
+        <p class="question-detail"><strong>需決定：</strong>RESOLVED 是否必須同時具備正確答案、證據、理由與反思；D4 後仍未成功時要繼續、跳題或記錄 unresolved。</p>
+        <p class="question-detail"><strong>影響：</strong>決定每位受測者實際接受多少 EBL 引導，並影響組間可比性。</p>
+      </article>
+
+      <article class="question-card">
+        <span class="question-status">暫採 HAT 方向 04</span>
+        <h3 class="question-title">前後測與 Historical Thinking 測量整合</h3>
+        <p class="question-detail"><strong>暫行方案：</strong>後測採 HAT 式短史料建構題，以同事件的新史料測量證據運用、因果／脈絡推理與歷史觀點；史實知識另外計分。</p>
+        <p class="question-detail"><strong>最低驗證：</strong>使用共同 rubric、專家審查、少量 think-aloud 試測與盲評抽樣複評，避免把角色扮演或寫作流暢度誤當成 Historical Thinking。</p>
+        <p class="question-detail"><strong>仍待定案：</strong>正式維度、後測時間、每個向度題數與缺漏資料規則仍需和教授確認。</p>
+      </article>
+    </div>
+  </section>
+
   <div id="function-help-tooltip" class="function-help-tooltip" role="tooltip" hidden>
     <p class="function-help-title"></p>
     <div class="function-help-section">
@@ -1933,17 +2050,17 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "後端確認每個代號對應的 EBL 與 Role-play 組合，Learner 畫面不揭露實驗條件名稱。",
         "受測者只看到「03模式」，不會看到「Standard Chat + Role-play」。"
       ]],
-      ["受測者代號、Auth 綁定、condition list 與 active 狀態保存", [
-        "Participant 保存匿名代號、綁定的 Supabase 帳號、可進行的 Conditions，以及目前是否可參與實驗。",
-        "P001 綁定一個 Auth user，並被分派 01 與 03。"
+      ["受測者代號、Auth 綁定、有序 condition list 與 active 狀態保存", [
+        "Participant 保存匿名代號、綁定的 Supabase 帳號、有順序的 Conditions，以及目前是否可參與實驗。",
+        "P001 綁定一個 Auth user，並被分派先做 03、再做 01。"
       ]],
-      ["Admin 綁定 Auth user、編輯 condition list、查看目前階段", [
-        "Admin 可替 Participant 選擇登入帳號、調整條件清單，並查看目前停在未開始、Task、Chat 或完成。",
-        "研究者發現 P002 尚未綁定帳號，可直接選擇預先建立的 Supabase Auth user。"
+      ["Admin 綁定 Auth user、分派 Condition 與執行順序、查看目前階段", [
+        "Admin 可替 Participant 選擇登入帳號、調整條件清單，並用上下按鈕決定正式執行順序。",
+        "研究者將 P002 安排為先做 04、再做 02；Dashboard 依此順序顯示。"
       ]],
-      ["建立 session 前強制檢查綁定、active 與 condition assignment", [
-        "開始實驗前，後端會確認帳號已綁定、Participant 可使用，而且該 Condition 確實已分派。",
-        "P003 只被分派 01、03，嘗試開始 04 時會被後端拒絕。"
+      ["建立 Session 前強制檢查綁定、active、assignment 與執行順序", [
+        "開始實驗前，後端會確認帳號、Participant 狀態、Condition 分派與目前應執行的順序。",
+        "P003 的順序是 03、01；03 尚未完成時，即使直接要求開始 01，也會得到 409。"
       ]],
       ["Participant 建立、封存與恢復的正式後台生命週期", [
         "Admin 可以新增、封存或恢復 Participant；封存只停止實驗存取，不刪除 Auth 綁定、作答、Session 或聊天紀錄。",
