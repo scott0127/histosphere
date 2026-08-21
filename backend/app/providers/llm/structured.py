@@ -176,6 +176,10 @@ class ChatOutputPayload(BaseModel):
     disclosure_reason: str | None = None
     learner_revision_status: Literal["not_yet", "partial", "revised", "unresolved", "not_applicable"] | None = None
     completion_status: Literal["continue", "resolved", "complete"] | None = None
+    # 同一次生成判斷是否已達正式 RESOLVED；後端只在三項都成立時接受。
+    resolution_claim_corrected: bool = False
+    resolution_evidence_used: bool = False
+    resolution_reasoning_linked: bool = False
     # 同次生成判斷是否需要離題重新導向；僅供後端稽核，不顯示給受測者。
     off_topic_redirect: bool = False
     fidelity_flags: list[str] = Field(default_factory=list)

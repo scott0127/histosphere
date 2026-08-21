@@ -136,6 +136,7 @@ class ChatRequest(BaseModel):
         target_persona_id: 舊版相容欄位；Learner 傳入時後端會拒絕。
         client_request_id: 同一回合重送時必須維持不變的識別碼。
         retry_failed: 是否明確重試先前失敗的同一回合。
+        interaction_action: 明確的 learner UI 動作；目前只支援 D4 後切換下一個錯誤。
     """
 
     conversation_id: str = Field(..., min_length=1)
@@ -144,6 +145,7 @@ class ChatRequest(BaseModel):
     target_persona_id: str | None = None
     client_request_id: str | None = Field(default=None, min_length=1, max_length=128)
     retry_failed: bool = False
+    interaction_action: Literal["next_error"] | None = None
 
 
 class PersonaCreateRequest(BaseModel):

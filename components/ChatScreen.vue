@@ -104,12 +104,6 @@
                     && !wasValidatedStream(message)
                   "
                   :text="message.content"
-                  :annotations="message.annotations"
-                />
-                <AnnotatedText
-                  v-else-if="message.annotations && message.annotations.length > 0"
-                  :content="message.content"
-                  :annotations="message.annotations"
                 />
                 <p v-else class="whitespace-pre-wrap">{{ message.content }}</p>
               </div>
@@ -129,6 +123,16 @@
         </div>
 
         <footer class="shrink-0 border-t border-[var(--admin-border-soft)] p-5">
+          <div v-if="canSkipCurrentError" class="mb-3 flex justify-end">
+            <button
+              type="button"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 text-sm font-semibold text-[var(--admin-coffee)] transition hover:border-[var(--admin-coffee-muted)] hover:bg-[var(--admin-coffee-soft)]"
+              @click="$emit('skip-error')"
+            >
+              <Icon name="mdi:skip-next-outline" class="h-4 w-4" />
+              處理下一個錯誤
+            </button>
+          </div>
           <form v-if="!sessionClosed" class="flex items-end gap-2" @submit.prevent="handleSendMessage">
             <textarea
               v-model="userInput"
@@ -213,7 +217,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ChatMessage, EventTask, ExperimentCondition, ExperimentSession, HistoricalEvent, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';
-import AnnotatedText from './AnnotatedText.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import TaskAttemptReview from '~/components/task-student/TaskAttemptReview.vue';
 import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
@@ -239,6 +242,7 @@ const emit = defineEmits<{
   (event: 'session-expired'): void;
   (event: 'send-message', userInput: string): void;
   (event: 'retry-message', clientRequestId: string): void;
+  (event: 'skip-error'): void;
 }>();
 
 const userInput = ref('');
@@ -303,6 +307,23 @@ const retryRequestId = (message: ChatMessage) => {
   const requestId = messageMetadata(message).client_request_id;
   return typeof requestId === 'string' ? requestId : null;
 };
+
+const latestAssistantMessage = computed(() => {
+  return [...props.history].reverse().find((message) => {
+    return message.speaker_type !== 'learner'
+      && !isPendingMessage(message)
+      && !isFailedMessage(message);
+  }) || null;
+});
+
+const canSkipCurrentError = computed(() => {
+  if (!props.condition?.ebl_enabled || props.isReplying || sessionClosed.value) return false;
+  const metadata = latestAssistantMessage.value?.metadata || {};
+  return metadata.disclosure_level === 'D4'
+    && metadata.completion_status === 'continue'
+    && typeof metadata.next_target_question_id === 'string'
+    && metadata.next_target_question_id.length > 0;
+});
 
 // 學生端只顯示實驗代號，不揭露實際 treatment。
 const activityTitle = computed(() => {

@@ -5,6 +5,7 @@ from app.core.interaction_contract import (
     enforce_interaction_response,
     initial_greeting_metadata,
     resolve_interaction_metadata,
+    unresolved_after_max_support_metadata,
 )
 from app.core.historical_ebl_policy import HISTORICAL_EBL_POLICY_VERSION
 from app.models.domain import ChatMessage, ExperimentCondition, TaskAttempt
@@ -346,6 +347,9 @@ def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
             "dialogue_move": "resolution",
             "disclosure_level": "D4",
             "learner_revision_status": "revised",
+            "resolution_claim_corrected": True,
+            "resolution_evidence_used": True,
+            "resolution_reasoning_linked": True,
         },
         "你已完成這一項修正，正確答案是「按人數」。",
     )
@@ -357,6 +361,77 @@ def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
     assert enforced.metadata["next_target_started"] is True
     assert enforced.response == "你已完成這一項修正，正確答案是「按人數」。"
     assert "加劇政治與社會危機" not in enforced.response
+
+
+def test_resolved_requires_corrected_claim_evidence_and_reasoning_link():
+    condition = _condition("02")
+    reflected = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="請說明是哪項證據改變了你的判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "reflection_prompt",
+            "disclosure_level": "D3",
+            "completion_status": "continue",
+        },
+    )
+    runtime = build_interaction_runtime(condition, _attempt(), [reflected])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "RESOLVED",
+            "dialogue_move": "resolution",
+            "disclosure_level": "D4",
+            "resolution_claim_corrected": True,
+            "resolution_evidence_used": True,
+            "resolution_reasoning_linked": False,
+        },
+        "你的主張與證據已經接近完整。",
+    )
+
+    assert enforced.retry_required is True
+    assert enforced.metadata["resolution_criteria_met"] is False
+    assert "incomplete_resolution_criteria" in enforced.metadata["fidelity_flags"]
+
+
+def test_d4_learner_action_records_unresolved_and_starts_next_error_at_d0():
+    condition = _condition("02")
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="目前已整理出最強證據，但仍由你完成判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "next_target_question_id": "q02",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "reflection_prompt",
+            "disclosure_level": "D4",
+            "completion_status": "continue",
+        },
+    )
+    current_runtime = build_interaction_runtime(condition, _multi_error_attempt(), [previous])
+    action_metadata = unresolved_after_max_support_metadata(current_runtime)
+    action = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="learner",
+        speaker_name="learner",
+        content="處理下一個錯誤",
+        metadata=action_metadata,
+    )
+
+    next_runtime = build_interaction_runtime(condition, _multi_error_attempt(), [previous, action])
+
+    assert action_metadata["completion_status"] == "unresolved_after_max_support"
+    assert next_runtime.target.question_id == "q02"
+    assert next_runtime.previous_state == "ELICIT_REASONING"
+    assert next_runtime.previous_disclosure_level == "D0"
 
 
 def test_standard_chat_has_no_mandated_task_target():
@@ -398,12 +473,22 @@ def test_ebl_can_progress_through_the_complete_state_sequence():
 
     for index, (state, move, response) in enumerate(steps):
         runtime = build_interaction_runtime(condition, _attempt(), messages)
+        resolution_metadata = (
+            {
+                "resolution_claim_corrected": True,
+                "resolution_evidence_used": True,
+                "resolution_reasoning_linked": True,
+            }
+            if state == "RESOLVED"
+            else {}
+        )
         enforced = enforce_interaction_response(
             runtime,
             {
                 "dialogue_state": state,
                 "dialogue_move": move,
                 "disclosure_level": f"L{min(index, 4)}",
+                **resolution_metadata,
             },
             response,
         )

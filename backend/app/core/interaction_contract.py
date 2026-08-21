@@ -29,9 +29,10 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v5"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v6"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v5",
     "2x2-interaction-v4",
     "2x2-interaction-v3",
 }
@@ -92,6 +93,7 @@ INTERACTION_RETRY_FLAGS = frozenset(
         "excessive_scaffold_questions",
         "overlong_scaffold_response",
         "early_answer_exposure",
+        "incomplete_resolution_criteria",
         "next_target_transition_missing",
     }
 )
@@ -200,7 +202,8 @@ class InteractionRuntime:
                 "ask a clarification or follow-up when useful. Do not force a correction, Socratic sequence, evidence "
                 "exercise, revision, or reflection.\n"
                 "Structured interaction fields must be dialogue_state=STANDARD_CHAT, "
-                "dialogue_move=natural_response, completion_status=continue, and disclosure_level=null."
+                "dialogue_move=natural_response, completion_status=continue, disclosure_level=null, and all three "
+                "resolution_* fields=false."
             )
 
         state_moves = ", ".join(
@@ -261,6 +264,11 @@ class InteractionRuntime:
             "revealing its answer. Before RESOLVED, do not reveal the complete expected answer at any disclosure "
             "level. The dialogue state and disclosure level are separate decisions: progress may advance the reasoning "
             "state without mechanically changing disclosure. "
+            "Formal RESOLVED criteria: (1) resolution_claim_corrected=true only when the learner has corrected the "
+            "core claim; (2) resolution_evidence_used=true only when the learner has used at least one relevant "
+            "evidence item or historical context relation; and (3) resolution_reasoning_linked=true only when the "
+            "learner has linked that evidence/context to the corrected claim or explained what the prior reasoning "
+            "missed. Propose RESOLVED only when all three are true. A correct answer alone is partial progress. "
             "If off_topic_redirect=true, only redirect to the selected event: keep the current target, dialogue state, "
             "and disclosure level unchanged, use learner_progress=no_progress, and do not treat the off-topic message as "
             "another failed scaffold attempt. "
@@ -312,7 +320,12 @@ def _resolved_question_ids(messages: Sequence[Any]) -> set[str]:
     resolved: set[str] = set()
     for message in messages:
         metadata = _message_metadata(message)
-        if metadata.get("completion_status") not in {"resolved", "complete"}:
+        # D4 後由 learner 主動切題，也要關閉目前 target，但不可標成已解決。
+        if metadata.get("completion_status") not in {
+            "resolved",
+            "complete",
+            "unresolved_after_max_support",
+        }:
             continue
         question_id = metadata.get("target_question_id")
         if isinstance(question_id, str) and question_id:
@@ -510,6 +523,39 @@ def build_interaction_runtime(
     )
 
 
+def unresolved_after_max_support_metadata(runtime: InteractionRuntime) -> dict[str, Any]:
+    """建立 D4 後由 learner 主動切換下一個錯誤的可稽核紀錄。"""
+
+    if (
+        runtime.interaction_mode != "scaffold"
+        or runtime.target is None
+        or runtime.next_target is None
+        or runtime.previous_disclosure_level != "D4"
+    ):
+        raise ValueError("The current error cannot be skipped before D4 or without a next target")
+
+    state = runtime.previous_state or EBL_INITIAL_STATE
+    return {
+        "interaction_policy_version": INTERACTION_POLICY_VERSION,
+        "condition_code": runtime.condition_code,
+        "interaction_mode": "scaffold",
+        "interaction_action": "next_error",
+        "target_question_id": runtime.target.question_id,
+        "next_target_question_id": runtime.next_target.question_id,
+        "next_target_started": True,
+        "dialogue_state": state,
+        "dialogue_move": DIALOGUE_MOVE_BY_STATE[state],
+        "disclosure_level": "D4",
+        "learner_progress": "no_progress",
+        "learner_revision_status": "unresolved",
+        "completion_status": "unresolved_after_max_support",
+        "resolution_claim_corrected": False,
+        "resolution_evidence_used": False,
+        "resolution_reasoning_linked": False,
+        "resolution_criteria_met": False,
+    }
+
+
 def _normalize_disclosure_level(raw_level: Any) -> str | None:
     if raw_level in DISCLOSURE_LEVELS:
         return str(raw_level)
@@ -627,6 +673,10 @@ def resolve_interaction_metadata(
             "learner_progress": "not_assessed",
             "disclosure_reason": None,
             "off_topic_redirect": off_topic_redirect,
+            "resolution_claim_corrected": False,
+            "resolution_evidence_used": False,
+            "resolution_reasoning_linked": False,
+            "resolution_criteria_met": False,
             "fidelity_flags": sorted(flags),
             "provider_fidelity_flags": provider_flags,
             **target_metadata,
@@ -646,6 +696,23 @@ def resolve_interaction_metadata(
     expected_move = DIALOGUE_MOVE_BY_STATE[proposed_state]
     if not off_topic_redirect and raw.get("dialogue_move") not in {None, expected_move}:
         flags.add("invalid_dialogue_move")
+
+    resolution_claim_corrected = raw.get("resolution_claim_corrected") is True
+    resolution_evidence_used = raw.get("resolution_evidence_used") is True
+    resolution_reasoning_linked = raw.get("resolution_reasoning_linked") is True
+    if off_topic_redirect:
+        resolution_claim_corrected = False
+        resolution_evidence_used = False
+        resolution_reasoning_linked = False
+    resolution_criteria_met = all(
+        (
+            resolution_claim_corrected,
+            resolution_evidence_used,
+            resolution_reasoning_linked,
+        )
+    )
+    if runtime.target is not None and proposed_state == "RESOLVED" and not resolution_criteria_met:
+        flags.add("incomplete_resolution_criteria")
 
     question_count = response_text.count("？") + response_text.count("?")
     if question_count > MAX_FOCUSED_QUESTIONS_PER_TURN:
@@ -721,6 +788,10 @@ def resolve_interaction_metadata(
         "learner_revision_status": revision_status,
         "completion_status": completion_status,
         "next_target_started": next_target_started,
+        "resolution_claim_corrected": resolution_claim_corrected,
+        "resolution_evidence_used": resolution_evidence_used,
+        "resolution_reasoning_linked": resolution_reasoning_linked,
+        "resolution_criteria_met": resolution_criteria_met,
         "fidelity_flags": sorted(flags),
         "provider_fidelity_flags": provider_flags,
         **target_metadata,

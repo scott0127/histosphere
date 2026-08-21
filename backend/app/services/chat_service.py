@@ -12,7 +12,11 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.core.interaction_contract import InteractionRuntime, build_interaction_runtime
+from app.core.interaction_contract import (
+    InteractionRuntime,
+    build_interaction_runtime,
+    unresolved_after_max_support_metadata,
+)
 from app.core.persona_prompt_contract import build_persona_runtime_context
 from app.core.research_reproducibility import record_prompt_snapshot
 from app.models.domain import ChatMessage, Event, ExperimentCondition, Persona, RagSource, ResearchLog, TaskAttempt, new_id
@@ -88,10 +92,16 @@ class ChatService:
 
         client_request_id = request.client_request_id or new_id()
         stored_messages = self.repository.list_messages(conversation.id)
+        task_attempt = (
+            self.repository.get_task_attempt(conversation.task_attempt_id)
+            if conversation.task_attempt_id
+            else None
+        )
         existing_operation = self.repository.get_learner_message_by_request(
             conversation.id,
             client_request_id,
         )
+        effective_action = request.interaction_action
 
         if existing_operation:
             if existing_operation.content != request.user_message:
@@ -99,6 +109,13 @@ class ChatService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail="client_request_id was already used for different content",
                 )
+            persisted_action = existing_operation.metadata.get("interaction_action")
+            if request.interaction_action is not None and request.interaction_action != persisted_action:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="client_request_id was already used for a different interaction action",
+                )
+            effective_action = persisted_action
             operation_status = self._operation_state(existing_operation)
             if operation_status == "completed":
                 if on_user_persisted:
@@ -168,6 +185,17 @@ class ChatService:
                 )
 
             prior_messages = stored_messages
+            action_metadata: dict[str, Any] = {}
+            if effective_action == "next_error":
+                try:
+                    action_metadata = unresolved_after_max_support_metadata(
+                        build_interaction_runtime(condition, task_attempt, prior_messages)
+                    )
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Only a D4 Historical EBL error with a following target can be skipped",
+                    ) from exc
             user_message = ChatMessage(
                 conversation_id=conversation.id,
                 speaker_type="learner",
@@ -181,6 +209,7 @@ class ChatService:
                     "response_status": "pending",
                     "persona_selection": "event_fixed",
                     "client_request_id": client_request_id,
+                    **action_metadata,
                 },
             )
             try:
@@ -225,15 +254,28 @@ class ChatService:
                         "persona_selection": "event_fixed",
                         "condition_key": condition.condition_key,
                         "client_request_id": client_request_id,
+                        "interaction_action": effective_action,
                     },
                 )
             )
-
-        task_attempt = (
-            self.repository.get_task_attempt(conversation.task_attempt_id)
-            if conversation.task_attempt_id
-            else None
-        )
+            if effective_action == "next_error":
+                self.repository.log_research(
+                    ResearchLog(
+                        user_id=conversation.user_id,
+                        session_id=conversation.session_id,
+                        event_id=event.id,
+                        attempt_id=conversation.task_attempt_id,
+                        conversation_id=conversation.id,
+                        message_id=user_message.id,
+                        action_type="error_skipped_after_max_support",
+                        payload={
+                            "condition_key": condition.condition_key,
+                            "target_question_id": action_metadata["target_question_id"],
+                            "next_target_question_id": action_metadata["next_target_question_id"],
+                            "completion_status": "unresolved_after_max_support",
+                        },
+                    )
+                )
 
         try:
             if on_user_persisted:
@@ -249,7 +291,12 @@ class ChatService:
                 )
             # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
             rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
-            interaction_runtime = build_interaction_runtime(condition, task_attempt, prior_messages)
+            runtime_messages = (
+                [*prior_messages, user_message]
+                if effective_action == "next_error"
+                else prior_messages
+            )
+            interaction_runtime = build_interaction_runtime(condition, task_attempt, runtime_messages)
             modules = self.prompt_service.assemble_chat_modules(
                 event=event,
                 persona=selected,
@@ -350,6 +397,10 @@ class ChatService:
                         "allowed_disclosure_levels": interaction_metadata.get("allowed_disclosure_levels", []),
                         "learner_progress": interaction_metadata.get("learner_progress"),
                         "disclosure_reason": interaction_metadata.get("disclosure_reason"),
+                        "resolution_claim_corrected": interaction_metadata.get("resolution_claim_corrected", False),
+                        "resolution_evidence_used": interaction_metadata.get("resolution_evidence_used", False),
+                        "resolution_reasoning_linked": interaction_metadata.get("resolution_reasoning_linked", False),
+                        "resolution_criteria_met": interaction_metadata.get("resolution_criteria_met", False),
                         "off_topic_redirect": interaction_metadata.get("off_topic_redirect", False),
                         "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
                         "fidelity_retry_count": interaction_metadata.get("generation_retry_count", 0),

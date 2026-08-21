@@ -22,6 +22,8 @@ type ConversationState = (TaskSubmitResponse | ConversationLoadResponse) & {
   task_attempt?: ConversationLoadResponse['task_attempt'];
 };
 
+type InteractionAction = 'next_error';
+
 const historyFromState = (state: ConversationState | null): ChatMessage[] => {
   if (!state) return [];
   if ('history' in state && Array.isArray(state.history)) return state.history;
@@ -281,6 +283,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     userInput: string,
     requestId: string,
     retryFailed: boolean,
+    interactionAction?: InteractionAction,
   ) => {
     const currentConversationId = conversationId.value;
     if (!currentConversationId || !chatState.value) return;
@@ -294,6 +297,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
         history: history.value.filter((message) => messageRequestId(message) !== requestId),
         clientRequestId: requestId,
         retryFailed,
+        interactionAction,
       }, async (event: ChatStreamEvent) => {
         if (event.type === 'user_message') {
           history.value = history.value.map((message) => {
@@ -358,7 +362,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     }
   };
 
-  const sendMessage = async (userInput: string) => {
+  const queueMessage = async (userInput: string, interactionAction?: InteractionAction) => {
     const currentConversationId = conversationId.value;
     if (!currentConversationId || !chatState.value || isSending.value) return;
 
@@ -374,11 +378,16 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
       metadata: {
         client_request_id: requestId,
         response_status: 'pending',
+        ...(interactionAction ? { interaction_action: interactionAction } : {}),
       },
     });
     history.value.push(createAssistantPlaceholder(requestId));
-    await runOperation(userInput, requestId, false);
+    await runOperation(userInput, requestId, false, interactionAction);
   };
+
+  const sendMessage = async (userInput: string) => queueMessage(userInput);
+
+  const skipCurrentError = async () => queueMessage('處理下一個錯誤', 'next_error');
 
   const retryMessage = async (requestId: string) => {
     if (!chatState.value || isSending.value) return;
@@ -401,7 +410,10 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     };
     history.value.push(createAssistantPlaceholder(requestId));
     history.value.sort((left, right) => left.sequence_index - right.sequence_index);
-    await runOperation(learner.content, requestId, true);
+    const interactionAction = learner.metadata?.interaction_action === 'next_error'
+      ? 'next_error'
+      : undefined;
+    await runOperation(learner.content, requestId, true, interactionAction);
   };
 
   const resetConversationState = () => {
@@ -423,6 +435,7 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     resetConversationState,
     retryMessage,
     sendMessage,
+    skipCurrentError,
     session,
     streamStatus,
     task,

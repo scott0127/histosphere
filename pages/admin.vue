@@ -565,7 +565,13 @@
                     >{{ promptPreview.prompt }}</pre>
                     <div v-if="promptDryRun" class="mt-3 rounded-md border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3">
                       <span class="admin-label block">Dry-run 回覆（未寫入對話）</span>
-                      <p class="admin-copy mt-2 whitespace-pre-wrap text-sm leading-6">{{ promptDryRun.response }}</p>
+                      <AnnotatedText
+                        v-if="promptDryRun.annotations.length > 0"
+                        :content="promptDryRun.response"
+                        :annotations="promptDryRun.annotations"
+                        class="admin-copy mt-2 text-sm leading-6"
+                      />
+                      <p v-else class="admin-copy mt-2 whitespace-pre-wrap text-sm leading-6">{{ promptDryRun.response }}</p>
                     </div>
                   </div>
                 </div>
@@ -598,6 +604,7 @@
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Persona } from '~/types';
+import AnnotatedText from '~/components/AnnotatedText.vue';
 import { buildParticipantDashboardRows } from '~/utils/adminParticipantDashboard';
 
 definePageMeta({

@@ -572,6 +572,7 @@ test('frontend chat stream parses split SSE frames and keeps learner authenticat
       userMessage: '請回答。',
       history: [],
       clientRequestId: 'request-001',
+      interactionAction: 'next_error',
     },
     (event) => eventTypes.push(event.type),
     fetcher,
@@ -588,6 +589,7 @@ test('frontend chat stream parses split SSE frames and keeps learner authenticat
     history: [],
     client_request_id: 'request-001',
     retry_failed: false,
+    interaction_action: 'next_error',
   });
 });
 

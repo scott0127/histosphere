@@ -57,6 +57,22 @@ def test_chat_structured_output_preserves_off_topic_redirect_metadata() -> None:
     assert result.interaction_metadata["off_topic_redirect"] is True
 
 
+def test_chat_structured_output_preserves_resolution_criteria() -> None:
+    result = LiteLLMProvider._chat_generation_result(
+        ChatOutputPayload(
+            response="你已用證據修正原先的判斷。",
+            resolution_claim_corrected=True,
+            resolution_evidence_used=True,
+            resolution_reasoning_linked=True,
+        ),
+        Event(canonical_name="法國大革命"),
+    )
+
+    assert result.interaction_metadata["resolution_claim_corrected"] is True
+    assert result.interaction_metadata["resolution_evidence_used"] is True
+    assert result.interaction_metadata["resolution_reasoning_linked"] is True
+
+
 def test_json_runner_audits_initial_and_repair_schema_failures(monkeypatch, tmp_path) -> None:
     audit_path = tmp_path / "schema-rejections.jsonl"
     monkeypatch.setenv("LLM_REJECTION_LOG_PATH", str(audit_path))

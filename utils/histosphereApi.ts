@@ -60,6 +60,7 @@ export type ChatMessageInput = {
   history: ChatMessage[];
   clientRequestId?: string;
   retryFailed?: boolean;
+  interactionAction?: 'next_error';
 };
 
 export type PromptPreviewInput = {
@@ -301,6 +302,7 @@ export const sendChatMessage = (input: ChatMessageInput, fetcher: FrontendFetche
       history: input.history,
       client_request_id: input.clientRequestId,
       retry_failed: input.retryFailed || false,
+      interaction_action: input.interactionAction,
     },
   });
 };
@@ -347,6 +349,7 @@ export const sendChatMessageStream = async (
       history: input.history,
       client_request_id: input.clientRequestId,
       retry_failed: input.retryFailed || false,
+      interaction_action: input.interactionAction,
     }),
   });
 

@@ -1,5 +1,5 @@
 from app.core.interaction_contract import INTERACTION_POLICY_VERSION
-from app.models.domain import Event
+from app.models.domain import ChatMessage, Event
 from app.providers.llm.base import ChatGenerationResult
 
 
@@ -439,6 +439,73 @@ def test_chat_policy_matrix(client):
         loaded = client.get(f"/api/conversations/{submitted['conversation_id']}")
         messages = loaded.json()["messages"]
         assert [message["sequence_index"] for message in messages] == list(range(len(messages)))
+
+
+def test_d4_next_error_action_records_unresolved_and_moves_to_next_target(client):
+    initialized = initialize_event(client, "D4 切題測試事件", "ebl_roleplay")
+    submitted = submit_task(client, initialized)
+    repository = client.app.state.repository
+    attempt = repository.get_task_attempt(submitted["attempt_id"])
+    judgement = dict(attempt.judgement_payload)
+    question_results = list(judgement["question_results"])
+    question_results.append(
+        {
+            "question_id": "q02",
+            "prompt": "第二項錯誤應如何修正？",
+            "source_text": "第二項可檢查的歷史脈絡。",
+            "learner_answer": "錯誤判斷",
+            "expected_answer": "修正判斷",
+            "correctness": "incorrect",
+            "error_code": "unclassified",
+            "historical_concept": "cause_and_consequence",
+            "reasoning_process": "argumentation",
+            "evidence_ids": ["E02"],
+        }
+    )
+    repository.save_task_attempt(
+        attempt.model_copy(update={"judgement_payload": {**judgement, "question_results": question_results}})
+    )
+    repository.add_message(
+        ChatMessage(
+            conversation_id=submitted["conversation_id"],
+            speaker_type="persona",
+            speaker_name=initialized["personas"][0]["name"],
+            sequence_index=repository.next_message_sequence(submitted["conversation_id"]),
+            content="目前已整理最強證據，但判斷仍需由你完成。",
+            metadata={
+                "interaction_policy_version": INTERACTION_POLICY_VERSION,
+                "target_question_id": "q01",
+                "next_target_question_id": "q02",
+                "dialogue_state": "REFLECT",
+                "dialogue_move": "reflection_prompt",
+                "disclosure_level": "D4",
+                "completion_status": "continue",
+            },
+        )
+    )
+
+    response = client.post(
+        "/api/chat",
+        json={
+            "conversation_id": submitted["conversation_id"],
+            "user_message": "處理下一個錯誤",
+            "history": [],
+            "client_request_id": "next-error-request",
+            "interaction_action": "next_error",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"]["metadata"]["target_question_id"] == "q02"
+    loaded = client.get(f"/api/conversations/{submitted['conversation_id']}").json()
+    action = next(
+        message
+        for message in loaded["messages"]
+        if message.get("client_request_id") == "next-error-request" and message["speaker_type"] == "learner"
+    )
+    assert action["metadata"]["completion_status"] == "unresolved_after_max_support"
+    assert action["metadata"]["target_question_id"] == "q01"
+    assert action["metadata"]["next_target_question_id"] == "q02"
 
 
 def test_invalid_persona_candidate_is_retried_and_never_persisted(client):

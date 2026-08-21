@@ -1599,7 +1599,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Historical EBL 與 Disclosure</span>
         </span>
-        <span class="status text-small" data-status="critical"><span class="dot"></span>非常重要 · 暫緩實作</span>
+        <span class="status text-small" data-status="critical"><span class="dot"></span>非常重要 · 核心規則已補強</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
@@ -1622,21 +1622,29 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">答案與證據洩漏審查<span class="function-note text-small">有 transition、長度、問題數與字串掃描；無法可靠攔截同義改寫。當允許範圍含 D2 時，同次呼叫也會先看見 source_text</span></span>
           <span class="status text-small"><span class="dot"></span>部分完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">Annotation hover 提示納入答案揭露審查<span class="function-note text-small">目前只檢查 AI 主回覆；標記的 explanation 仍可能繞過 Disclosure，直接顯示正解或關鍵證據</span></span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">正式 Learner 停用 Annotation hover；Admin 預覽保留<span class="function-note text-small">本輪決策：避免 explanation 成為未受 Disclosure 控制的第二條答案通道；研究者仍可在 dry-run 檢查標記內容</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="partial">
-          <span class="function-name">Historical Thinking 操作、evidence IDs 與 success criteria<span class="function-note text-small">LLM 已可依當回合錯誤與對話選擇操作；backend 限制 evidence boundary，但正式 success criteria 與研究者設定介面仍未定案</span></span>
-          <span class="status text-small"><span class="dot"></span>部分完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">Historical Thinking 操作、evidence IDs 與正式 RESOLVED criteria<span class="function-note text-small">同一次 structured completion 判斷三項條件；backend 僅在修正主張、使用相關證據／脈絡、並連結理由三項皆成立時接受 RESOLVED</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">D4 後「嘗試下一個錯誤」按鈕與 unresolved_after_max_support 紀錄</span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="done">
+          <span class="function-name">D4 後「處理下一個錯誤」與 unresolved_after_max_support 紀錄<span class="function-note text-small">不自動跳題；learner 可選擇按鈕切換，未按則繼續 D4，切換後下一題由 D0 開始</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="missing">
-          <span class="function-name">中性史料／證據卡介面<span class="function-note text-small">尚無獨立於 persona 的 learner-facing evidence surface</span></span>
-          <span class="status text-small"><span class="dot"></span>未完成</span>
+        <div class="function" data-status="critical">
+          <span class="function-name">跨事件史料素材類型一致性<span class="function-note text-small">最高優先：不同事件必須使用相同類型、數量與呈現方式的史料素材，避免素材差異混入 Condition 效果</span></span>
+          <span class="status text-small"><span class="dot"></span>最高優先待做</span>
+        </div>
+        <div class="function" data-status="deferred">
+          <span class="function-name">史料素材介面<span class="function-note text-small">本輪不實作；先定義正式活動需要的共同史料素材，再決定是否建立獨立 UI</span></span>
+          <span class="status text-small"><span class="dot"></span>暫緩</span>
+        </div>
+        <div class="function" data-status="critical">
+          <span class="function-name">D4 未解決後的正解公布時點<span class="function-note text-small">最高優先待與教授確認：應在後測前完成訂正，或在後測後才公布正解以避免直接影響測量</span></span>
+          <span class="status text-small"><span class="dot"></span>最高優先待定</span>
         </div>
       </div>
     </details>
@@ -1937,11 +1945,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </article>
 
       <article class="question-card">
-        <span class="question-status">待與教授確認 03</span>
+        <span class="question-status">暫採最小方案 03</span>
         <h3 class="question-title">Historical EBL 的完成標準</h3>
-        <p class="question-detail"><strong>目前：</strong>系統會依序處理 Task error，並保存推理階段與 Disclosure 狀態。</p>
-        <p class="question-detail"><strong>需決定：</strong>RESOLVED 是否必須同時具備正確答案、證據、理由與反思；D4 後仍未成功時要繼續、跳題或記錄 unresolved。</p>
-        <p class="question-detail"><strong>影響：</strong>決定每位受測者實際接受多少 EBL 引導，並影響組間可比性。</p>
+        <p class="question-detail"><strong>暫行方案：</strong>同一次 LLM structured completion 判斷「核心主張已修正、使用至少一項相關證據／脈絡、能把證據／脈絡連回修正主張或指出原推理遺漏」；三項皆成立才可 RESOLVED。</p>
+        <p class="question-detail"><strong>後端限制：</strong>缺任一項卻提出 RESOLVED 時拒絕該候選並重新生成；只答對答案仍算尚未完成。</p>
+        <p class="question-detail"><strong>D4 行為：</strong>最高協助後仍未解決時不自動公布答案或跳題；learner 可選擇「處理下一個錯誤」，系統記錄 unresolved_after_max_support，未選則繼續 D4。</p>
       </article>
 
       <article class="question-card">
@@ -1950,6 +1958,14 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         <p class="question-detail"><strong>暫行方案：</strong>後測採 HAT 式短史料建構題，以同事件的新史料測量證據運用、因果／脈絡推理與歷史觀點；史實知識另外計分。</p>
         <p class="question-detail"><strong>最低驗證：</strong>使用共同 rubric、專家審查、少量 think-aloud 試測與盲評抽樣複評，避免把角色扮演或寫作流暢度誤當成 Historical Thinking。</p>
         <p class="question-detail"><strong>仍待定案：</strong>正式維度、後測時間、每個向度題數與缺漏資料規則仍需和教授確認。</p>
+      </article>
+
+      <article class="question-card">
+        <span class="question-status">最高優先待與教授確認 05</span>
+        <h3 class="question-title">D4 未解決後的正解公布時點</h3>
+        <p class="question-detail"><strong>目前：</strong>保留現行流程；D4 仍未解決時不直接公布答案，learner 可繼續互動或主動切換下一個錯誤，並記錄 unresolved_after_max_support。</p>
+        <p class="question-detail"><strong>需決定：</strong>標準化正解與訂正說明應在後測前提供，成為 EBL intervention 的一部分；或在後測完成後提供，避免直接答案影響後測結果。</p>
+        <p class="question-detail"><strong>影響：</strong>前者較符合「錯誤後需完成訂正」的學習流程；後者較能避免相同知識答案直接污染測量。正式時點必須在收案前由教授確認並固定。</p>
       </article>
     </div>
   </section>
@@ -2198,21 +2214,29 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "已檢查狀態轉換、長度、問題數與直接字串，但無法可靠攔截答案的同義改寫。",
         "可攔截直接輸出「財政危機」，卻可能漏掉「國庫已無力支應開銷」這類近義提示。"
       ]],
-      ["Annotation hover 提示納入答案揭露審查", [
-        "AI 回覆中的術語標記可在 hover 時顯示說明，但這些說明目前沒有和主要回覆一起接受答案揭露檢查。",
-        "例如正文避開「培里」，標記說明仍可能直接寫出「培里率艦抵達浦賀」，因而提前揭露題目答案。"
+      ["正式 Learner 停用 Annotation hover；Admin 預覽保留", [
+        "正式受測者介面只顯示 AI 主回覆，不顯示 annotation explanation，避免 hover 形成未受 Disclosure 控制的第二條資訊通道。",
+        "Admin dry-run 仍保留標記與 hover，讓研究者在收案前檢查 LLM 產生的術語說明。"
       ]],
-      ["Historical Thinking 操作、evidence IDs 與 success criteria", [
-        "Task Judge 不再固定分類六向度；02／04 的 LLM 會依目前錯誤與 learner 回覆選擇合適操作，backend 仍限制可用證據與狀態轉換。",
-        "學生把單一原因當成完整解釋時，AI 可在該回合選擇因果比較；何時算完成仍要由正式 success criteria 定義。"
+      ["Historical Thinking 操作、evidence IDs 與正式 RESOLVED criteria", [
+        "02／04 的同一次 LLM 呼叫會依目前錯誤選擇 Historical Thinking 操作，並分別回報主張修正、證據／脈絡使用、推理連結三項結果。",
+        "學生只改成正確答案但沒有說明證據如何支持它時，後端不接受 RESOLVED，會要求模型繼續引導。"
       ]],
-      ["D4 後「嘗試下一個錯誤」按鈕與 unresolved_after_max_support 紀錄", [
-        "學生在最高協助層級仍未解決錯誤時，尚無自行切換下一項錯誤及保存未解決狀態的功能。",
-        "q01 在 D4 討論多輪仍未解決，目前不會出現「嘗試下一個錯誤」按鈕。"
+      ["D4 後「處理下一個錯誤」與 unresolved_after_max_support 紀錄", [
+        "學生在 D4 仍未解決且尚有下一項錯誤時，介面才顯示可選的「處理下一個錯誤」按鈕；系統不會自行跳題。",
+        "按下後 q01 保存為 unresolved_after_max_support，q02 從 D0 開始；未按則可繼續和 AI 討論 q01。"
       ]],
-      ["中性史料／證據卡介面", [
-        "尚無獨立於歷史人物語氣之外、直接呈現史料或證據的學生端介面。",
-        "拿破崙不可能知道的後世統計資料，未來可由中性史料卡顯示，而不是由人物親口說出。"
+      ["跨事件史料素材類型一致性", [
+        "正式實驗中的不同歷史事件必須使用相同類型、數量與呈現方式的史料素材，避免某一事件因素材較多或較容易而得到額外優勢。",
+        "例如四個事件都固定提供一段共同事件文本與兩份具作者、年代及來源類型的短史料；內容可不同，但素材結構必須一致。"
+      ]],
+      ["史料素材介面", [
+        "構想是由 UI 顯示研究者預先選定的史料素材，而不是讓 persona 把所有證據都說成自己的知識或經驗。",
+        "本輪先定義共同素材規格，不急著建立獨立卡片或素材庫介面。"
+      ]],
+      ["D4 未解決後的正解公布時點", [
+        "目前仍維持 D4 不直接公布正解；受測者可以繼續討論，或把該錯誤記錄為 unresolved_after_max_support 後切換下一個。",
+        "正式收案前必須和教授確認正解是在後測前作為 EBL 訂正提供，還是後測後才公布以避免影響測量。"
       ]],
       ["第一人稱身分、事件場景、時空／知識邊界與人物語氣 contract", [
         "Role-play 回覆必須使用人物第一人稱、置身指定事件，並遵守人物所處年代與知識範圍。",
