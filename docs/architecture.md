@@ -1,8 +1,8 @@
 # Backend Architecture
 
-Updated: 2026-06-25
+Updated: 2026-08-20
 
-This document is the maintenance baseline for the Histosphere FastAPI backend. It must be updated whenever the API contract, database schema, prompt modules, or experiment flow changes.
+This document is the technical maintenance baseline for the Histosphere FastAPI backend. Research principles belong in `../記憶.md`; unresolved work belongs in `research-experiment-backlog.md`.
 
 ## Backend Goal
 
@@ -160,7 +160,9 @@ Attempt lifecycle: `in_progress -> processing -> submitted`, with `failed` retai
 
 Processing uses an in-process FastAPI background task. The attempt id survives page reloads; polling a persisted `processing` attempt after backend restart re-schedules it with a process-local attempt-id guard. This is client-driven recovery, not a durable queue or multi-instance database claim.
 
-V1 judgement values: `correct`, `incorrect`, `partial`.
+Per-question judgement values: `correct`, `partial`, `incorrect`, `unanswered`.
+
+Objective questions (`cloze`, `multiple_choice`, `true_false`) are judged deterministically by the backend. Open `short_answer` questions use the configured LLM with the question prompt, reference answer and rubric. This judgement creates the later conversation error profile; it is not a pre-test/post-test score and does not classify Historical Thinking dimensions.
 
 ### Chat
 
@@ -170,7 +172,7 @@ Input: `conversation_id`, `user_message`, `history`, `target_persona_id`
 
 Output: `response`, `message`, `assistant_name`, `selected_persona`, `annotations`, `related_events`, `dynamic_context`, `rag_sources`
 
-The backend loads the latest 12 authoritative messages from the database (up to 1600 characters each) and includes them in `conversation_history`. Client-provided history is not the source of truth.
+The backend loads authoritative messages from the database, newest first, until a 16,000-character total history budget is full; each message contributes at most 1,600 characters. This is not a fixed 12-message limit. Client-provided history is not the source of truth.
 
 ### Prompt Modules
 
@@ -178,7 +180,7 @@ Current modules in `PromptService`:
 
 - `general_prompt`: shared language, historical-accuracy and no-fabrication policy.
 - `independent_1_prompt`: generic assistant vs historical persona identity.
-- `independent_2_prompt`: direct vs EBL historical-thinking interaction.
+- `independent_2_prompt`: Standard Chat vs Historical EBL interaction.
 - `event_context`: canonical event facts and nullable metadata.
 - `learner_task`: task response and LLM judgement.
 - `conversation_history`: bounded, DB-backed prior turns.
@@ -196,9 +198,9 @@ Admin dry-run: `POST /api/admin/prompt-dry-run` calls the configured provider wi
 
 | condition_key | EBL | Role-play | agent_mode | response_policy | Behavior |
 |---|---:|---:|---|---|---|
-| `no_ebl_no_roleplay` | no | no | `generic` | `direct` | ChatGPT-style direct answer. |
+| `no_ebl_no_roleplay` | no | no | `generic` | `direct` (legacy storage key) | Standard historical chat without an EBL sequence. |
 | `ebl_no_roleplay` | yes | no | `generic` | `scaffold` | Generic tutor guides thinking, argumentation, and source interpretation. |
-| `no_ebl_roleplay` | no | yes | `persona` | `direct` | Persona gives immersive direct answer. |
+| `no_ebl_roleplay` | no | yes | `persona` | `direct` (legacy storage key) | The same Standard Chat policy rendered in first person as the active persona. |
 | `ebl_roleplay` | yes | yes | `persona` | `scaffold` | Persona uses learner misconceptions to guide historical thinking. |
 
 ## API Contract
@@ -525,7 +527,8 @@ Current coverage:
 - session state reload returns event/task/personas/condition/attempt/conversation id for `/sessions/[sessionId]/task`.
 - session progress returns per-user event/condition status for homepage recovery.
 - invalid UUID route parameters return validation errors instead of backend 500s.
-- 2x2 chat policy direct/scaffold and generic/persona.
+- 2x2 chat policy Standard Chat/Historical EBL and generic/persona.
+- deterministic objective Task judgement, LLM open-answer judgement, four valid statuses, and legacy Task compatibility.
 - message shape with `speaker_type`, `speaker_name`, and `sequence_index`.
 - admin key protection.
 - Wikipedia summary/full provider modes.

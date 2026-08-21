@@ -1,13 +1,42 @@
+from app.core.experiment_conditions import condition_code_for_key
+
+
 def initialize_event(client, event_name="法國大革命", condition_key="ebl_roleplay", user_id="participant-001"):
-    response = client.post(
+    created = client.post(
         "/api/event/initialize",
         json={
             "event_name": event_name,
             "condition_key": condition_key,
             "rebuild": False,
-            "user_id": user_id,
         },
         headers={"x-admin-key": "test-admin"},
+    )
+    assert created.status_code == 200
+    created_payload = created.json()
+
+    locked = client.post(
+        f"/api/admin/events/{created_payload['event_id']}/material-lock",
+        headers={"x-admin-key": "test-admin"},
+        json={"locked": True},
+    )
+    assert locked.status_code == 200
+
+    repository = client.app.state.repository
+    participant = repository.get_participant_by_auth_user(user_id)
+    assigned = client.patch(
+        f"/api/admin/participants/{participant.id}",
+        headers={"x-admin-key": "test-admin"},
+        json={"condition_list": [condition_code_for_key(condition_key)]},
+    )
+    assert assigned.status_code == 200
+
+    response = client.post(
+        "/api/event/initialize",
+        json={
+            "event_name": created_payload["event"]["canonical_name"],
+            "condition_key": condition_key,
+            "rebuild": False,
+        },
     )
     assert response.status_code == 200
     return response.json()

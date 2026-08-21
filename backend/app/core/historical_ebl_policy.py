@@ -102,7 +102,7 @@ def historical_thinking_focus(
     historical_concept: str | None,
     reasoning_process: str | None,
 ) -> str:
-    """Resolve the task-authored focus without forcing every dimension into every error."""
+    """沿用可用的舊資料；沒有預設向度時交由當回合模型選擇。"""
 
     for candidate in (historical_concept, reasoning_process):
         normalized = (candidate or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -113,7 +113,7 @@ def historical_thinking_focus(
         for marker, resolved in HISTORICAL_THINKING_ALIASES.items():
             if marker in normalized:
                 return resolved
-    return "contextualization_or_comparison"
+    return "select_one_relevant_operation_from_current_error_and_dialogue"
 
 
 def primary_reasoning_move(state: str) -> str:

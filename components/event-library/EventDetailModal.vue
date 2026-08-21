@@ -72,7 +72,7 @@
                 <template v-else-if="participant">
                   <p class="text-base font-black text-[var(--admin-text)]">{{ participant.code }}</p>
                   <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">
-                    分派模式：{{ assignedConditionCodes.join('、') || '未設定' }}
+                    分派順序：{{ assignedConditionCodes.join(' → ') || '未設定' }}
                   </p>
                 </template>
                 <p v-else class="text-sm font-bold leading-6 text-[var(--admin-copy)]">

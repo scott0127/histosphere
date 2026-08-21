@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 
+OBJECTIVE_QUESTION_TYPES = frozenset({"cloze", "multiple_choice", "true_false"})
+QUESTION_CORRECTNESS_VALUES = frozenset({"correct", "partial", "incorrect", "unanswered"})
+
+
 def _normalized_text(value: Any) -> str:
     return " ".join(str(value if value is not None else "").strip().lower().split())
 
@@ -48,30 +52,26 @@ def _answer_by_question(response_payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _reasoning_process(question: dict[str, Any], provider_result: dict[str, Any]) -> str | None:
-    provider_value = provider_result.get("reasoning_process")
-    if provider_value:
-        return str(provider_value)
-    direct = question.get("reasoning_process")
-    if direct:
-        return str(direct)
-    values = question.get("reasoning_processes")
-    if isinstance(values, list) and values:
-        return str(values[0])
-    return None
-
-
 def enrich_task_judgement(
     task: Any,
     response_payload: dict[str, Any],
     judgement: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge LLM judgement with deterministic objective-question facts."""
+    """建立逐題診斷結果；客觀題用規則，簡答題採用 LLM 判定。"""
     evaluation_payload = getattr(task, "evaluation_payload", {})
     raw_questions = evaluation_payload.get("questions") if isinstance(evaluation_payload, dict) else []
     questions = [item for item in raw_questions or [] if isinstance(item, dict)]
     if not questions:
-        return judgement
+        provider_result = judgement.get("result")
+        return {
+            **{key: value for key, value in judgement.items() if key != "score"},
+            "result": (
+                str(provider_result)
+                if provider_result in QUESTION_CORRECTNESS_VALUES
+                else "incorrect"
+            ),
+            "question_results": [],
+        }
 
     provider_results = judgement.get("question_results")
     provider_by_id = {
@@ -89,18 +89,19 @@ def enrich_task_judgement(
             continue
         provider_result = provider_by_id.get(question_id, {})
         learner_answer = answer_by_id.get(question_id, legacy_answer)
+        question_type = str(question.get("type") or "short_answer")
         expected_answer = question.get("correct_answer")
         if not _has_value(learner_answer):
             correctness = "unanswered"
-        elif expected_answer is not None:
+        elif question_type in OBJECTIVE_QUESTION_TYPES:
+            if expected_answer is None:
+                raise ValueError(f"Objective question {question_id} has no correct_answer")
             correctness = "correct" if _answers_match(learner_answer, expected_answer) else "incorrect"
         else:
             provider_correctness = provider_result.get("correctness")
-            correctness = (
-                provider_correctness
-                if provider_correctness in {"correct", "partial", "incorrect", "unanswered", "ungraded"}
-                else "ungraded"
-            )
+            if provider_correctness not in QUESTION_CORRECTNESS_VALUES - {"unanswered"}:
+                raise ValueError(f"Open question {question_id} has no valid LLM judgement")
+            correctness = str(provider_correctness)
 
         error_code = provider_result.get("error_code")
         if correctness == "correct":
@@ -126,28 +127,37 @@ def enrich_task_judgement(
             {
                 "question_id": question_id,
                 "blank_id": str(question.get("blank_id") or question_id),
-                "question_type": str(question.get("type") or "short_answer"),
+                "question_type": question_type,
                 "prompt": str(question.get("prompt") or ""),
                 "source_text": question.get("source_text"),
                 "learner_answer": learner_answer,
                 "correctness": correctness,
                 "expected_answer": expected_answer,
                 "error_code": str(error_code) if error_code else None,
-                "historical_concept": (
-                    str(provider_result.get("historical_concept") or question.get("historical_concept"))
-                    if provider_result.get("historical_concept") or question.get("historical_concept")
-                    else None
-                ),
-                "reasoning_process": _reasoning_process(question, provider_result),
                 "evidence_ids": [str(item) for item in evidence_ids if item],
                 "classifier_confidence": provider_result.get("classifier_confidence"),
-                "teacher_review_status": str(
-                    provider_result.get("teacher_review_status") or "unreviewed"
-                ),
             }
         )
 
+    statuses = [item["correctness"] for item in question_results]
+    if not statuses:
+        provider_result = judgement.get("result")
+        overall_result = (
+            str(provider_result)
+            if provider_result in QUESTION_CORRECTNESS_VALUES
+            else "incorrect"
+        )
+    elif all(item == "correct" for item in statuses):
+        overall_result = "correct"
+    elif all(item == "unanswered" for item in statuses):
+        overall_result = "unanswered"
+    elif any(item in {"correct", "partial"} for item in statuses):
+        overall_result = "partial"
+    else:
+        overall_result = "incorrect"
+
     return {
-        **judgement,
+        **{key: value for key, value in judgement.items() if key != "score"},
+        "result": overall_result,
         "question_results": question_results,
     }

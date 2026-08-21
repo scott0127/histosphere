@@ -163,28 +163,19 @@ class InteractionRuntime:
 
     @property
     def source_content_available(self) -> bool:
-        """單次呼叫若允許選到 D2 以上，就提供核准證據供模型依最終 D 使用。"""
+        """模型可讀取內部判斷資料；Disclosure 只限制受測者實際看見的內容。"""
 
-        ceiling = self.prompt_disclosure_ceiling
-        return ceiling in {"D2", "D3", "D4"}
+        return self.target is not None
 
     def prompt_block(self) -> str:
         target = self.target
-        source_text = (
-            target.source_text
-            if target and self.source_content_available
-            else "WITHHELD: point to the task/source location only; do not state or infer its content."
-        )
+        source_text = target.source_text if target else None
         target_payload = {
             "question_id": target.question_id if target else None,
             "prompt": target.prompt if target else "No task item is attached.",
             "task_source_text": source_text if target else None,
             "learner_answer": target.learner_answer if target else None,
-            "expected_answer": (
-                "SERVER_SIDE_HIDDEN: never state, infer, or paraphrase the answer before RESOLVED."
-                if target
-                else None
-            ),
+            "expected_answer": target.expected_answer if target else None,
             "correctness": target.correctness if target else "ungraded",
             "error_code": target.error_code if target else None,
             "historical_concept": target.historical_concept if target else None,
@@ -197,7 +188,10 @@ class InteractionRuntime:
             f"Historical EBL policy version: {HISTORICAL_EBL_POLICY_VERSION}\n"
             f"Interaction mode: {self.interaction_mode}\n"
             f"Current target position: {self.target_sequence_number or 0}/{self.target_count}\n"
-            f"Current target: {json.dumps(target_payload, ensure_ascii=False)}"
+            f"Current target: {json.dumps(target_payload, ensure_ascii=False)}\n"
+            "Private evaluation context: task_source_text, expected_answer, and evidence_ids are available only "
+            "to assess learner progress. They do not authorize learner-visible disclosure; every response must "
+            "stay within the selected Disclosure level."
         )
         if self.interaction_mode == "standard_chat":
             return (

@@ -265,11 +265,7 @@ class PromptService:
                 {
                     "question_id": result.get("question_id"),
                     "prompt": result.get("prompt"),
-                    "source_text": (
-                        result.get("source_text")
-                        if runtime.source_content_available
-                        else "WITHHELD_UNTIL_D2"
-                    ),
+                    "source_text": result.get("source_text"),
                     "learner_answer": result.get("learner_answer"),
                     "correctness": result.get("correctness"),
                     "error_code": result.get("error_code"),
@@ -285,7 +281,8 @@ class PromptService:
         return (
             "The learner has already seen an inline right/wrong review. This module intentionally contains only the "
             "runtime-selected item so the completion cannot drift into another task error. Do not repeat the full task "
-            "summary. The interaction_runtime module is authoritative for the current and next target.\n"
+            "summary. Source content in this module is private evaluation context, not permission to expose it. "
+            "The interaction_runtime module is authoritative for the current and next target.\n"
             f"Judgement: {json.dumps(compact_judgement, ensure_ascii=False)}"
         )
 

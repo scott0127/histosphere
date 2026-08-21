@@ -84,3 +84,39 @@ test('student task logic keeps answer text stable', () => {
   assert.equal(taskLogic.taskAnswerValueToText(false), '否');
   assert.equal(taskLogic.taskAnswerValueToText(['A', 'B']), 'A, B');
 });
+
+test('student task review uses the backend per-question judgement', () => {
+  const openTask = {
+    ...sampleTask,
+    display_text: '革命原因：{{blank:q01}}',
+    evaluation_payload: {
+      questions: [{
+        id: 'q01',
+        blank_id: 'q01',
+        type: 'short_answer',
+        prompt: '請解釋兩項原因。',
+        correct_answer: '財政危機與代表權衝突',
+        required: true,
+      }],
+    },
+  };
+  const attempt = {
+    response_payload: {
+      answers: [{
+        question_id: 'q01',
+        blank_id: 'q01',
+        type: 'short_answer',
+        prompt: '請解釋兩項原因。',
+        value: '財政危機',
+      }],
+    },
+    judgement_payload: {
+      question_results: [{ question_id: 'q01', correctness: 'partial' }],
+    },
+  };
+
+  const [review] = taskLogic.buildTaskAnswerReviews(openTask, attempt);
+
+  assert.equal(review.status, 'partial');
+  assert.equal(review.answerText, '財政危機');
+});

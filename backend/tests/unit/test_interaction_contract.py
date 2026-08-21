@@ -485,7 +485,7 @@ def test_first_learner_reply_may_choose_d0_or_d1_only():
     runtime = build_interaction_runtime(condition, _attempt(), [greeting])
 
     assert runtime.allowed_disclosure_levels == ("D0", "D1")
-    assert runtime.source_content_available is False
+    assert runtime.source_content_available is True
 
     enforced = enforce_interaction_response(
         runtime,
@@ -504,15 +504,16 @@ def test_first_learner_reply_may_choose_d0_or_d1_only():
     assert enforced.metadata["learner_progress"] == "no_progress"
 
 
-def test_initial_ebl_prompt_withholds_source_and_expected_answer():
+def test_initial_ebl_prompt_uses_private_reference_without_relaxing_d0():
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
     prompt = runtime.prompt_block()
 
     assert runtime.prompt_disclosure_ceiling == "D0"
-    assert runtime.source_content_available is False
-    assert "第三等級反對每一等級各一票" not in prompt
-    assert "按人數" not in prompt
-    assert "SERVER_SIDE_HIDDEN" in prompt
+    assert runtime.source_content_available is True
+    assert "第三等級反對每一等級各一票" in prompt
+    assert "按人數" in prompt
+    assert "Private evaluation context" in prompt
+    assert "Use only facts already stated by the learner" in prompt
 
 
 def test_initial_disclosure_cannot_jump_past_prompt_ceiling():

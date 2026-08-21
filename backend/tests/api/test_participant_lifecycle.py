@@ -17,7 +17,7 @@ def test_admin_creates_participant_with_unique_code_and_auth_binding(client):
     created = response.json()
     assert created["code"] == "P006"
     assert created["auth_user_id"] == "participant-006"
-    assert created["condition_list"] == ["01", "04"]
+    assert created["condition_list"] == ["04", "01"]
     assert created["status"] == "active"
 
     duplicate_code = client.post(

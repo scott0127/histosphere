@@ -1,415 +1,138 @@
 # Histosphere
 
-Updated: 2026-06-09
+Histosphere 是用於碩士研究的歷史學習實驗系統，研究 Error-Based Learning（EBL）與 AI 歷史人物 Role-play 對 Historical Thinking 的影響。
 
-## English
+系統不是公開 SaaS。正式使用情境是研究者現場控制受測者帳號、Condition、事件素材與實驗流程。
 
-Histosphere is a master's thesis prototype that combines Error-Based Learning (EBL) with AI historical persona role-play.
-
-The current V1 system supports a full 2x2 experimental design:
-
-- Without EBL + Without AI Role-play
-- With EBL + Without AI Role-play
-- Without EBL + With AI Role-play
-- With EBL + With AI Role-play
-
-The core learning flow is:
+## 實驗流程
 
 ```text
-select experiment condition
--> input a historical event
--> fetch Wikipedia zh/en sources
--> create an event workspace
--> generate an editable cloze-style task
--> generate one primary historical persona
--> learner submits the task
--> backend produces a simple correct / partial / incorrect judgement
--> unlock conversation
--> chat follows the selected experiment condition
+Admin 建立並鎖定事件、Task 與唯一啟用人物
+-> Admin 綁定 Participant 帳號與 Condition 順序
+-> Learner 使用 Supabase Auth 登入
+-> 完成前置 Task
+-> Backend 建立逐題診斷結果
+-> AI 開始 Standard Chat 或 Historical EBL 對話
+-> 五分鐘倒數結束
+-> Learner 明確進入下一階段
 ```
 
-### Current Scope
+前置 Task 只用來產生後續對話的錯誤或知識缺口，不是前測、後測或 Historical Thinking outcome score。
 
-Implemented:
+## 2x2 Conditions
 
-- Nuxt frontend pages: `/`, `/task`, `/chat`, `/admin`.
-- FastAPI backend under `backend/app`.
-- Deterministic in-memory repository for tests only.
-- Supabase PostgREST repository for local or cloud runtime.
-- Supabase migration schema for the EBL + role-play design.
-- Wikipedia provider with `summary` and `full` fetch modes.
-- Task gate before chat.
-- One primary historical persona per event. Runtime generation uses LiteLLM, and teachers can edit the generated persona before formal experiment use.
-- Condition-based chat policy for generic chatbot vs historical persona and direct answer vs EBL scaffold.
-- Admin-key dashboard for experiment conditions, task text, persona profile, persona `prompt_profile`, and research logs.
+| 代號 | 身分呈現 | 互動方式 | 管理端簡稱 |
+| --- | --- | --- | --- |
+| 01 | 中性 AI 歷史助教 | Standard Chat | Baseline |
+| 02 | 中性 AI 歷史助教 | Historical EBL | AI Error-based Learning |
+| 03 | 歷史人物第一人稱 | Standard Chat | AI Role-play Learning |
+| 04 | 歷史人物第一人稱 | Historical EBL | EBL AI Role-play |
 
-Postponed:
+Learner 介面只顯示 01–04，不揭露 Condition 的實驗意義。02 與 04 共用相同 Historical EBL／Disclosure policy；04 只增加 persona renderer。
 
-- RAG chunking, embeddings, indexing, and vector retrieval.
-- `task_blanks` and `task_answers` scoring.
-- Controlled AI-generated inaccuracies.
-- Supabase Auth and RLS cleanup.
-- Task scoring normalization and formal research export.
+## 技術架構
 
-### Tech Stack
+- Frontend：Nuxt 4、Vue 3、Tailwind CSS
+- Backend：FastAPI、Pydantic、LiteLLM
+- Database/Auth：Supabase PostgreSQL、Supabase Auth
+- Local runtime：Docker Desktop、Supabase CLI
 
-- Frontend: Nuxt 4, Vue 3, Tailwind CSS, Nuxt Icon.
-- Backend: Python, FastAPI, Pydantic, httpx, LiteLLM.
-- Database: Supabase Postgres.
-- Tests: pytest.
+Supabase 是事件、Task、Persona、Participant、Session、Attempt、Conversation 與研究紀錄的 source of truth。Prompt 與 LLM runtime policy 由 backend 管理。
 
-### Environment
+## 本機啟動
 
-Copy `.env.example` to `.env` and set values as needed.
-
-Important backend variables:
-
-```env
-BACKEND_REPOSITORY=auto
-HISTOSPHERE_ADMIN_KEY=change-this-local-admin-key
-SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=...
-```
-
-Repository modes:
-
-- `BACKEND_REPOSITORY=in_memory`: tests only, requires `ALLOW_IN_MEMORY_REPOSITORY=true`.
-- `BACKEND_REPOSITORY=supabase`: require Supabase settings.
-- `BACKEND_REPOSITORY=auto`: deprecated for runtime; do not use for local development.
-
-### Local Development
-
-Install frontend dependencies:
+### 1. 安裝依賴
 
 ```powershell
 pnpm install
+backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
-Create backend virtual environment:
+### 2. 設定環境變數
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
+以 [.env.example](./.env.example) 建立 `.env`，至少確認：
 
-Run both frontend and backend:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `HISTOSPHERE_ADMIN_KEY`
+- `LLM_MODEL` 與對應 provider API key
+
+`HISTOSPHERE_ADMIN_KEY` 沒有程式預設值。正式 runtime 只使用 `LLM_MODEL` 指定的 provider/model，不自動切換 fallback provider。
+
+### 3. 啟動完整環境
 
 ```powershell
 pnpm dev:full
 ```
 
-This starts Nuxt and FastAPI with local Supabase. Before starting, it frees any existing processes listening on ports `3000` and `8000`. Runtime in-memory mode is forbidden. Docker Desktop must already be running; the script can start the local Supabase stack when Docker is ready.
+此指令會：
 
-To manually clean up dev server ports without starting the app:
+- 檢查 Docker daemon。
+- 釋放 frontend `3000` 與 backend `8000`。
+- 保留並檢查 Supabase 官方 local ports。
+- 重用健康的 Supabase stack，否則啟動必要服務。
+- 啟動 FastAPI 與 Nuxt。
 
-```powershell
-pnpm dev:cleanup
-```
+預設網址：
 
-Or run them manually:
+- Frontend：<http://127.0.0.1:3000>
+- Admin：<http://127.0.0.1:3000/admin>
+- Backend health：<http://127.0.0.1:8000/health>
+- Supabase API：<http://127.0.0.1:54321>
+- Supabase Studio：<http://127.0.0.1:54323>
 
-```powershell
-# Terminal 1
-cd backend
-$env:BACKEND_REPOSITORY="supabase"
-$env:SUPABASE_URL="http://127.0.0.1:54321"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+詳細啟動與 port 排錯請看 [local-development.md](docs/local-development.md)。
 
-# Terminal 2
-$env:NUXT_API_URL="http://127.0.0.1:8000"
-pnpm dev --host 127.0.0.1 --port 3000
-```
-
-Open:
-
-- Frontend: `http://127.0.0.1:3000`
-- Backend health: `http://127.0.0.1:8000/health`
-- Admin UI: `http://127.0.0.1:3000/admin`
-
-### Local Supabase
-
-Start Supabase:
+## 驗證
 
 ```powershell
-pnpm supabase:start
-```
-
-Reset local database with migrations:
-
-```powershell
-pnpm supabase:reset
-```
-
-Check status:
-
-```powershell
-pnpm supabase:status
-```
-
-Migration files (single source of truth: `supabase/migrations/`):
-
-- `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
-
-### Tests
-
-Backend:
-
-```powershell
-cd backend
-$env:BACKEND_REPOSITORY="in_memory"
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-Frontend build:
-
-```powershell
+pnpm test:frontend:unit
+pnpm test:backend
 pnpm build
 ```
 
-### API Summary
+需要完整本機環境時再執行：
 
-Core flow:
-
-- `GET /api/conditions`
-- `POST /api/event/initialize`
-- `GET /api/events`
-- `POST /api/tasks/{task_id}/submit`
-- `GET /api/conversations/{conversation_id}`
-- `POST /api/chat`
-
-Admin:
-
-- `GET /api/admin/snapshot`
-- `PATCH /api/admin/tasks/{task_id}`
-- `PATCH /api/admin/personas/{persona_id}`
-- `PATCH /api/admin/conditions/{condition_id}`
-- `GET /api/admin/research-logs`
-
-All admin routes require:
-
-```http
-x-admin-key: <HISTOSPHERE_ADMIN_KEY>
+```powershell
+pnpm test:supabase:schema
+pnpm test:runtime:smoke
 ```
 
-### Documentation
+## 文件管理
 
-- Backend contract: `docs/backend-architecture.md`
-- Backend directory structure: `docs/backend-directory-structure.md`
-- System design: `docs/system-design-ebl-roleplay.md`
-- Frontend audit: `docs/frontend-audit.md`
+### 三份主要管理文件
 
-### Maintenance Rules
+- [System Map](docs/histosphere-system-map.html)：各子系統與功能完成狀態。
+- [記憶.md](記憶.md)：已確認、會長期影響研究或工程的原則。
+- [Research Experiment Backlog](docs/research-experiment-backlog.md)：尚未定案、暫緩與已接受風險。
 
-- Documentation must be organized as a complete English version followed by a complete Traditional Chinese version.
-- Every API change must update `docs/backend-architecture.md`.
-- Every schema change must update both migration files and column comments.
-- Every prompt module change must update backend architecture docs.
-- Every frontend `$fetch('/api/...')` should have a matching documented endpoint.
-- RAG and controlled inaccuracies stay disabled until the research design is finalized.
+### 支援文件
 
-## 中文版
+- [architecture.md](docs/architecture.md)：Backend、API、runtime 與測試 contract。
+- [system-design.md](docs/system-design.md)：整體流程與 frontend/backend 責任。
+- [ebl-historical-roleplay-intervention-design.md](docs/ebl-historical-roleplay-intervention-design.md)：現行研究介入規格。
+- [persona-completion-flow.md](docs/persona-completion-flow.md)：Prompt 組裝與單次 completion pipeline。
+- [supabase-schema.md](docs/supabase-schema.md)：Database tables、columns、constraints 與 indexes。
+- [research-data-export.md](docs/research-data-export.md)：Session 回放、匯出與 token 統計。
+- [local-development.md](docs/local-development.md)：本機啟動、ports 與故障排除。
 
-Histosphere 是一個碩士論文 prototype，用來結合 Error-Based Learning (EBL) 與 AI historical persona role-play。
+完成大型研究或工程決策後，先更新 `記憶.md` 與相關規格，再同步 System Map 狀態；尚未定案內容只放進 backlog，避免多份文件互相矛盾。
 
-目前 V1 系統支援完整 2x2 實驗設計：
-
-- Without EBL + Without AI Role-play
-- With EBL + Without AI Role-play
-- Without EBL + With AI Role-play
-- With EBL + With AI Role-play
-
-核心學習流程是：
+## Repository 結構
 
 ```text
-選擇實驗條件
--> 輸入歷史事件
--> 抓取中英文 Wikipedia 來源
--> 建立事件工作區
--> 產生可編輯的 cloze-style task
--> 產生一位 primary historical persona
--> 學習者完成 task
--> 後端產生 correct / partial / incorrect 的初步判斷
--> 解鎖對話
--> 對話依照所選實驗條件運作
+backend/app/       FastAPI production code
+backend/tests/     Backend tests
+components/        Nuxt UI components
+composables/       Frontend state and workflows
+pages/             Nuxt routes
+utils/             Frontend API and pure helpers
+supabase/          Local Supabase config and migrations
+scripts/           Development and verification scripts
+docs/              Technical and research documentation
 ```
 
-### 目前範圍
-
-已完成：
-
-- Nuxt 前端頁面：`/`、`/task`、`/chat`、`/admin`。
-- FastAPI 後端，位於 `backend/app`。
-- 僅供測試使用的 deterministic in-memory repository。
-- local/cloud runtime 可用的 Supabase PostgREST repository。
-- 對應 EBL + role-play 設計的 Supabase migration schema。
-- Wikipedia provider，支援 `summary` 與 `full` 兩種抓取模式。
-- 聊天前必須完成 task 的 task gate。
-- 每個事件預設一位 primary historical persona。Runtime generation 使用 LiteLLM，正式實驗前教師可再編輯生成的人物資料。
-- 依實驗條件切換 generic chatbot / historical persona，以及 direct answer / EBL scaffold。
-- 使用 admin key 保護的後台，可管理實驗條件、task 文字、persona profile、persona `prompt_profile` 與 research logs。
-
-暫緩：
-
-- RAG chunking、embedding、indexing、vector retrieval。
-- `task_blanks` 與 `task_answers` 的細格計分。
-- controlled AI-generated inaccuracies。
-- Supabase Auth 與 RLS 的正式整理。
-- task scoring 正規化與正式研究資料匯出。
-
-### 技術棧
-
-- 前端：Nuxt 4、Vue 3、Tailwind CSS、Nuxt Icon。
-- 後端：Python、FastAPI、Pydantic、httpx、LiteLLM。
-- 資料庫：Supabase Postgres。
-- 測試：pytest。
-
-### 環境變數
-
-複製 `.env.example` 成 `.env`，再依需求設定。
-
-重要後端變數：
-
-```env
-BACKEND_REPOSITORY=auto
-HISTOSPHERE_ADMIN_KEY=change-this-local-admin-key
-SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=...
-```
-
-Repository 模式：
-
-- `BACKEND_REPOSITORY=in_memory`：僅供測試使用，必須搭配 `ALLOW_IN_MEMORY_REPOSITORY=true`。
-- `BACKEND_REPOSITORY=supabase`：強制使用 Supabase，缺少設定時會報錯。
-- `BACKEND_REPOSITORY=auto`：runtime 已棄用，本地開發不要使用。
-
-### 本地開發
-
-安裝前端套件：
-
-```powershell
-pnpm install
-```
-
-建立後端 virtual environment：
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-同時啟動前後端：
-
-```powershell
-pnpm dev:full
-```
-
-這個指令會使用本地 Supabase 啟動 Nuxt 與 FastAPI。啟動前會先釋放正在占用 `3000` 與 `8000` 的既有程序。Runtime 禁止 in-memory mode。Docker Desktop 必須先開好；只要 Docker ready，script 可以在需要時啟動本地 Supabase stack。
-
-如果只想手動清掉 dev server ports、不啟動 app：
-
-```powershell
-pnpm dev:cleanup
-```
-
-或手動分開啟動：
-
-```powershell
-# Terminal 1
-cd backend
-$env:BACKEND_REPOSITORY="supabase"
-$env:SUPABASE_URL="http://127.0.0.1:54321"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-
-# Terminal 2
-$env:NUXT_API_URL="http://127.0.0.1:8000"
-pnpm dev --host 127.0.0.1 --port 3000
-```
-
-開啟：
-
-- 前端：`http://127.0.0.1:3000`
-- 後端健康檢查：`http://127.0.0.1:8000/health`
-- Admin UI：`http://127.0.0.1:3000/admin`
-
-### 本地 Supabase
-
-啟動 Supabase：
-
-```powershell
-pnpm supabase:start
-```
-
-用 migration 重設本地資料庫：
-
-```powershell
-pnpm supabase:reset
-```
-
-檢查狀態：
-
-```powershell
-pnpm supabase:status
-```
-
-Migration 檔案（唯一來源：`supabase/migrations/`）：
-
-- `supabase/migrations/202605130001_ebl_roleplay_schema.sql`
-
-### 測試
-
-後端：
-
-```powershell
-cd backend
-$env:BACKEND_REPOSITORY="in_memory"
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-前端 build：
-
-```powershell
-pnpm build
-```
-
-### API 摘要
-
-核心流程：
-
-- `GET /api/conditions`
-- `POST /api/event/initialize`
-- `GET /api/events`
-- `POST /api/tasks/{task_id}/submit`
-- `GET /api/conversations/{conversation_id}`
-- `POST /api/chat`
-
-Admin：
-
-- `GET /api/admin/snapshot`
-- `PATCH /api/admin/tasks/{task_id}`
-- `PATCH /api/admin/personas/{persona_id}`
-- `PATCH /api/admin/conditions/{condition_id}`
-- `GET /api/admin/research-logs`
-
-所有 admin routes 都需要：
-
-```http
-x-admin-key: <HISTOSPHERE_ADMIN_KEY>
-```
-
-### 文件
-
-- 後端 contract：`docs/backend-architecture.md`
-- 後端目錄結構：`docs/backend-directory-structure.md`
-- 系統設計：`docs/system-design-ebl-roleplay.md`
-- 前端 audit：`docs/frontend-audit.md`
-
-### 維護規則
-
-- 文件必須採用「完整英文版在前，完整中文版在後」的結構。
-- 每次 API 修改，都要更新 `docs/backend-architecture.md`。
-- 每次 schema 修改，都要同步更新兩份 migration 與欄位註解。
-- 每次 prompt module 修改，都要更新後端架構文件。
-- 每個前端 `$fetch('/api/...')` 都應該在文件中有對應 endpoint。
-- RAG 與 controlled inaccuracies 在研究設計確認前保持 disabled。
+不將 `.env`、正式 API keys、Supabase service-role key 或真實 Admin key 提交到 Git。

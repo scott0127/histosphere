@@ -1,133 +1,101 @@
 # Research Experiment Backlog
 
-更新日期：2026-08-09
+更新日期：2026-08-20
 
-## 文件目的
+## 文件用途
 
-本系統用於研究者現場控制的碩士實驗，不是公開 SaaS。此文件區分：近期必須完成、需要先詳細設計、已接受的低風險，以及暫緩研究功能。避免依照一般大型產品假設過度設計。
+本文件是 Histosphere 唯一的詳細待辦清單，只保存尚未定案、暫緩或已接受風險的事項。
 
-## 已完成的近期實作
+- 已確認的長期原則寫入根目錄 `記憶.md`。
+- 子系統完成狀態寫入 `docs/histosphere-system-map.html`。
+- 已完成項目不在本文件重複維護。
+- 系統是研究者現場控制的碩士實驗，不依公開 SaaS 的威脅與規模過度設計。
 
-### 1. Chat 非同步 operation 與重複送出保護
+## 正式收案前必須定案
 
-Learner 訊息會先保存成可持久化 operation；前端使用 SSE 取得保存、生成、驗證與完成狀態，重新整理後可用相同 request id 查詢或重試。
+### 1. 正式事件與素材內容
 
-最小實作目標：
+- 確認正式事件清單。目前簡報列出霧社事件、甲午戰爭、黑船事件到明治維新、法國大革命；系統現有素材包含鴉片戰爭，兩者尚未對齊。
+- 完成每個事件的前置 Task 文本、題目、參考答案、rubric 與必要史實審查。
+- 確認每個事件唯一啟用的歷史人物、人物知識邊界與肖像。
+- Pilot 後鎖定正式素材，確保同一批受測者使用相同內容。
 
-- learner message 先保存，再建立可持久化 chat operation。
-- SSE 提供等待狀態；operation status endpoint 支援重新連線。
-- 同一 conversation 同一 operation 不得因連點或重新整理重複建立正式 model message。
-- 失敗時保留 learner message、錯誤狀態及可重試資訊。
-- 不引入 Redis、Celery、Kafka 或大型 queue framework；目前單機研究環境使用資料庫狀態加 process-local worker 即可。
+### 2. Historical Thinking outcome 測量
 
-目前 SSE 只傳送通過後端驗證後的顯示 delta；DB 中的 operation/message 仍是 authoritative state。
+前置 Task 只建立後續對話的錯誤，不是前測、後測或 outcome score。正式成效測量仍需與教授確認：
 
-### 2. 最小 Provider 失敗與重試
+- 是否採 HAT 式短史料建構題，並使用同事件的新史料。
+- rubric 要評哪些 Historical Thinking 能力，以及史實知識是否分開計分。
+- 專家審查、少量 think-aloud pilot、盲評與抽樣複評方式。
+- 施測時點、題數、時間、評分者訓練與評分者一致性。
 
-需要處理的最小情境：
+### 3. Historical EBL 完成與錯誤切換規則
 
-- timeout
-- rate limit
-- provider 5xx / 暫時不可用
-- authentication / invalid request
+- `RESOLVED` 是否一律要求正確答案、至少一項證據或理由，以及反思；或依題型設定不同 success criteria。
+- 正確但缺乏論證時應停在哪個 EBL state。
+- `unanswered` 題目應依原順序處理、排到最後，或不進入錯誤佇列。
+- D4 後 learner 主動略過所產生的 `unresolved_after_max_support` 是否可返回，以及實驗結束時如何呈現。
 
-行為：
+### 4. 正式實驗程序
 
-- timeout、rate limit、provider 5xx：同一 model 最多自動 retry 一次。
-- authentication、invalid request：不自動 retry，直接顯示固定錯誤。
-- 自動 retry 或使用者按「重試」都沿用相同 operation id，不新增第二則 learner message。
-- 前端顯示明確失敗狀態與重試按鈕，不建立複雜的 retry policy UI。
-- 保存 provider、model、attempt count、failure category、token 與 latency；正式研究禁止自動切換 Provider。
+- 每位 participant 的 rounds、Condition 配對、事件配對與 counterbalancing 表。
+- Task 與 Chat 是否各自計時；目前程式只將 Chat 的五分鐘倒數視為正式階段計時。
+- 輪間休息、後測、訪談與整體實驗時長。
+- Participant 排除、缺漏資料與中途中止的處理規則。
 
-### 3. 必要測試與檢查
+### 5. Engagement 與質性資料
 
-- 已有後端 API／service、前端純函式／API contract、Provider failure、重複 operation 與四種 Condition regression tests。
-- 已有唯讀 Supabase OpenAPI schema smoke、runtime smoke 與 Nuxt build 指令。
-- Disposable database migration-up 與自動化 Vue DOM／瀏覽器 E2E 因目前單機研究規模暫緩；正式變更仍需人工瀏覽器驗收。
+- Role-play engagement／interaction experience 的量表或訪談題綱。
+- 是否記錄沉浸感、人物可信度、認知投入與互動負荷。
+- 量化結果、完整對話與訪談資料如何以 participant code 合併。
 
-### 4. Admin 分派與 Condition 執行順序
+## 重要但暫緩
 
-- `participants.condition_list` 同時保存可執行 Conditions 與 Admin 指定順序，不新增 assignment table。
-- Learner 只會看到進行中的 Condition，或清單中第一個尚未完成的 Condition。
-- 後端拒絕跳號；存在進行中的正式 Session 時必須先續接。
-- Admin test Session 不計入 learner 進度、完成判斷或正式研究匯出。
+### 受控 AI 歷史錯誤與 Debrief
 
-### 5. Session 五分鐘階段完成
+目前正式功能保持停用。未來若作為共同後測，需要先定義：
 
-- Chat 準備完成時由後端自動開始固定五分鐘倒數。
-- 重整或重新登入會沿用原本結束時間，不會重新取得五分鐘。
-- 時間到後 Session 標記為完成，Learner 看到「本階段已結束」並主動進入下一階段。
-- 不提供 Learner「提前完成實驗」按鈕；Admin 可重置倒數或封存舊 Session 後重建。
+- 研究者撰寫並審查的錯誤內容與版本。
+- learner 要進行 detection、correction 還是 evidence-based rebuttal。
+- 計分方式、錯誤暴露紀錄與結束後 Debrief。
+- 不允許模型自行臨時捏造待測錯誤。
 
-## 待詳細討論後實作
+### Learner 是否顯示事件介紹
 
-### Task 每題評分與答案稽核
+目前 learner 首頁與事件詳情只顯示事件名稱、年代、插圖、人物及 Task 狀態，不顯示事件介紹。正式收案前需確認背景介紹是否會改變先備知識與 Task 作答。
 
-此項會直接影響研究資料語意，不能只補幾個欄位。
+### 中性史料卡
 
-需要決定：
+尚需定義史料卡的來源、引用、evidence ID、可見時機與互動方式。RAG 未啟用前，可先由研究者管理少量固定史料。
 
-- 填空、選擇、是非是否採完全比對、正規化比對或 accepted answers。
-- 多個可接受答案、同義詞、錯字與標點如何處理。
-- AI judgement 和 deterministic scoring 的責任邊界。
-- 每題保存 learner answer、正確答案版本、結果、判定方法與人工覆核。
-- answer key 修改後，舊 attempt 應指向哪一版答案。
-- 匯出時如何呈現每題分數與 misconception。
+### Persona 多狀態肖像
 
-在規格確認前，維持現有完整 answer bundle 與整體 judgement。
+固定人物肖像已支援；同一人物的聆聽、回顧或追問等多狀態圖片暫緩。若實作，必須維持同一人物外貌，不增加新的實驗操弄。
 
-### Disclosure D0／D1 的資訊邊界
-
-需要確認在 D0／D1 時，`correct_answer`、`source_text` 與 evidence 是否可進入模型 context。現在已有相鄰升降、結構化輸出及洩漏檢查，但單次呼叫仍需足夠資訊判斷 learner progress；這項規則會直接改變 EBL 的漸進揭露強度。
-
-### Historical EBL 的完成標準
-
-需要決定：
-
-- `RESOLVED` 是否只看答案，或必須包含證據、理由與反思。
-- 正確但沒有論證時應停在哪個階段。
-- D4 後仍未成功時，是繼續互動、由 learner 選擇下一個錯誤，或記錄 `unresolved_after_max_support`。
-
-### 前後測與 Historical Thinking 測量整合
-
-前後測目前維持外部工具，透過 participant code 與正式匯出合併。正式收案前仍需決定：
-
-- 施測時點與操作流程。
-- 量表或 rubric、Historical Thinking 維度與計分方式。
-- 缺漏資料與無效樣本的處理。
-- 外部資料與系統 Session 的正式合併規則。
-
-### 研究資料匯出（已完成）
-
-Admin 可查看單一 Session 的 Task、完整逐句對話、時間、訊息／來回／Token 統計，並匯出只含 participant code 的 JSON／CSV。素材與完整 Prompt 快照附 SHA-256；詳細定義見 `docs/research-data-export.md`。
+## 技術性暫緩
 
 ### RAG
 
-維持暫緩。待討論來源授權、chunking、retrieval scope、citation UI、無證據行為及與 persona knowledge boundary 的關係。
+暫不實作。未來需先決定來源授權、chunking、retrieval scope、citation UI、無證據行為，以及與 persona knowledge boundary 的關係。
 
-### 受控歷史錯誤
+### 進階 Material Version Schema
 
-維持 disabled。待討論錯誤類型、適用 condition、暴露紀錄、修正時機與 debrief，避免模型任意捏造錯誤。
+目前使用 material lock、研究 metadata 與 prompt/material hash 已足以支援單一批次實驗。只有多批次收案、素材修改後重跑或需要視覺化版本比較時，才建立完整版本表。
 
-### Material Version Schema
+### 多機背景工作佇列
 
-目前不重要，因研究者會在正式實驗前凍結最終版本，確保所有受測者使用相同程式與素材。仍保留為待討論項目，以防未來需要多批次實驗、修改後重跑或稽核舊資料。
-
-## 已接受的低優先風險
-
-### Participant Session Ownership 強化
-
-受測者會在研究者控制的電腦與流程中操作，不以惡意猜測其他 session id 為威脅模型。保留現有 Auth-to-participant mapping 與 condition assignment enforcement；暫不建立大型 authorization framework。
+目前單機、單一受測者環境以資料庫 operation 狀態、polling 與 process-local worker 恢復即可。Redis、Celery、Kafka 或多 instance claim 暫不需要。
 
 ### Multi-admin Roles
 
-目前不需要。現行部署只有研究者與指導教授，共用一組 Admin key 即可。
+目前研究者與指導教授共用一組 Admin key。只有需要個別撤銷、角色權限或逐人 audit 時才重新評估。
 
-Multi-admin roles 原本指：
+## 已採暫行方案
 
-- 每位管理員有獨立帳號。
-- 可分 researcher、reviewer、read-only 等權限。
-- 可撤銷單一管理員而不更換所有人的密碼。
-- Audit log 能指出是哪一位管理員修改資料。
+### Disclosure D0／D1 私有資訊邊界
 
-只有在人數增加、需要個別撤銷權限、需要區分可編輯/唯讀，或論文稽核必須追蹤個人操作時才需要重新評估。
+單次 structured completion 可在 private context 讀取 `correct_answer`、`source_text` 與 evidence IDs 來判斷 learner progress，但 learner-visible 回覆必須遵守 Disclosure Level。D0 不新增史實；D1 只指出檢查位置。正解洩漏時後端拒絕候選並重生，同時保存 audit 紀錄。
+
+### Task Judge
+
+填空、選擇與是非由 backend 規則判定；開放式 `short_answer` 由 LLM 判定。每題只使用 `correct`、`partial`、`incorrect`、`unanswered`，不產生數值分數、人工覆核狀態或 Historical Thinking 六向度分類。

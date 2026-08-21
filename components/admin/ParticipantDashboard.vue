@@ -88,11 +88,11 @@
 
             <div class="flex flex-wrap gap-2">
               <span
-                v-for="condition in row.assignedConditions"
+                v-for="(condition, index) in row.assignedConditions"
                 :key="condition.code"
                 class="inline-flex min-h-9 items-center rounded-full border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-3 text-xs font-black text-[var(--admin-coffee)]"
               >
-                {{ condition.code }} {{ condition.label }}
+                {{ index + 1 }}. {{ condition.code }} {{ condition.label }}
               </span>
               <button
                 v-if="!row.assignedConditions.length"
@@ -235,7 +235,8 @@
             </label>
 
             <fieldset>
-              <legend class="admin-label">分派模式</legend>
+              <legend class="admin-label">分派模式與執行順序</legend>
+              <p class="admin-caption mt-1 text-xs font-bold">勾選模式後，可在下方調整受測者必須依序完成的順序。</p>
               <div class="mt-2 grid gap-2 sm:grid-cols-2">
                 <label
                   v-for="condition in conditionOptions"
@@ -250,6 +251,34 @@
                   />
                   {{ condition.code }} {{ condition.label }}
                 </label>
+              </div>
+              <div v-if="createConditionCodes.length" class="mt-3 grid gap-2">
+                <div
+                  v-for="(code, index) in createConditionCodes"
+                  :key="code"
+                  class="flex min-h-11 items-center gap-3 rounded-[9px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-3"
+                >
+                  <span class="w-8 text-xs font-black text-[var(--admin-coffee)]">{{ index + 1 }}</span>
+                  <span class="min-w-0 flex-1 text-sm font-black text-[var(--admin-text)]">{{ code }} {{ conditionName(code) }}</span>
+                  <button
+                    type="button"
+                    class="admin-button-secondary inline-flex h-8 w-8 items-center justify-center p-0"
+                    :disabled="index === 0"
+                    title="往前一個階段"
+                    @click="moveCondition(createConditionCodes, index, -1)"
+                  >
+                    <Icon name="mdi:arrow-up" class="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    class="admin-button-secondary inline-flex h-8 w-8 items-center justify-center p-0"
+                    :disabled="index === createConditionCodes.length - 1"
+                    title="往後一個階段"
+                    @click="moveCondition(createConditionCodes, index, 1)"
+                  >
+                    <Icon name="mdi:arrow-down" class="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </fieldset>
           </div>
@@ -324,7 +353,8 @@
             </label>
 
             <fieldset>
-              <legend class="admin-label">分派模式</legend>
+              <legend class="admin-label">分派模式與執行順序</legend>
+              <p class="admin-caption mt-1 text-xs font-bold">已進行中的模式請勿任意移除；順序變更會立即影響下一個可開始的模式。</p>
               <div class="mt-2 grid gap-2 sm:grid-cols-2">
                 <label
                   v-for="condition in conditionOptions"
@@ -339,6 +369,34 @@
                   />
                   {{ condition.code }} {{ condition.label }}
                 </label>
+              </div>
+              <div v-if="draftConditionCodes.length" class="mt-3 grid gap-2">
+                <div
+                  v-for="(code, index) in draftConditionCodes"
+                  :key="code"
+                  class="flex min-h-11 items-center gap-3 rounded-[9px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-3"
+                >
+                  <span class="w-8 text-xs font-black text-[var(--admin-coffee)]">{{ index + 1 }}</span>
+                  <span class="min-w-0 flex-1 text-sm font-black text-[var(--admin-text)]">{{ code }} {{ conditionName(code) }}</span>
+                  <button
+                    type="button"
+                    class="admin-button-secondary inline-flex h-8 w-8 items-center justify-center p-0"
+                    :disabled="index === 0"
+                    title="往前一個階段"
+                    @click="moveCondition(draftConditionCodes, index, -1)"
+                  >
+                    <Icon name="mdi:arrow-up" class="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    class="admin-button-secondary inline-flex h-8 w-8 items-center justify-center p-0"
+                    :disabled="index === draftConditionCodes.length - 1"
+                    title="往後一個階段"
+                    @click="moveCondition(draftConditionCodes, index, 1)"
+                  >
+                    <Icon name="mdi:arrow-down" class="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </fieldset>
           </div>
@@ -502,6 +560,14 @@ const closeEditor = () => {
   editingRow.value = null;
   draftAuthUserId.value = '';
   draftConditionCodes.value = [];
+};
+
+const moveCondition = (codes: string[], index: number, direction: -1 | 1) => {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= codes.length) return;
+  const [code] = codes.splice(index, 1);
+  if (!code) return;
+  codes.splice(targetIndex, 0, code);
 };
 
 const saveEditor = () => {

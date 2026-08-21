@@ -153,6 +153,7 @@ const {
   participant,
   participantError,
   assignedConditionCodes,
+  currentAssignedConditionCode,
   progressByEvent,
   resetForAuthScope,
   startCondition: startExperimentCondition,
@@ -166,10 +167,11 @@ const detailConditionProgress = computed(() => {
 
 const visibleConditions = computed(() => {
   if (isAdminMode.value) return conditions.value;
-  const assigned = new Set(assignedConditionCodes.value);
+  const currentCode = currentAssignedConditionCode.value;
+  if (!currentCode) return [];
   return conditions.value.filter((condition) => {
     const code = studentConditionCode(condition);
-    return Boolean(code && assigned.has(code));
+    return code === currentCode;
   });
 });
 

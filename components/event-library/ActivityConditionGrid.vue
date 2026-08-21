@@ -79,7 +79,7 @@
     </div>
 
     <div v-else class="rounded-[10px] border border-dashed border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-6 text-center text-sm font-semibold text-[var(--admin-copy)] shadow-sm">
-      尚未載入活動條件，請重新整理或確認後端 condition 設定。
+      目前沒有可開始的活動；可能尚未分派模式，或已完成全部分派順序。
     </div>
   </section>
 </template>

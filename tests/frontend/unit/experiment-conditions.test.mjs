@@ -71,7 +71,7 @@ test('condition sorting is canonical and does not trust backend input order', ()
   assert.deepEqual(sorted.map((condition) => conditions.experimentConditionCode(condition)), ['01', '02', '03', '04']);
 });
 
-test('participant dashboard normalizes assigned conditions and maps session stages by condition key', () => {
+test('participant dashboard preserves assigned order and maps session stages by condition key', () => {
   const snapshot = {
     events: [],
     conditions: [],
@@ -112,12 +112,12 @@ test('participant dashboard normalizes assigned conditions and maps session stag
 
   const [row] = dashboard.buildParticipantDashboardRows(snapshot, [{ id: 'auth-1' }]);
   assert.deepEqual(row.assignedConditions, [
-    { code: '02', label: 'AI Error-based learning' },
     { code: '04', label: 'EBL AI Role-play' },
+    { code: '02', label: 'AI Error-based learning' },
   ]);
   assert.deepEqual(row.conditionProgress.map((item) => [item.code, item.stage]), [
-    ['02', 'chat'],
     ['04', 'task'],
+    ['02', 'chat'],
   ]);
   assert.equal(row.currentStage, 'chat');
   assert.equal(row.latestActiveSession.id, 'session-02');

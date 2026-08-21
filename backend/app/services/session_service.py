@@ -61,6 +61,8 @@ class SessionService:
 
         progress: list[UserProgressItem] = []
         for stored_session in self.repository.list_sessions_for_user(user_id.strip()):
+            if stored_session.is_admin_test:
+                continue
             session = expire_session_if_due(self.repository, stored_session)
             task = self.repository.get_latest_event_task(session.event_id)
             attempt = self.repository.get_task_attempt_for_session(session.id, task.id if task else None)

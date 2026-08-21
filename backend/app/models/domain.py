@@ -229,7 +229,7 @@ class Participant(BaseModel):
         auth_user_id: Supabase Auth user id 對應。
         display_name: 管理端顯示名稱。
         cohort: 實驗批次或群組。
-        condition_list: 指派給受測者的 learner-visible condition code。
+        condition_list: 指派給受測者的 learner-visible condition code，陣列順序即執行順序。
         status: 受測者研究狀態。
         notes: 管理端備註。
         metadata: 彈性 metadata。

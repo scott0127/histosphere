@@ -32,7 +32,7 @@ from app.api.deps import (
     require_admin_key,
 )
 from app.core.config import get_settings
-from app.core.experiment_conditions import sort_condition_codes
+from app.core.experiment_conditions import normalize_condition_sequence
 from app.core.interaction_contract import build_interaction_runtime
 from app.core.research_audit import build_change_payload
 from app.crud.protocols import RepositoryProtocol
@@ -587,7 +587,7 @@ def create_participant(
         auth_user_id=auth_user_id,
         display_name=request.display_name,
         cohort=request.cohort,
-        condition_list=sort_condition_codes(request.condition_list),
+        condition_list=normalize_condition_sequence(request.condition_list),
         status="active",
         notes=request.notes,
         metadata=request.metadata,
@@ -712,7 +712,7 @@ def update_participant(
                 )
 
     if "condition_list" in updates and updates["condition_list"] is not None:
-        updates["condition_list"] = sort_condition_codes(updates["condition_list"])
+        updates["condition_list"] = normalize_condition_sequence(updates["condition_list"])
 
     for key, value in updates.items():
         setattr(participant, key, value)

@@ -109,37 +109,28 @@ class PersonaListPayload(BaseModel):
 
 
 class QuestionJudgementPayload(BaseModel):
-    """Optional LLM classification for one task question."""
+    """LLM 對一題開放式作答的即時診斷判定。"""
 
     question_id: str
     learner_answer: Any = None
-    correctness: Literal["correct", "partial", "incorrect", "unanswered", "ungraded"]
-    expected_answer: Any = None
+    correctness: Literal["correct", "partial", "incorrect", "unanswered"]
     error_code: str | None = None
-    historical_concept: str | None = None
-    reasoning_process: str | None = None
-    evidence_ids: list[str] = Field(default_factory=list)
     classifier_confidence: float | None = None
-    teacher_review_status: str = "unreviewed"
 
 
 class TaskJudgementPayload(BaseModel):
-    """Task 作答的輕量判斷結果。
-
-    完整逐題評分後續再正規化。
+    """Task 作答的診斷結果，用於建立後續對話的學習機會。
 
     Attributes:
-        result: 判斷結果（``"correct"`` / ``"partial"`` / ``"incorrect"``）。
+        result: 整體診斷狀態；後端會再依逐題結果重新計算。
         misconception_summary: Learner misconception 摘要。
-        feedback: 給 learner 的回饋文字。
-        score: 數值分數（可選）。
+        feedback: Task 處理摘要，不作為前後測分數。
         provider: 執行判斷的 LLM provider 名稱。
     """
 
-    result: Literal["correct", "partial", "incorrect"]
+    result: Literal["correct", "partial", "incorrect", "unanswered"]
     misconception_summary: str
     feedback: str
-    score: float | None = None
     provider: str = "litellm"
     question_results: list[QuestionJudgementPayload] = Field(default_factory=list)
 

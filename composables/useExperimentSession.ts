@@ -17,6 +17,7 @@ import {
   fetchUserProgress,
   initializeEventMaterial,
 } from '~/utils/histosphereApi';
+import { experimentConditionCodeByKey } from '~/utils/experimentConditions';
 
 export type LocalConditionProgress = {
   status: 'not_started' | UserProgressStatus;
@@ -69,6 +70,32 @@ export const useExperimentSession = (authStorageScope: ComputedRef<string>) => {
     return participant.value?.condition_list?.length
       ? participant.value.condition_list
       : [];
+  });
+
+  const currentAssignedConditionCode = computed(() => {
+    const assigned = assignedConditionCodes.value;
+    if (!assigned.length) return null;
+
+    const completedCodes = new Set<string>();
+    const activeProgress: Array<{ code: string; updatedAt: string }> = [];
+    for (const eventProgress of Object.values(progressByEvent.value)) {
+      for (const [conditionKey, progress] of Object.entries(eventProgress)) {
+        if (!progress) continue;
+        const code = experimentConditionCodeByKey[conditionKey as ConditionKey];
+        if (!code || !assigned.includes(code)) continue;
+        if (progress.status === 'completed') {
+          completedCodes.add(code);
+        } else if (progress.status !== 'archived') {
+          activeProgress.push({ code, updatedAt: progress.updatedAt });
+        }
+      }
+    }
+
+    if (activeProgress.length) {
+      activeProgress.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+      return activeProgress[0]?.code || null;
+    }
+    return assigned.find((code) => !completedCodes.has(code)) || null;
   });
 
   const progressStorageKey = () => `histosphere-progress:${authStorageScope.value}`;
@@ -259,6 +286,7 @@ export const useExperimentSession = (authStorageScope: ComputedRef<string>) => {
     participantError,
     authUserId,
     assignedConditionCodes,
+    currentAssignedConditionCode,
     progressByEvent,
     resetForAuthScope,
     startCondition,

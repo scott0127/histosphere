@@ -131,7 +131,7 @@ export const taskAnswerValueToText = (value: TaskAnswerValue) => {
   return value || '';
 };
 
-export type TaskAnswerReviewStatus = 'correct' | 'incorrect' | 'unanswered' | 'ungraded';
+export type TaskAnswerReviewStatus = 'correct' | 'partial' | 'incorrect' | 'unanswered';
 
 export type TaskAnswerReview = {
   question: TaskQuestion;
@@ -197,17 +197,29 @@ const taskAttemptAnswers = (attempt: TaskAttempt): TaskStudentAnswer[] => {
 export const buildTaskAnswerReviews = (task: EventTask, attempt: TaskAttempt): TaskAnswerReview[] => {
   const answers = taskAttemptAnswers(attempt);
   const answerByQuestionId = new Map(answers.map((answer) => [answer.question_id, answer]));
+  const rawQuestionResults = attempt.judgement_payload?.question_results;
+  const judgementByQuestionId = new Map(
+    (Array.isArray(rawQuestionResults) ? rawQuestionResults : [])
+      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+      .map((item) => [String(item.question_id || ''), item]),
+  );
 
   return normalizeTaskQuestions(task).map((question, index) => {
     const answer = answerByQuestionId.get(question.id)
       || answers.find((item) => item.blank_id === (question.blank_id || question.id));
     const value = answer?.value ?? null;
-    let status: TaskAnswerReviewStatus = 'ungraded';
+    const backendStatus = judgementByQuestionId.get(question.id)?.correctness;
+    let status: TaskAnswerReviewStatus;
 
     if (!hasTaskAnswerValue(value)) {
       status = 'unanswered';
+    } else if (['correct', 'partial', 'incorrect'].includes(String(backendStatus))) {
+      status = backendStatus as TaskAnswerReviewStatus;
     } else if (question.correct_answer !== undefined && question.correct_answer !== null) {
       status = taskAnswerMatches(value, question.correct_answer) ? 'correct' : 'incorrect';
+    } else {
+      // 正式流程一定有後端判定；此分支只讓舊資料安全顯示。
+      status = 'incorrect';
     }
 
     return {

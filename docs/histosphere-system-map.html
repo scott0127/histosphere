@@ -1539,12 +1539,12 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">客觀題 deterministic 比對 + LLM misconception/enrichment</span>
+          <span class="function-name">客觀題規則判定 + 開放題 LLM 診斷</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
-        <div class="function" data-status="critical">
-          <span class="function-name">每題正式計分語意<span class="function-note text-small">目前先擱置，但正式收案前必須定案 accepted answers、同義詞、錯字、人工覆核與答案版本</span></span>
-          <span class="status text-small"><span class="dot"></span>最高優先待做</span>
+        <div class="function" data-status="done">
+          <span class="function-name">四種逐題診斷狀態與 learner 回顧<span class="function-note text-small">只使用 correct、partial、incorrect、unanswered；結果用於後續學習佇列，不作為 Historical Thinking outcome score</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="not-needed">
           <span class="function-name">背景工作耐久性<span class="function-note text-small">單機、單一受測者可由持久化 processing 狀態與 polling 重掛；多 instance queue 暫不實作</span></span>
@@ -1627,7 +1627,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>未完成</span>
         </div>
         <div class="function" data-status="partial">
-          <span class="function-name">Historical Thinking operator 與 evidence IDs<span class="function-note text-small">可從 judgement 帶入，但缺研究者 GUI、正式 success criteria 與資料完整性約束</span></span>
+          <span class="function-name">Historical Thinking 操作、evidence IDs 與 success criteria<span class="function-note text-small">LLM 已可依當回合錯誤與對話選擇操作；backend 限制 evidence boundary，但正式 success criteria 與研究者設定介面仍未定案</span></span>
           <span class="status text-small"><span class="dot"></span>部分完成</span>
         </div>
         <div class="function" data-status="missing">
@@ -1922,10 +1922,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
     <div class="question-grid">
       <article class="question-card">
         <span class="question-status">待與教授確認 01</span>
-        <h3 class="question-title">Task 每題正式計分語意</h3>
-        <p class="question-detail"><strong>目前：</strong>系統保存每題原始作答與整體 LLM judgement，但尚未把每題正誤當成正式研究分數。</p>
-        <p class="question-detail"><strong>需決定：</strong>同義詞、錯字、部分正確、accepted answers，以及 deterministic、LLM 與人工覆核各自負責什麼。</p>
-        <p class="question-detail"><strong>影響：</strong>決定 Task 成績與錯誤分類能否作為可信的研究變項。</p>
+        <h3 class="question-title">未作答題目的後續處理</h3>
+        <p class="question-detail"><strong>目前：</strong>Task Judge 已用四種狀態建立診斷結果；任何不是 correct 的題目目前都會依 Task 順序進入後續錯誤佇列。</p>
+        <p class="question-detail"><strong>需決定：</strong>unanswered 應維持原順序、排到錯題之後，或不作為 Historical EBL 目標。</p>
+        <p class="question-detail"><strong>影響：</strong>決定五分鐘內優先處理 learner 已出現的錯誤，還是先補尚未嘗試的知識缺口。</p>
       </article>
 
       <article class="question-card">
@@ -2138,13 +2138,13 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "系統保存作答草稿、阻止漏答必填題，提交後在背景評分並持續查詢結果。",
         "學生提交後重新整理頁面，仍能回到「評分處理中」並取得最終結果。"
       ]],
-      ["客觀題 deterministic 比對 + LLM misconception/enrichment", [
-        "題目對錯先由固定規則判定，LLM 再補充可能的錯誤觀念與後續討論資訊。",
-        "是非題由布林答案判定，LLM 則指出學生可能把明治維新理解成單一原因。"
+      ["客觀題規則判定 + 開放題 LLM 診斷", [
+        "填空、選擇與是非由後端固定規則判定；開放式簡答才交由 LLM 依題目、參考答案與 rubric 判斷。",
+        "是非題直接比對布林答案；需要解釋因果的簡答題則可由 LLM 判為部分正確。"
       ]],
-      ["每題正式計分語意", [
-        "此項目前先擱置，但正式收案前必須完成；基本正解比對已存在，同義答案、錯字容許、人工覆核與答案版本仍未定案。",
-        "「巴士底獄」是否應視為「巴士底監獄」的正確同義答案，目前沒有完整規則。"
+      ["四種逐題診斷狀態與 learner 回顧", [
+        "每題只顯示正確、部分正確、錯誤或未作答，並保存 learner 原始答案；這些狀態用來安排後續對話，不是前後測分數。",
+        "開放題回答到部分原因時顯示「部分正確」，02／04 再把這項缺口轉成 Historical EBL 對話。"
       ]],
       ["背景工作耐久性", [
         "作答會先保存到資料庫；後端中斷後，受測者再次開啟或輪詢時會重新掛回評分，已足以支援目前的單機實驗。",
@@ -2202,9 +2202,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "AI 回覆中的術語標記可在 hover 時顯示說明，但這些說明目前沒有和主要回覆一起接受答案揭露檢查。",
         "例如正文避開「培里」，標記說明仍可能直接寫出「培里率艦抵達浦賀」，因而提前揭露題目答案。"
       ]],
-      ["Historical Thinking operator 與 evidence IDs", [
-        "評分結果可指定歷史思考操作與證據編號，但尚無研究者 GUI、正式成功條件與完整性驗證。",
-        "q01 可指定「因果分析」與證據 e03，但研究者目前不容易在後台檢查設定是否齊全。"
+      ["Historical Thinking 操作、evidence IDs 與 success criteria", [
+        "Task Judge 不再固定分類六向度；02／04 的 LLM 會依目前錯誤與 learner 回覆選擇合適操作，backend 仍限制可用證據與狀態轉換。",
+        "學生把單一原因當成完整解釋時，AI 可在該回合選擇因果比較；何時算完成仍要由正式 success criteria 定義。"
       ]],
       ["D4 後「嘗試下一個錯誤」按鈕與 unresolved_after_max_support 紀錄", [
         "學生在最高協助層級仍未解決錯誤時，尚無自行切換下一項錯誤及保存未解決狀態的功能。",

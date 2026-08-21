@@ -251,7 +251,7 @@ def client(monkeypatch) -> TestClient:
         Participant(
             code="PTEST",
             auth_user_id="participant-001",
-            condition_list=["01", "02", "03", "04"],
+            condition_list=["04"],
         )
     )
     fake_provider = FakeWikipediaProvider()

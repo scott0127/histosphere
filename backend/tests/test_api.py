@@ -295,16 +295,35 @@ def test_task_submit_creates_attempt_conversation_messages_and_logs(client):
 
 
 def test_task_draft_and_session_progress_are_recoverable(client):
-    initialized = client.post(
+    created = client.post(
         "/api/event/initialize",
         json={
             "event_name": "霧社事件",
             "condition_key": "ebl_roleplay",
             "rebuild": False,
-            "user_id": "participant-001",
         },
         headers={"x-admin-key": "test-admin"},
-    ).json()
+    )
+    assert created.status_code == 200
+    created_payload = created.json()
+
+    locked = client.post(
+        f"/api/admin/events/{created_payload['event_id']}/material-lock",
+        headers={"x-admin-key": "test-admin"},
+        json={"locked": True},
+    )
+    assert locked.status_code == 200
+
+    initialized_response = client.post(
+        "/api/event/initialize",
+        json={
+            "event_name": created_payload["event"]["canonical_name"],
+            "condition_key": "ebl_roleplay",
+            "rebuild": False,
+        },
+    )
+    assert initialized_response.status_code == 200
+    initialized = initialized_response.json()
 
     draft = client.patch(
         f"/api/tasks/{initialized['task']['id']}/draft",

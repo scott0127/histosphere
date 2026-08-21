@@ -80,6 +80,21 @@ test('participant dashboard marks a completed non-archived session as completed'
   assert.equal(rows[0].currentSessions[0].session.status, 'completed');
 });
 
+test('participant dashboard preserves the admin-defined condition order', () => {
+  const rows = dashboard.buildParticipantDashboardRows({
+    events: [sampleEvent],
+    conditions: [],
+    participants: [{ ...participant, condition_list: ['04', '01', '04'] }],
+    sessions: [],
+    research_logs: [],
+  }, []);
+
+  assert.deepEqual(
+    rows[0].assignedConditions.map((condition) => condition.code),
+    ['04', '01'],
+  );
+});
+
 test('participant dashboard hides archived participants until the admin requests them', () => {
   const activeRow = {
     participant,

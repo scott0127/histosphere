@@ -118,6 +118,15 @@ def sort_condition_codes(codes: list[ConditionCode]) -> list[ConditionCode]:
     ]
 
 
+def normalize_condition_sequence(codes: list[ConditionCode]) -> list[ConditionCode]:
+    """Deduplicate condition codes while preserving the Admin-defined order."""
+    normalized: list[ConditionCode] = []
+    for code in codes:
+        if code not in normalized:
+            normalized.append(code)
+    return normalized
+
+
 def validate_condition_behavior(
     condition_key: str,
     *,

@@ -1,8 +1,8 @@
 # Histosphere System Design
 
-Updated: 2026-08-09
+Updated: 2026-08-20
 
-Histosphere is a thesis prototype for studying how Error-Based Learning (EBL) and AI historical persona role-play can support historical thinking and AI literacy.
+Histosphere is a thesis prototype for studying how Error-Based Learning (EBL) and AI historical persona role-play can support historical thinking. Possible transfer to AI literacy is deferred exploratory work, not an assumed outcome.
 
 This document describes the system-level design, experimental conditions, frontend/backend responsibilities, postponed design questions, and recommended development order.
 
@@ -39,8 +39,8 @@ Admin creates and reviews historical event / Task / one active persona
 
 | | Without EBL | With EBL |
 |---|---|---|
-| Without AI Role-play | Learner completes a task, then uses a generic ChatGPT-style assistant. The assistant may directly answer. | Learner completes a task, then uses a generic tutor chatbot. The tutor guides thinking, argumentation, and source interpretation before giving a direct answer. |
-| With AI Role-play | Learner completes a task, then chats with AI historical personas. The persona can give an immersive direct answer. | Learner completes a task, then chats with AI historical personas. The persona uses task misconceptions to scaffold historical thinking and does not directly give the answer before self-correction. |
+| Without AI Role-play | Learner completes a task, then uses a generic Standard Chat assistant. It answers event-related requests naturally without running an EBL sequence. | Learner completes a task, then uses a generic Historical EBL assistant that works through one Task error at a time. |
+| With AI Role-play | Learner completes a task, then uses the same Standard Chat policy rendered as one fixed historical persona. | Learner receives the same Historical EBL act as the generic EBL condition, rendered in the fixed persona's first-person voice. |
 
 Condition keys:
 
@@ -67,7 +67,7 @@ Backend:
 - Learner initialization enforces Auth-to-participant mapping, ordered Condition assignment and active-Session resume; only Admin can create or lock new event materials.
 - Event material uses reversible archive/restore instead of learner-facing permanent deletion.
 - Task submit persists a processing attempt and returns `202`; judgement, conversation and greeting complete asynchronously behind a polling endpoint.
-- Chat service switches generic/persona and direct/EBL behavior from condition and loads bounded multi-turn history from DB messages.
+- Chat service switches generic/persona and Standard Chat/Historical EBL behavior from condition and loads bounded multi-turn history from DB messages.
 - `persona_prompt_v1` and canonical prompt modules are shared by runtime, Admin preview and non-persisting Admin dry-run.
 - A fixed five-minute timer starts when Chat becomes ready, survives refresh, and is enforced by the backend; Admin may reset it.
 - Research logs record event/task/conversation/message actions.
@@ -107,7 +107,7 @@ V1 stores all learner response data in:
 
 - `task_attempts.response_payload`
 
-V1 task display is story-first. `event_tasks.display_text` may include inline blank tokens such as `{{blank:q-cause}}`. Each token maps to one item in `event_tasks.evaluation_payload.questions` through `blank_id` or `id`. This keeps blank-level scoring postponed while still allowing the frontend to render cloze, multiple-choice, true/false, and short-answer blanks inside the historical story.
+V1 task display is story-first. `event_tasks.display_text` may include inline blank tokens such as `{{blank:q-cause}}`. Each token maps to one item in `event_tasks.evaluation_payload.questions` through `blank_id` or `id`, allowing the frontend to render cloze, multiple-choice, true/false, and short-answer controls inside the historical story.
 
 V1 stores LLM judgement in:
 
@@ -119,9 +119,18 @@ Expected judgement shape:
 {
   "result": "partial",
   "misconception_summary": "...",
-  "feedback": "..."
+  "feedback": "...",
+  "question_results": [
+    {
+      "question_id": "q01",
+      "correctness": "partial",
+      "learner_answer": "..."
+    }
+  ]
 }
 ```
+
+Objective questions are judged by backend rules; open `short_answer` questions are judged by the configured LLM. The only per-question statuses are `correct`, `partial`, `incorrect`, and `unanswered`. These values build the later learning queue and are not Historical Thinking outcome scores.
 
 Submission is asynchronous:
 
@@ -240,7 +249,7 @@ Implemented core tables:
 - `messages`
 - `research_logs`
 
-Postponed tables:
+Existing but not used by the current response bundle:
 
 - `knowledge_chunks`
 - `task_blanks`
@@ -248,26 +257,9 @@ Postponed tables:
 
 ## Postponed Design Questions
 
-### `task_blanks`
+### `task_blanks` and `task_answers`
 
-Needs teacher/research discussion:
-
-- how to score each blank.
-- how to accept synonyms.
-- how to store partial correctness.
-- how to connect blank-level answers to EBL error categories.
-
-### `task_answers`
-
-V1 uses `task_attempts.response_payload`.
-
-Future normalized answers may store:
-
-- blank id.
-- learner answer.
-- correctness.
-- feedback.
-- error type.
+V1 keeps question definitions in `event_tasks.evaluation_payload.questions[]`, learner answers in `task_attempts.response_payload`, and diagnostic results in `task_attempts.judgement_payload`. The normalized legacy tables are not required for the current single-study workflow and should not be expanded without a concrete query or scale requirement.
 
 ### RAG
 
@@ -300,10 +292,12 @@ Implemented minimum scope: Admin locks reviewed event material before learner us
 
 The following change research semantics and require agreement with the supervisor before implementation:
 
-- Task per-question scoring: accepted synonyms, typos, partial credit, deterministic/LLM/manual responsibilities and answer-key version.
-- Disclosure D0/D1 boundary: whether `correct_answer`, `source_text` or evidence may enter model context at those levels.
 - Historical EBL completion: whether `RESOLVED` requires a correct answer plus evidence/reason/reflection, and what happens after unsuccessful D4 support.
+- Treatment of `unanswered` Task items in the later error queue.
 - Pre/post-test and Historical Thinking measurement: instrument, timing, dimensions, scoring, missing data and participant-code merge protocol.
+- Final events, Task content, experiment timing, counterbalancing and engagement measures.
+
+Disclosure D0/D1 currently uses the approved minimum policy: private answer/evidence context is available for progress judgement, while learner-visible output is restricted and audited. Detailed pending decisions are maintained only in `research-experiment-backlog.md`.
 
 ### Unspecified Requirements
 

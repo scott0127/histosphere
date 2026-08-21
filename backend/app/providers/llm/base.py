@@ -80,7 +80,7 @@ class LLMProvider(Protocol):
 
         Returns:
             dict[str, Any]: 包含 result、misconception_summary、
-                feedback、score、provider。
+                feedback、provider 與開放題逐題判定。
         """
         ...
 

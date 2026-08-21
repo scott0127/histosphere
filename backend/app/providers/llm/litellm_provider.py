@@ -175,10 +175,7 @@ class LiteLLMProvider:
         task: EventTask,
         response_payload: dict,
     ) -> dict:
-        """根據 task 設定與 learner 作答產生初步 judgement。
-
-        評估重點：historical accuracy、evidence use、causal reasoning
-        與 learner misconceptions。
+        """判定開放題並提供診斷摘要；客觀題由 service 規則覆蓋。
 
         Args:
             event: 關聯事件。
@@ -187,20 +184,26 @@ class LiteLLMProvider:
 
         Returns:
             dict: 包含 result、misconception_summary、feedback、
-                score、provider、model。
+                provider、model 與開放題逐題判定。
         """
         run = await self.runner.run_json(
             schema=TaskJudgementPayload,
             task_name="judge_task_attempt",
             system_prompt=self._system_prompt(),
             user_prompt=(
-                "Judge the learner response for this historical thinking task.\n"
-                "Use result = correct, partial, or incorrect. Do not over-grade vague answers.\n"
-                "Focus on historical accuracy, evidence use, causal reasoning, and learner misconceptions.\n"
-                "Return JSON with keys: result, misconception_summary, feedback, score, provider, and question_results. "
-                "question_results must contain one object per task question with question_id, learner_answer, correctness, "
-                "expected_answer, error_code, historical_concept, reasoning_process, evidence_ids, classifier_confidence, "
-                "and teacher_review_status. Use unclassified when an error type is uncertain.\n\n"
+                "Diagnose this task response only to create learning opportunities for the later conversation. "
+                "This is not a pre-test, post-test, or historical-thinking outcome score.\n"
+                "For each short_answer question, use its prompt, reference answer, and question-level or task-level "
+                "rubric to choose exactly one "
+                "correctness value: correct, partial, incorrect, or unanswered. Use partial only when the response "
+                "contains relevant correct content but does not satisfy all required points. Use unanswered only when "
+                "the response is empty.\n"
+                "Do not classify Historical Thinking dimensions or choose the later EBL dialogue operation here. "
+                "The backend judges cloze, multiple_choice, and true_false questions deterministically, so omit those "
+                "questions from question_results.\n"
+                "Return JSON with keys: result, misconception_summary, feedback, provider, and question_results. "
+                "Each question_results item must contain question_id, learner_answer, correctness, error_code, and "
+                "classifier_confidence. Use error_code=unclassified when the error type is uncertain.\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Task:\n{task.model_dump()}\n\n"
                 f"Learner response payload:\n{response_payload}"

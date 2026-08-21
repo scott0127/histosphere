@@ -60,9 +60,10 @@ const reviewFor = (questionId: string) => reviewsByQuestionId.value.get(question
 
 const statusLabel = (status?: TaskAnswerReviewStatus) => {
   if (status === 'correct') return '答對';
+  if (status === 'partial') return '部分正確';
   if (status === 'incorrect') return '答錯';
   if (status === 'unanswered') return '未作答';
-  return '待討論';
+  return '未作答';
 };
 
 const answerClass = (status?: TaskAnswerReviewStatus) => [
@@ -71,7 +72,9 @@ const answerClass = (status?: TaskAnswerReviewStatus) => [
     ? 'border-[var(--admin-danger)] text-[var(--admin-text)]'
     : status === 'correct'
       ? 'border-[var(--admin-success)] text-[var(--admin-text)]'
-      : 'border-[var(--admin-coffee-muted)] text-[var(--admin-copy)]',
+      : status === 'partial'
+        ? 'border-[var(--admin-coffee)] text-[var(--admin-text)]'
+        : 'border-[var(--admin-coffee-muted)] text-[var(--admin-copy)]',
 ];
 
 const statusClass = (status: TaskAnswerReviewStatus) => [
@@ -80,6 +83,8 @@ const statusClass = (status: TaskAnswerReviewStatus) => [
     ? 'border-[var(--admin-success)] bg-[var(--admin-success-soft)] text-[var(--admin-success)]'
     : status === 'incorrect'
       ? 'border-[var(--admin-danger)] bg-[var(--admin-danger-soft)] text-[var(--admin-danger)]'
-      : 'border-[var(--admin-border)] bg-[var(--admin-surface-muted)] text-[var(--admin-copy)]',
+      : status === 'partial'
+        ? 'border-[var(--admin-coffee)] bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]'
+        : 'border-[var(--admin-border)] bg-[var(--admin-surface-muted)] text-[var(--admin-copy)]',
 ];
 </script>

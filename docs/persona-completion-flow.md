@@ -1,6 +1,6 @@
 # Persona Completion Flow
 
-最後更新：2026-08-09
+最後更新：2026-08-20
 
 ## 目的
 
@@ -11,7 +11,7 @@
 - 四種 condition 使用相同的組裝流程，只替換兩個 independent prompt module。
 - role-play 回覆必須受人物的時間、地理、社會位置與知識邊界約束。
 - non-role-play 回覆不得冒充歷史人物。
-- EBL 與 direct 是互動策略差異，不改變史實準確性要求。
+- Historical EBL 與 Standard Chat 是互動策略差異，不改變史實準確性要求。
 - 多輪內容以資料庫中的 `messages` 為 authoritative history，不信任前端自行提交的 history。
 - RAG 目前停用；沒有檢索結果時，模型不得暗示已檢索外部史料。
 
@@ -47,26 +47,28 @@ flowchart LR
 
 ## Prompt Module Tree
 
-`PromptService` 依下列固定順序組裝 module：
+`PromptService` 使用下列 module tree；實際線性順序以後端 `assemble_chat_modules` 為準：
 
 ```mermaid
 flowchart TD
     ROOT["Persona completion prompt"]
     ROOT --> G["general_prompt"]
-    ROOT --> I1["independent_1_prompt"]
     ROOT --> I2["independent_2_prompt"]
     ROOT --> EC["event_context"]
     ROOT --> LT["learner_task"]
+    ROOT --> IR["interaction_runtime"]
     ROOT --> CH["conversation_history"]
-    ROOT --> PC["persona_context"]
+    ROOT --> I1["independent_1_prompt"]
+    ROOT --> PC["persona_event_context"]
     ROOT --> SC["source_context"]
+    ROOT --> TI["turn_intent"]
     ROOT --> RP["runtime_policy"]
     ROOT --> UM["user_message"]
 
     I1 --> I1A["generic assistant"]
     I1 --> I1B["historical persona"]
-    I2 --> I2A["direct"]
-    I2 --> I2B["EBL historical thinking"]
+    I2 --> I2A["Standard Chat"]
+    I2 --> I2B["Historical EBL"]
 ```
 
 若 persona profile 的 `deliberate_error_enabled` 為 `true`，pipeline 會插入 `deliberate_error_slot`。目前沒有經研究審核的 error contract，因此即使該旗標開啟，也不得自行引入錯誤內容。
@@ -104,16 +106,18 @@ flowchart TD
 
 控制 interaction mode：
 
-- `direct`：直接回答，再補必要脈絡，不刻意延遲答案。
-- `EBL historical thinking`：以錯誤作為反思起點，透過 evidence、contextualization、causation、change and continuity、perspective、significance、argumentation 與 discussion 引導修正；在 learner 尚未找到可辯護方向前，不直接揭露完整結論。
+- `Standard Chat`：自然回答 learner 實際提出的事件相關問題，不主動執行 Historical EBL sequence，也不因 Task 錯誤自動公布答案。
+- `Historical EBL`：以目前錯誤作為反思起點，依 learner 最新回覆選擇一項合適的 Historical Thinking 操作，再使用 Disclosure Level 控制資訊量；在 learner 尚未找到可辯護方向前，不直接揭露完整結論。
 
 #### 動態 context modules
 
 - `event_context`：事件名稱、描述、年代與脈絡。
 - `learner_task`：作答內容與 judgement，只供後續討論，不主動重複完整答案摘要。
+- `interaction_runtime`：目前錯誤、合法 EBL states、Disclosure 範圍、evidence boundary 與 transition 規則。
 - `conversation_history`：由 DB 讀取的 bounded history。
-- `persona_context`：角色資料與 `persona_prompt_v1` contract。
+- `persona_event_context`：角色資料、事件當下情境與 `persona_prompt_v1` contract。
 - `source_context`：RAG 檢索內容；目前明確標示 RAG disabled。
+- `turn_intent`：區分 opening 與 learner 回覆後的 conversation turn。
 - `runtime_policy`：禁止揭露 hidden prompt、hash、system metadata 或 chain-of-thought。
 - `user_message`：當次 learner 輸入，固定置於最後。
 

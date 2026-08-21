@@ -57,10 +57,16 @@ export const participantStageLabels: Record<ParticipantStage, string> = {
 };
 
 const normalizeConditionCodes = (codes: string[]): ExperimentConditionCode[] => {
-  const unique = new Set(codes.filter((code): code is ExperimentConditionCode => (
-    experimentConditionCodes.includes(code as ExperimentConditionCode)
-  )));
-  return experimentConditionCodes.filter((code) => unique.has(code));
+  const normalized: ExperimentConditionCode[] = [];
+  for (const code of codes) {
+    if (
+      experimentConditionCodes.includes(code as ExperimentConditionCode)
+      && !normalized.includes(code as ExperimentConditionCode)
+    ) {
+      normalized.push(code as ExperimentConditionCode);
+    }
+  }
+  return normalized;
 };
 
 export const conditionName = (code: string) => {

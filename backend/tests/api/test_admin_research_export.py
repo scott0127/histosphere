@@ -2,6 +2,8 @@
 
 import json
 
+from app.core.experiment_conditions import condition_code_for_key
+
 
 ADMIN_HEADERS = {"x-admin-key": "test-admin"}
 
@@ -23,6 +25,15 @@ def _prepare_conversation(client):
         json={"locked": True},
     )
     assert locked.status_code == 200
+
+    repository = client.app.state.repository
+    participant = repository.get_participant_by_auth_user("participant-001")
+    assigned = client.patch(
+        f"/api/admin/participants/{participant.id}",
+        headers=ADMIN_HEADERS,
+        json={"condition_list": [condition_code_for_key("no_ebl_no_roleplay")]},
+    )
+    assert assigned.status_code == 200
 
     initialized = client.post(
         "/api/event/initialize",

@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from app.core.experiment_conditions import condition_code_for_key
 from app.core.research_reproducibility import record_session_material_snapshot
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, ResearchLog
+from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, Participant, ResearchLog
 from app.providers.llm.base import LLMProvider
 from app.providers.wikipedia_provider import WikipediaProvider
 from app.schemas.requests import EventInitializeRequest
@@ -48,8 +48,9 @@ class EventInitializationService:
         if not condition or not condition.active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
 
+        participant = None
         if not admin_override:
-            self._validate_participant_assignment(request.user_id, condition.condition_key)
+            participant = self._validate_participant_assignment(request.user_id, condition.condition_key)
 
         existing = self.repository.find_event_by_name(event_name)
         archived = self.repository.find_event_by_name(event_name, include_archived=True)
@@ -66,6 +67,11 @@ class EventInitializationService:
             event = existing
             if not admin_override:
                 learner_session = self._learner_session_for_event(request.user_id, event.id)
+                self._validate_participant_execution_order(
+                    participant,
+                    condition.condition_key,
+                    learner_session,
+                )
                 if not learner_session and not event.materials_locked_at:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
@@ -181,7 +187,9 @@ class EventInitializationService:
         matching_sessions = [
             expire_session_if_due(self.repository, session)
             for session in self.repository.list_sessions_for_user((user_id or "").strip())
-            if session.event_id == event_id and session.status != "archived"
+            if session.event_id == event_id
+            and session.status != "archived"
+            and not session.is_admin_test
         ]
         if any(session.status == "completed" for session in matching_sessions):
             raise HTTPException(
@@ -200,7 +208,7 @@ class EventInitializationService:
             None,
         )
 
-    def _validate_participant_assignment(self, user_id: str | None, condition_key: str) -> None:
+    def _validate_participant_assignment(self, user_id: str | None, condition_key: str) -> Participant:
         """Enforce the Auth user to participant condition assignment at session creation."""
         normalized_user_id = (user_id or "").strip()
         if not normalized_user_id:
@@ -226,6 +234,71 @@ class EventInitializationService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Condition {assigned_code} is not assigned to participant {participant.code}.",
+            )
+        return participant
+
+    def _validate_participant_execution_order(
+        self,
+        participant: Participant | None,
+        condition_key: str,
+        learner_session: ExperimentSession | None,
+    ) -> None:
+        """只允許接續目前 Session，或開始 Admin 分派順序中的下一個 Condition。"""
+        if participant is None or not participant.auth_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Participant mapping is required before starting an experiment.",
+            )
+
+        requested_code = condition_code_for_key(condition_key)
+        formal_sessions = [
+            expire_session_if_due(self.repository, session)
+            for session in self.repository.list_sessions_for_user(participant.auth_user_id)
+            if session.status != "archived" and not session.is_admin_test
+        ]
+        active_sessions = [
+            session
+            for session in formal_sessions
+            if session.status in {"initialized", "task_submitted", "conversation_started"}
+        ]
+        if active_sessions:
+            current_session = max(active_sessions, key=lambda session: session.updated_at)
+            current_code = condition_code_for_key(current_session.condition_key_snapshot)
+            if (
+                learner_session is None
+                or learner_session.id != current_session.id
+                or requested_code != current_code
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Participant {participant.code} must resume Condition {current_code} "
+                        "before starting another assigned condition."
+                    ),
+                )
+            return
+
+        completed_codes = {
+            condition_code_for_key(session.condition_key_snapshot)
+            for session in formal_sessions
+            if session.status == "completed"
+        }
+        expected_code = next(
+            (code for code in participant.condition_list if code not in completed_codes),
+            None,
+        )
+        if expected_code is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Participant {participant.code} has completed all assigned conditions.",
+            )
+        if requested_code != expected_code:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Participant {participant.code} must complete Condition {expected_code} "
+                    f"before Condition {requested_code}."
+                ),
             )
 
     def _ensure_task(self, event: Event, sources) -> EventTask:

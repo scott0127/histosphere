@@ -586,7 +586,7 @@ def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):
     assert first.status_code == 200
     first_payload = first.json()
 
-    resumed = learner_initialize(client, materials["event"]["canonical_name"], "no_ebl_roleplay")
+    resumed = learner_initialize(client, materials["event"]["canonical_name"], "ebl_roleplay")
     assert resumed.status_code == 200
     assert resumed.json()["session_id"] == first_payload["session_id"]
     assert resumed.json()["condition"]["condition_key"] == "ebl_roleplay"
@@ -605,6 +605,67 @@ def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):
     assert blocked.status_code == 409
     assert "already been completed" in blocked.json()["detail"]
     assert len(repository.list_sessions_for_user("participant-001")) == 1
+
+
+def test_learner_must_follow_admin_assigned_condition_order(client):
+    first_material = admin_initialize(client, "分派順序第一事件", "no_ebl_no_roleplay")
+    second_material = admin_initialize(client, "分派順序第二事件", "no_ebl_roleplay")
+    for material in (first_material, second_material):
+        assert client.post(
+            f"/api/admin/events/{material['event_id']}/material-lock",
+            headers=ADMIN_HEADERS,
+            json={"locked": True},
+        ).status_code == 200
+
+    repository = client.app.state.repository
+    participant = repository.get_participant_by_auth_user("participant-001")
+    participant.condition_list = ["01", "03"]
+    repository.save_participant(participant)
+
+    skipped = learner_initialize(
+        client,
+        second_material["event"]["canonical_name"],
+        "no_ebl_roleplay",
+    )
+    assert skipped.status_code == 409
+    assert "must complete Condition 01 before Condition 03" in skipped.json()["detail"]
+
+    first = learner_initialize(
+        client,
+        first_material["event"]["canonical_name"],
+        "no_ebl_no_roleplay",
+    )
+    assert first.status_code == 200
+
+    blocked_while_active = learner_initialize(
+        client,
+        second_material["event"]["canonical_name"],
+        "no_ebl_roleplay",
+    )
+    assert blocked_while_active.status_code == 409
+    assert "must resume Condition 01" in blocked_while_active.json()["detail"]
+
+    resumed = learner_initialize(
+        client,
+        first_material["event"]["canonical_name"],
+        "no_ebl_no_roleplay",
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["session_id"] == first.json()["session_id"]
+
+    completed_session = repository.get_session(first.json()["session_id"])
+    completed_session.status = "completed"
+    completed_session.completed_at = utc_now()
+    completed_session.completion_reason = "timer_elapsed"
+    repository.save_session(completed_session)
+
+    second = learner_initialize(
+        client,
+        second_material["event"]["canonical_name"],
+        "no_ebl_roleplay",
+    )
+    assert second.status_code == 200
+    assert second.json()["condition"]["condition_key"] == "no_ebl_roleplay"
 
 
 def test_admin_restart_archives_old_runtime_and_preserves_research_data(client):
