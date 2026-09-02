@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import type { EventWithPersonas, ExperimentCondition } from '~/types';
 import {
   archiveAdminEvent,
+  fetchAdminSnapshot,
   fetchConditions as requestConditions,
   fetchEvents as requestEvents,
 } from '~/utils/histosphereApi';
@@ -24,10 +25,15 @@ export const useEventLibrary = () => {
     }
   };
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (adminKey?: string | null) => {
     loadingEvents.value = true;
     try {
-      events.value = await requestEvents();
+      if (adminKey) {
+        const snapshot = await fetchAdminSnapshot(adminKey);
+        events.value = snapshot.events.filter((event) => !event.archived_at);
+      } else {
+        events.value = await requestEvents();
+      }
       listError.value = null;
     } catch (e) {
       console.error('Failed to fetch events:', e);
@@ -37,15 +43,15 @@ export const useEventLibrary = () => {
     }
   };
 
-  const refreshEvents = async () => {
+  const refreshEvents = async (adminKey?: string | null) => {
     isRefreshing.value = true;
-    await fetchEvents();
+    await fetchEvents(adminKey);
     isRefreshing.value = false;
   };
 
   const archiveEvent = async (adminKey: string, eventId: string) => {
     await archiveAdminEvent(adminKey, eventId);
-    await fetchEvents();
+    await fetchEvents(adminKey);
   };
 
   const findEvent = (eventId: string | null | undefined) => {
@@ -53,8 +59,8 @@ export const useEventLibrary = () => {
     return events.value.find((event) => event.id === eventId) || null;
   };
 
-  const loadEventLibrary = async () => {
-    await Promise.all([fetchConditions(), fetchEvents()]);
+  const loadEventLibrary = async (adminKey?: string | null) => {
+    await Promise.all([fetchConditions(), fetchEvents(adminKey)]);
   };
 
   return {

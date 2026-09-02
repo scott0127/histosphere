@@ -52,6 +52,32 @@ def _answer_by_question(response_payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _all_correct_fallback_snapshot(evaluation_payload: dict[str, Any]) -> dict[str, Any] | None:
+    """凍結研究者預先核定的第三方錯誤，避免後續修改 Task 影響既有 session。"""
+
+    raw = evaluation_payload.get("all_correct_fallback")
+    if not isinstance(raw, dict):
+        return None
+    incorrect_claim = str(raw.get("incorrect_claim") or "").strip()
+    correct_interpretation = str(raw.get("correct_interpretation") or "").strip()
+    if not incorrect_claim or not correct_interpretation:
+        return None
+    evidence_ids = raw.get("evidence_ids")
+    return {
+        "id": str(raw.get("id") or "all-correct-fallback"),
+        "incorrect_claim": incorrect_claim,
+        "correct_interpretation": correct_interpretation,
+        "source_text": raw.get("source_text"),
+        "historical_concept": raw.get("historical_concept"),
+        "reasoning_process": raw.get("reasoning_process"),
+        "evidence_ids": (
+            [str(item) for item in evidence_ids if item]
+            if isinstance(evidence_ids, list)
+            else []
+        ),
+    }
+
+
 def enrich_task_judgement(
     task: Any,
     response_payload: dict[str, Any],
@@ -61,6 +87,11 @@ def enrich_task_judgement(
     evaluation_payload = getattr(task, "evaluation_payload", {})
     raw_questions = evaluation_payload.get("questions") if isinstance(evaluation_payload, dict) else []
     questions = [item for item in raw_questions or [] if isinstance(item, dict)]
+    all_correct_fallback = (
+        _all_correct_fallback_snapshot(evaluation_payload)
+        if isinstance(evaluation_payload, dict)
+        else None
+    )
     if not questions:
         provider_result = judgement.get("result")
         return {
@@ -156,8 +187,11 @@ def enrich_task_judgement(
     else:
         overall_result = "incorrect"
 
-    return {
+    enriched = {
         **{key: value for key, value in judgement.items() if key != "score"},
         "result": overall_result,
         "question_results": question_results,
     }
+    if all_correct_fallback:
+        enriched["all_correct_fallback"] = all_correct_fallback
+    return enriched

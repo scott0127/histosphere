@@ -61,6 +61,24 @@ test('task editor preserves the researcher explanation in structured JSON', () =
   assert.equal(roundTrip.correct_answer, true);
 });
 
+test('task editor stores and removes the researcher-authored all-correct fallback', () => {
+  const evaluationJson = taskControl.updateTaskAllCorrectFallback('{"questions":[]}', {
+    id: 'fallback-01',
+    incorrect_claim: '三級會議原先採按人數表決。',
+    correct_interpretation: '三級會議原先採按等級表決。',
+    evidence_ids: ['E03'],
+  });
+
+  assert.equal(taskControl.taskAllCorrectFallback(evaluationJson).id, 'fallback-01');
+  assert.deepEqual(taskControl.taskAllCorrectFallback(evaluationJson).evidence_ids, ['E03']);
+  assert.equal(
+    taskControl.taskAllCorrectFallback(
+      taskControl.updateTaskAllCorrectFallback(evaluationJson, null),
+    ),
+    null,
+  );
+});
+
 test('task editor history drops redo entries after a new edit', () => {
   const entry = (title) => ({
     title,

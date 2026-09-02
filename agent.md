@@ -96,6 +96,13 @@ Your goal is to implement the requested feature in a production-realistic way. D
    - If I decline or defer docs updates, mention the skipped docs in the final response so the gap is visible.
    - Documentation must describe verified behavior in the current working tree. Mark work-in-progress or unverified behavior clearly instead of presenting it as released.
 
+12. **Research source workflow**
+   - Treat the user's local Zotero library as the primary searchable literature source for research-design questions.
+   - Before answering claims about terminology, prior methods, measurements, or theoretical support, search the full Zotero inventory and inspect the relevant full text. Do not rely only on papers mentioned in the most recent messages.
+   - Use `references/zotero-library.bib` as a searchable metadata snapshot. Zotero remains the source of truth for attachments and full text; do not duplicate its PDF library into the repository.
+   - Give priority to the project's core literature and professor meeting decks recorded in `記憶.md`. Use external literature to fill a documented gap, not to silently replace the project's core sources.
+   - Clearly distinguish what a paper directly states, what is an inference from multiple sources, and what is a Histosphere-specific design decision.
+
 ## Expected Output
 
 When completing the task, provide:

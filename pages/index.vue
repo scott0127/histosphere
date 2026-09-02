@@ -203,7 +203,7 @@ const startConfirmMessage = computed(() => {
 onMounted(async () => {
   initAdminMode();
   await initializeAuth();
-  await loadEventLibrary();
+  await loadEventLibrary(isAdminMode.value ? storedAdminKey() : null);
   if (user.value?.id && !isAdminMode.value) {
     await loadParticipantForAuthUser(user.value.id);
   }
@@ -252,6 +252,7 @@ const verifyAndEnterAdminMode = async (adminKey: string) => {
 const handleExitAdminMode = async (reloadParticipant = true) => {
   exitAdminMode();
   adminModeError.value = null;
+  await loadEventLibrary();
   if (reloadParticipant && user.value?.id) {
     await resetForAuthScope();
     await loadParticipantForAuthUser(user.value.id);
@@ -260,7 +261,7 @@ const handleExitAdminMode = async (reloadParticipant = true) => {
 
 // 手動重新整理事件素材列表；若詳情彈窗已開啟，對齊最新事件資料。
 const refreshEventLibrary = async () => {
-  await refreshEvents();
+  await refreshEvents(isAdminMode.value ? storedAdminKey() : null);
   if (detailEvent.value) {
     detailEvent.value = findEvent(detailEvent.value.id);
   }
@@ -276,7 +277,7 @@ const handleCreateEvent = async () => {
     userId: adminTestUserId.value,
   });
   if (response) {
-    await fetchEvents();
+    await fetchEvents(storedAdminKey());
     detailEvent.value = findEvent(response.event_id);
     eventName.value = '';
   }

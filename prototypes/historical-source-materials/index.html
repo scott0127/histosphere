@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Histosphere 史料素材 Prototype</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f2f0ec;
+      --surface: #fffdf8;
+      --surface-muted: #f7f5f1;
+      --surface-sunken: #ebe7e0;
+      --border: #d6cec4;
+      --border-soft: #e6ded5;
+      --text: #352f29;
+      --copy: #645a51;
+      --soft: #8a7b6f;
+      --coffee: #7b5d4b;
+      --coffee-hover: #6f5343;
+      --coffee-soft: #ede3da;
+      --sage: #647568;
+      --sage-soft: #e8eee9;
+      --focus: rgba(123, 93, 75, 0.16);
+      --shadow: 0 12px 30px rgba(65, 55, 47, 0.08);
+      --sans: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      --serif: "Noto Serif TC", "PMingLiU", serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      min-width: 1120px;
+      height: 100%;
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    button, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .prototype-lab {
+      display: flex;
+      min-height: 52px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 8px 24px;
+      border-bottom: 1px solid #c8c2bb;
+      background: #302c28;
+      color: #fffdf8;
+    }
+
+    .prototype-lab[hidden] { display: none; }
+
+    .lab-copy {
+      display: flex;
+      min-width: 240px;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #d8d0c8;
+    }
+
+    .lab-copy strong {
+      color: #fffdf8;
+      font-size: 13px;
+    }
+
+    .lab-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .lab-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .lab-label {
+      margin-right: 2px;
+      color: #bdb4ac;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .lab-button {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid #625a53;
+      border-radius: 6px;
+      background: #403a35;
+      color: #e8e1db;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .lab-button:hover,
+    .lab-button.active {
+      border-color: #cab7a9;
+      background: #80634f;
+      color: #fff;
+    }
+
+    .restore-lab {
+      position: fixed;
+      z-index: 20;
+      top: 12px;
+      right: 16px;
+      display: none;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--coffee);
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .app-shell {
+      display: flex;
+      height: calc(100vh - 52px);
+      min-height: 690px;
+      flex-direction: column;
+    }
+
+    body.lab-hidden .app-shell { height: 100vh; }
+    body.lab-hidden .restore-lab { display: inline-flex; align-items: center; }
+
+    .app-header {
+      flex: 0 0 auto;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 253, 248, 0.94);
+    }
+
+    .header-inner {
+      display: flex;
+      width: min(1500px, calc(100% - 48px));
+      min-height: 76px;
+      margin: 0 auto;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .mode-code {
+      margin: 0 0 5px;
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 25px;
+      letter-spacing: 0;
+    }
+
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+
+    .timer {
+      min-width: 126px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-muted);
+      color: var(--copy);
+      font-size: 12px;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .timer strong {
+      float: right;
+      color: var(--coffee);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 14px;
+    }
+
+    .icon-button {
+      display: inline-flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--coffee);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .icon-button:hover { background: var(--coffee-soft); }
+
+    .workspace {
+      display: grid;
+      width: min(1500px, calc(100% - 48px));
+      min-height: 0;
+      margin: 0 auto;
+      padding: 18px 0;
+      flex: 1 1 auto;
+      grid-template-columns: minmax(0, 1fr) 350px;
+      gap: 16px;
+    }
+
+    .conversation-panel,
+    .context-panel {
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .conversation-panel { display: flex; flex-direction: column; }
+
+    .task-summary {
+      display: flex;
+      min-height: 66px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 13px 20px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--surface-muted);
+    }
+
+    .task-summary p { margin: 0; }
+    .eyebrow { color: var(--coffee); font-size: 11px; font-weight: 800; }
+    .task-claim { margin-top: 4px !important; font-family: var(--serif); font-size: 16px; font-weight: 700; }
+
+    .task-status {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border: 1px solid #c6b9ad;
+      border-radius: 999px;
+      background: var(--coffee-soft);
+      color: var(--coffee);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .chat-scroll {
+      min-height: 0;
+      padding: 22px 24px;
+      flex: 1 1 auto;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+
+    .message-row { display: flex; margin-bottom: 17px; }
+    .message-row.learner { justify-content: flex-end; }
+
+    .message {
+      width: min(820px, 88%);
+      padding: 15px 17px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 4px 12px rgba(65, 55, 47, 0.04);
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .message-row.learner .message {
+      width: min(680px, 75%);
+      border-color: var(--coffee);
+      background: var(--coffee);
+      color: var(--surface);
+    }
+
+    .message.focused {
+      border-color: var(--sage);
+      box-shadow: 0 0 0 4px rgba(100, 117, 104, 0.13);
+    }
+
+    .speaker {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 10px;
+      padding-bottom: 9px;
+      border-bottom: 1px solid var(--border-soft);
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .speaker img {
+      width: 26px;
+      height: 26px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .message p { margin: 0; font-family: var(--serif); font-size: 16px; line-height: 1.85; }
+
+    .speaker-mark {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-muted);
+      color: var(--coffee);
+      font-family: var(--serif);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .thinking {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--soft);
+      font-size: 13px;
+    }
+
+    .thinking-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--coffee-muted, #a88d7b);
+      animation: pulse 900ms ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse { to { opacity: 0.25; transform: translateY(-2px); } }
+
+    .composer {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: flex-end;
+      gap: 9px;
+      padding: 14px 18px;
+      border-top: 1px solid var(--border-soft);
+      background: var(--surface);
+    }
+
+    .composer textarea {
+      min-height: 48px;
+      max-height: 110px;
+      padding: 12px 14px;
+      flex: 1 1 auto;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      line-height: 1.5;
+    }
+
+    .composer textarea:focus { border-color: var(--coffee); box-shadow: 0 0 0 4px var(--focus); }
+
+    .send-button {
+      width: 48px;
+      height: 48px;
+      border: 1px solid var(--coffee);
+      border-radius: 7px;
+      background: var(--coffee);
+      color: white;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .send-button:hover { background: var(--coffee-hover); }
+    .send-button:disabled { cursor: not-allowed; border-color: var(--border); background: var(--border); }
+
+    .context-panel { display: flex; flex-direction: column; }
+
+    .tabs {
+      display: grid;
+      min-height: 50px;
+      padding: 6px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--surface-muted);
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+    }
+
+    .tab {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .tab:hover { color: var(--coffee); }
+    .tab.active { border-color: var(--border); background: var(--surface); color: var(--text); }
+
+    .tab-view { display: none; min-height: 0; padding: 17px; flex: 1 1 auto; overflow-y: auto; }
+    .tab-view.active { display: block; }
+
+    .panel-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .panel-heading h2 { margin: 0; font-family: var(--serif); font-size: 18px; }
+    .panel-heading p { margin: 5px 0 0; color: var(--soft); font-size: 11px; line-height: 1.55; }
+
+    .count-badge {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-muted);
+      color: var(--copy);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .source-empty {
+      display: grid;
+      min-height: 230px;
+      place-items: center;
+      padding: 25px;
+      border: 1px dashed var(--border);
+      border-radius: 7px;
+      color: var(--soft);
+      text-align: center;
+    }
+
+    .source-empty strong { display: block; margin-bottom: 7px; color: var(--text); font-family: var(--serif); }
+    .source-empty p { margin: 0; font-size: 12px; line-height: 1.7; }
+
+    .source-list { display: grid; gap: 12px; }
+
+    .source-card {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    .source-card.new-source { animation: material-in 260ms ease both; }
+    .source-card.active { border-color: var(--sage); box-shadow: 0 0 0 4px rgba(100, 117, 104, 0.11); }
+    .source-card:hover { transform: translateY(-1px); }
+
+    @keyframes material-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .source-image {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--surface-sunken);
+      object-fit: cover;
+    }
+
+    .source-card[data-source-id="source-02"] .source-image {
+      padding: 8px;
+      object-fit: contain;
+    }
+
+    .source-card-body { padding: 14px; }
+
+    .source-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+    .source-kind {
+      color: var(--sage);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .source-number {
+      color: var(--soft);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .source-card h3 { margin: 9px 0 4px; font-family: var(--serif); font-size: 16px; line-height: 1.45; }
+    .provenance { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.55; }
+
+    .excerpt {
+      margin: 12px 0 0;
+      padding: 11px 12px;
+      border-left: 2px solid #aab6ad;
+      background: var(--sage-soft);
+      color: #3f4e43;
+      font-family: var(--serif);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .source-origin {
+      display: inline-flex;
+      margin-top: 11px;
+      color: var(--coffee);
+      font-size: 10px;
+      font-weight: 800;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .source-origin:hover { color: var(--coffee-hover); }
+
+    .persona-card { overflow: hidden; border: 1px solid var(--border); border-radius: 7px; }
+    .persona-card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; object-position: center 18%; filter: saturate(0.75); }
+    .identity-placeholder {
+      display: none;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      place-items: center;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--surface-sunken);
+      color: var(--coffee);
+      font-family: var(--serif);
+      font-size: 38px;
+      font-weight: 900;
+    }
+    .persona-copy { padding: 15px; background: var(--surface-muted); }
+    .persona-copy h2 { margin: 0; font-family: var(--serif); font-size: 20px; }
+    .persona-copy p { margin: 7px 0 0; color: var(--copy); font-size: 12px; line-height: 1.7; }
+
+    .modal-backdrop {
+      position: fixed;
+      z-index: 30;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(47, 41, 36, 0.38);
+      backdrop-filter: blur(3px);
+    }
+
+    .modal-backdrop.open { display: grid; }
+
+    .modal {
+      width: min(520px, calc(100vw - 48px));
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 20px 60px rgba(47, 41, 36, 0.18);
+    }
+
+    .modal h2 { margin: 0; font-family: var(--serif); font-size: 22px; }
+    .modal p { margin: 10px 0 20px; color: var(--copy); font-size: 13px; line-height: 1.75; }
+    .modal .icon-button { float: right; }
+  </style>
+</head>
+<body>
+  <section id="prototypeLab" class="prototype-lab" aria-label="Prototype 控制列">
+    <div class="lab-copy">
+      <strong>研究者 Prototype</strong>
+      <span>控制列不屬於正式受測者介面</span>
+    </div>
+    <div class="lab-controls">
+      <div class="lab-group" aria-label="Condition 切換">
+        <span class="lab-label">模式</span>
+        <button class="lab-button" data-condition="01">01</button>
+        <button class="lab-button" data-condition="02">02</button>
+        <button class="lab-button" data-condition="03">03</button>
+        <button class="lab-button" data-condition="04">04</button>
+      </div>
+      <div class="lab-group" aria-label="素材顯示進度">
+        <span class="lab-label">回合</span>
+        <button class="lab-button" data-stage="0">1 · 尚未顯示</button>
+        <button class="lab-button" data-stage="1">2 · 素材一</button>
+        <button class="lab-button" data-stage="2">3 · 素材二</button>
+      </div>
+      <div class="lab-group">
+        <button id="resetPrototype" class="lab-button">重設</button>
+        <button id="hideLab" class="lab-button">隱藏控制列</button>
+      </div>
+    </div>
+  </section>
+
+  <button id="restoreLab" class="restore-lab">顯示 Prototype 控制</button>
+
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="header-inner">
+        <div>
+          <p id="modeCode" class="mode-code">04模式</p>
+          <h1>法國大革命</h1>
+        </div>
+        <div class="header-actions">
+          <div class="timer">本階段剩餘時間 <strong id="timerValue">04:12</strong></div>
+          <button id="openLibrary" class="icon-button" type="button">史料素材庫</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="conversation-panel" aria-label="對話">
+        <div class="task-summary">
+          <div>
+            <p class="eyebrow">前置任務 · 作答結果</p>
+            <p class="task-claim">「法國大革命爆發主要只是因為第三等級不滿繳稅。」</p>
+          </div>
+          <span class="task-status">1 項待釐清</span>
+        </div>
+
+        <div id="chatScroll" class="chat-scroll" aria-live="polite"></div>
+
+        <form id="composer" class="composer">
+          <textarea id="learnerInput" rows="1" placeholder="輸入你的想法…" aria-label="輸入你的想法"></textarea>
+          <button id="sendButton" class="send-button" type="submit" disabled aria-label="送出">→</button>
+        </form>
+      </section>
+
+      <aside class="context-panel" aria-label="對話脈絡">
+        <div class="tabs" role="tablist">
+          <button id="identityTab" class="tab" type="button" data-tab="persona" role="tab">歷史人物</button>
+          <button class="tab active" type="button" data-tab="sources" role="tab">史料素材</button>
+        </div>
+
+        <section id="personaView" class="tab-view" data-view="persona" role="tabpanel">
+          <div class="persona-card">
+            <img id="identityPortrait" src="assets/robespierre.jpg" alt="馬克西米連・羅伯斯比爾肖像" />
+            <div id="identityPlaceholder" class="identity-placeholder" aria-hidden="true">AI</div>
+            <div class="persona-copy">
+              <h2 id="identityName">馬克西米連・羅伯斯比爾</h2>
+              <p id="identityDescription">法國大革命時期政治人物。人物資訊與史料素材分開呈現，避免把人物敘事誤當成史料證據。</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="sourcesView" class="tab-view active" data-view="sources" role="tabpanel">
+          <div class="panel-heading">
+            <div>
+              <h2>史料素材</h2>
+              <p>素材依固定回合顯示，最多兩項；已出現的素材可隨時回看。</p>
+            </div>
+            <span id="sourceCount" class="count-badge">0 / 2</span>
+          </div>
+          <div id="sourceContent"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="libraryModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+    <div class="modal">
+      <h2 id="libraryTitle">史料素材庫</h2>
+      <p>正式研究中，這裡只收錄研究者事先審核並鎖定的素材。Prototype 的文字是介面示意，不是已凍結的實驗內容。</p>
+      <button id="closeLibrary" class="icon-button" type="button">關閉</button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'histosphere-source-material-prototype';
+
+    const defaultReplies = [
+      '我覺得主要是因為第三等級要繳很多稅，貴族和教士卻有特權。',
+      '看完第一項史料後，我覺得除了稅負外，代表權和政治位置也可能是衝突的一部分。'
+    ];
+
+    const materials = [
+      {
+        id: 'source-01',
+        kind: '視覺史料 · 版畫',
+        number: '史料 01',
+        title: '三級會議在凡爾賽開幕',
+        provenance: 'Charles Monnet 繪、Isidore-Stanislas Helman 雕版 · 1790 年出版，描繪 1789 年 5 月 5 日',
+        description: '觀察會場中君主、神職、貴族與第三等級代表的位置，以及政治秩序如何被呈現。這是研究者提供的觀察方向，不是結論。',
+        image: 'assets/estates-general-1789.jpg',
+        imageAlt: '1789 年 5 月 5 日凡爾賽三級會議開幕版畫，會場中央為王室與各等級代表',
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:Ouverture_des_Etats_G%C3%A9n%C3%A9raux_-_%C3%A0_Versailles,_le_5_mai_1789_-_pr%C3%A9sent%C3%A9e_et_d%C3%A9di%C3%A9e_%C3%A0_l%27Assembl%C3%A9e_Nationale,_le_4_mai_1790,_par_Helman..._-_estampe_-_dessin%C3%A9_par_C._Monnet,_peintre_du_Roi_%3B_grav%C3%A9_par..._-_btv1b6942660x.jpg'
+      },
+      {
+        id: 'source-02',
+        kind: '政治文本 · 原件影像',
+        number: '史料 02',
+        title: '《第三等級是什麼？》',
+        provenance: 'Emmanuel-Joseph Sieyès · 1789 年 1 月 · 研究者翻譯節錄',
+        description: '「第三等級是什麼？一切。它至今在政治秩序中是什麼？什麼也不是。它要求什麼？成為某種存在。」',
+        image: 'assets/third-estate-1789.jpg',
+        imageAlt: '西哀士 1789 年小冊子《第三等級是什麼？》首頁',
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:Qu%27est_ce_que_le_Tiers_Etat.jpg'
+      }
+    ];
+
+    const conditionProfiles = {
+      '01': {
+        roleplay: false,
+        ebl: false,
+        speaker: 'AI 歷史助教',
+        mark: 'AI',
+        replies: [
+          '你剛才把第三等級不滿繳稅視為主要原因。我們可以從革命前的社會與政治情況繼續聊。你最想先了解哪一部分？',
+          '王室財政、等級特權與政治代表問題都出現在革命前的公共爭論中。你可以繼續問其中任何一項。',
+          '你的新說明已經不再把革命歸結為單一原因。還想繼續了解三級會議，或革命後續的發展？'
+        ]
+      },
+      '02': {
+        roleplay: false,
+        ebl: true,
+        speaker: 'AI 歷史助教',
+        mark: 'AI',
+        replies: [
+          '你把第三等級不滿繳稅視為唯一原因。先不要改答案：你是根據故事中的哪些線索得出這個判斷？',
+          '請觀察右側第一項史料中，不同群體在三級會議裡的位置與關係。這個場景能否支持「問題只有稅負」？先指出一個你看見的線索。',
+          '再把第二項政治文本與第一幅版畫並置。兩項史料共同顯示了哪一種超出稅負的矛盾？請用「主張、證據、理由」重新說明。'
+        ]
+      },
+      '03': {
+        roleplay: true,
+        ebl: false,
+        speaker: '馬克西米連・羅伯斯比爾',
+        replies: [
+          '1789 年春，我以阿圖瓦第三等級代表的身分來到凡爾賽。稅負固然使人民憤怒，但議場內外的爭論並不只圍繞錢糧。你想先聽我談哪一場爭論？',
+          '我在三級會議中看見的不只是國庫困窘，也有誰能代表法蘭西、誰的聲音算數的爭執。這些衝突很快便越過了稅務本身。',
+          '如今你的說法已把財政壓力與政治代表的爭議放在一起。若你願意，我可以再談國民議會如何從這場衝突中形成。'
+        ]
+      },
+      '04': {
+        roleplay: true,
+        ebl: true,
+        speaker: '馬克西米連・羅伯斯比爾',
+        replies: [
+          '你把我等的不滿全歸於稅負。先別急著改口：在你讀過的故事裡，是哪些線索使你如此判斷？',
+          '請端詳右側第一幅版畫。當我與第三等級代表坐進那座會場時，誰居於權力中心、各等級又如何被安排？這個場景能否支持「問題只有稅負」？',
+          '再讀右側第二份文本，並與那幅會場版畫相互印證。它們共同顯示了哪一種超出稅負的矛盾？請用一項主張、兩項證據和你的理由重新說明。'
+        ]
+      }
+    };
+
+    const initialState = { condition: '04', stage: 0, replies: [...defaultReplies], activeSourceId: null, tab: 'sources' };
+    let state = loadState();
+    let thinking = false;
+
+    const chatScroll = document.getElementById('chatScroll');
+    const sourceContent = document.getElementById('sourceContent');
+    const sourceCount = document.getElementById('sourceCount');
+    const learnerInput = document.getElementById('learnerInput');
+    const sendButton = document.getElementById('sendButton');
+    const modeCode = document.getElementById('modeCode');
+    const identityTab = document.getElementById('identityTab');
+    const identityPortrait = document.getElementById('identityPortrait');
+    const identityPlaceholder = document.getElementById('identityPlaceholder');
+    const identityName = document.getElementById('identityName');
+    const identityDescription = document.getElementById('identityDescription');
+
+    function loadState() {
+      try {
+        return { ...initialState, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') };
+      } catch {
+        return { ...initialState };
+      }
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function currentProfile() {
+      return conditionProfiles[state.condition] || conditionProfiles['04'];
+    }
+
+    function assistantTemplate(messageId, text) {
+      const profile = currentProfile();
+      const speakerVisual = profile.roleplay
+        ? '<img src="assets/robespierre.jpg" alt="" />'
+        : `<span class="speaker-mark" aria-hidden="true">${profile.mark}</span>`;
+      return `
+        <div class="message-row" id="row-${messageId}">
+          <article class="message" id="${messageId}">
+            <div class="speaker">
+              ${speakerVisual}
+              ${escapeHtml(profile.speaker)}
+            </div>
+            <p>${escapeHtml(text)}</p>
+          </article>
+        </div>`;
+    }
+
+    function learnerTemplate(text) {
+      return `
+        <div class="message-row learner">
+          <article class="message"><p>${escapeHtml(text)}</p></article>
+        </div>`;
+    }
+
+    function renderChat() {
+      const profile = currentProfile();
+      let html = assistantTemplate('assistant-opening', profile.replies[0]);
+      if (state.stage >= 1) {
+        html += learnerTemplate(state.replies[0] || defaultReplies[0]);
+        html += assistantTemplate('assistant-source-01', profile.replies[1]);
+      }
+      if (state.stage >= 2) {
+        html += learnerTemplate(state.replies[1] || defaultReplies[1]);
+        html += assistantTemplate('assistant-source-02', profile.replies[2]);
+      }
+      if (thinking) {
+        html += `<div class="message-row"><div class="message"><div class="thinking"><span class="thinking-dot"></span>正在整理下一個回應…</div></div></div>`;
+      }
+      chatScroll.innerHTML = html;
+      chatScroll.scrollTop = chatScroll.scrollHeight;
+    }
+
+    function visibleMaterialCount() {
+      return Math.max(0, Math.min(state.stage, materials.length));
+    }
+
+    function renderSources() {
+      const visible = materials.slice(0, visibleMaterialCount());
+      sourceCount.textContent = `${visible.length} / ${materials.length}`;
+      if (!visible.length) {
+        sourceContent.innerHTML = `
+          <div class="source-empty">
+            <div>
+              <strong>尚未顯示史料素材</strong>
+              <p>先說明目前的想法。素材會依固定回合出現，本事件最多兩項。</p>
+            </div>
+          </div>`;
+        return;
+      }
+      sourceContent.innerHTML = `<div class="source-list">${visible.map((source, index) => `
+        <article id="${source.id}" data-source-id="${source.id}" class="source-card ${state.activeSourceId === source.id ? 'active' : ''} ${index === visible.length - 1 ? 'new-source' : ''}">
+          <img class="source-image" src="${source.image}" alt="${escapeHtml(source.imageAlt)}" />
+          <div class="source-card-body">
+            <div class="source-meta">
+              <span class="source-kind">${escapeHtml(source.kind)}</span>
+              <span class="source-number">${escapeHtml(source.number)}</span>
+            </div>
+            <h3>${escapeHtml(source.title)}</h3>
+            <p class="provenance">${escapeHtml(source.provenance)}</p>
+            <p class="excerpt">${escapeHtml(source.description)}</p>
+            <a class="source-origin" href="${source.sourceUrl}" target="_blank" rel="noreferrer">查看原始館藏來源</a>
+          </div>
+        </article>`).join('')}</div>`;
+    }
+
+    function setTab(tabName) {
+      state.tab = tabName;
+      document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === tabName));
+      document.querySelectorAll('.tab-view').forEach((view) => view.classList.toggle('active', view.dataset.view === tabName));
+      saveState();
+    }
+
+    function focusSource(sourceId) {
+      state.activeSourceId = sourceId;
+      setTab('sources');
+      renderSources();
+      requestAnimationFrame(() => document.getElementById(sourceId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      saveState();
+    }
+
+    function setStage(stage, options = {}) {
+      state.stage = Math.max(0, Math.min(Number(stage), 2));
+      state.activeSourceId = state.stage > 0 ? materials[state.stage - 1].id : null;
+      if (state.stage > 0) state.tab = 'sources';
+      saveState();
+      render();
+      if (options.focusSource && state.activeSourceId) focusSource(state.activeSourceId);
+    }
+
+    function setCondition(condition) {
+      if (!conditionProfiles[condition]) return;
+      state.condition = condition;
+      saveState();
+      render();
+    }
+
+    function renderIdentity() {
+      const profile = currentProfile();
+      modeCode.textContent = `${state.condition}模式`;
+      identityTab.textContent = profile.roleplay ? '歷史人物' : '對話身分';
+      identityPortrait.style.display = profile.roleplay ? 'block' : 'none';
+      identityPlaceholder.style.display = profile.roleplay ? 'none' : 'grid';
+      identityName.textContent = profile.speaker;
+      identityDescription.textContent = profile.roleplay
+        ? '1789 年三級會議中的第三等級代表。人物敘事與史料素材分開呈現，避免把第一人稱敘述誤當成史料證據。'
+        : '一般 AI 歷史助教，不扮演歷史人物。四種模式看到的史料素材與出現時點完全相同。';
+    }
+
+    function render() {
+      renderIdentity();
+      renderChat();
+      renderSources();
+      setTab(state.tab);
+      document.querySelectorAll('[data-condition]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.condition === state.condition);
+      });
+      document.querySelectorAll('[data-stage]').forEach((button) => {
+        button.classList.toggle('active', Number(button.dataset.stage) === state.stage);
+      });
+      learnerInput.placeholder = '輸入你的想法…';
+    }
+
+    document.querySelectorAll('[data-condition]').forEach((button) => {
+      button.addEventListener('click', () => setCondition(button.dataset.condition));
+    });
+
+    document.querySelectorAll('[data-stage]').forEach((button) => {
+      button.addEventListener('click', () => setStage(button.dataset.stage, { focusSource: true }));
+    });
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => setTab(tab.dataset.tab));
+    });
+
+    learnerInput.addEventListener('input', () => {
+      sendButton.disabled = thinking || !learnerInput.value.trim();
+    });
+
+    document.getElementById('composer').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = learnerInput.value.trim();
+      if (!value || thinking) return;
+      const replyIndex = Math.min(state.stage, 1);
+      state.replies[replyIndex] = value;
+      learnerInput.value = '';
+      sendButton.disabled = true;
+      thinking = true;
+      renderChat();
+      window.setTimeout(() => {
+        thinking = false;
+        if (state.stage < 2) setStage(state.stage + 1, { focusSource: true });
+        else renderChat();
+      }, 650);
+    });
+
+    document.getElementById('resetPrototype').addEventListener('click', () => {
+      state = { ...initialState, replies: [...defaultReplies] };
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    });
+
+    document.getElementById('hideLab').addEventListener('click', () => {
+      document.getElementById('prototypeLab').hidden = true;
+      document.body.classList.add('lab-hidden');
+    });
+
+    document.getElementById('restoreLab').addEventListener('click', () => {
+      document.getElementById('prototypeLab').hidden = false;
+      document.body.classList.remove('lab-hidden');
+    });
+
+    const libraryModal = document.getElementById('libraryModal');
+    document.getElementById('openLibrary').addEventListener('click', () => libraryModal.classList.add('open'));
+    document.getElementById('closeLibrary').addEventListener('click', () => libraryModal.classList.remove('open'));
+    libraryModal.addEventListener('click', (event) => {
+      if (event.target === libraryModal) libraryModal.classList.remove('open');
+    });
+
+    render();
+  </script>
+</body>
+</html>

@@ -1599,12 +1599,12 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           <span>Historical EBL 與 Disclosure</span>
         </span>
-        <span class="status text-small" data-status="critical"><span class="dot"></span>非常重要 · 核心規則已補強</span>
+        <span class="status text-small" data-status="critical"><span class="dot"></span>非常重要 · 設計已釐清，程式待對齊</span>
       </summary>
       <div class="functions">
-        <div class="function" data-status="done">
-          <span class="function-name">Historical EBL 推理階段與 Disclosure D0–D4 分離</span>
-          <span class="status text-small"><span class="dot"></span>已完成</span>
+        <div class="function" data-status="partial">
+          <span class="function-name">EBL 修正流程與 Disclosure D0–D4 分離<span class="function-note text-small">設計上由 EBL 管理檢視錯誤、反思、再嘗試與自我修正；Disclosure 只管理協助量。現行程式仍含 Historical Thinking operator，尚待對齊</span></span>
+          <span class="status text-small"><span class="dot"></span>設計確認 · 程式待調整</span>
         </div>
         <div class="function" data-status="done">
           <span class="function-name">一次 structured completion 決定 learner progress、相鄰 Disclosure 與可見回覆</span>
@@ -1627,12 +1627,20 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Historical Thinking 操作、evidence IDs 與正式 RESOLVED criteria<span class="function-note text-small">同一次 structured completion 判斷三項條件；backend 僅在修正主張、使用相關證據／脈絡、並連結理由三項皆成立時接受 RESOLVED</span></span>
-          <span class="status text-small"><span class="dot"></span>已完成</span>
+          <span class="function-name">EBL 與 Historical Thinking 的研究角色分工<span class="function-note text-small">EBL 是 02／04 被操弄的主要互動教學鷹架；Historical Thinking 是 01–04 共用、用來改善 AI 歷史回應品質的 domain-informed response framework，不是對 learner 的明示鷹架</span></span>
+          <span class="status text-small"><span class="dot"></span>設計共識已確認</span>
+        </div>
+        <div class="function" data-status="critical">
+          <span class="function-name">現行 Historical Thinking operator 與 RESOLVED criteria<span class="function-note text-small">目前 02／04 仍會指定 Historical Thinking 操作，且把證據／脈絡與推理連結列入完成條件；這與新共識不一致，需改成只判斷 EBL 的反思與自我修正流程</span></span>
+          <span class="status text-small"><span class="dot"></span>待依設計共識調整</span>
         </div>
         <div class="function" data-status="done">
           <span class="function-name">D4 後「處理下一個錯誤」與 unresolved_after_max_support 紀錄<span class="function-note text-small">不自動跳題；learner 可選擇按鈕切換，未按則繼續 D4，切換後下一題由 D0 開始</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="critical">
+          <span class="function-name">給史料素材：正式互動的核心要素<span class="function-note text-small">最高優先：需決定四種 Condition 是否都提供史料素材、每次最多幾份、何時顯示，以及是否隨 Disclosure 漸進開放；若只有 02／04 提供，史料支援會與 EBL 因子同時改變</span></span>
+          <span class="status text-small"><span class="dot"></span>最高優先待與教授確認</span>
         </div>
         <div class="function" data-status="critical">
           <span class="function-name">跨事件史料素材類型一致性<span class="function-note text-small">最高優先：不同事件必須使用相同類型、數量與呈現方式的史料素材，避免素材差異混入 Condition 效果</span></span>
@@ -1967,6 +1975,14 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         <p class="question-detail"><strong>需決定：</strong>標準化正解與訂正說明應在後測前提供，成為 EBL intervention 的一部分；或在後測完成後提供，避免直接答案影響後測結果。</p>
         <p class="question-detail"><strong>影響：</strong>前者較符合「錯誤後需完成訂正」的學習流程；後者較能避免相同知識答案直接污染測量。正式時點必須在收案前由教授確認並固定。</p>
       </article>
+
+      <article class="question-card">
+        <span class="question-status">暫定設計共識 06</span>
+        <h3 class="question-title">EBL 與 Historical Thinking 的角色分工</h3>
+        <p class="question-detail"><strong>設計共識：</strong>EBL 是 02／04 被操弄且主要的互動教學鷹架，流程聚焦 learner error、重新檢視、反思、再次嘗試與自我修正；Role-play 是另一個獨立變項。</p>
+        <p class="question-detail"><strong>共同框架：</strong>Historical Thinking 存在於 01–04，用來讓 AI 的歷史回應更重視證據、脈絡與合理因果，但 LLM 不明示要求 learner sourcing、contextualization、corroboration 或 evidence-based argumentation。</p>
+        <p class="question-detail"><strong>待程式對齊：</strong>現行 02／04 仍會選擇 Historical Thinking operator，並把證據／脈絡與推理連結納入 RESOLVED；後續應移除這項額外鷹架，確保四組只有 EBL 與 Role-play 兩個操弄差異。</p>
+      </article>
     </div>
   </section>
 
@@ -2051,16 +2067,16 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "受測者詢問革命原因時，AI 以一般助教方式回答與追問。"
       ]],
       ["02：Historical EBL + 無 Role-play", [
-        "AI 保持中性助教身分，但會從受測者的錯誤出發，引導檢查證據、修正論證與反思。",
-        "受測者把寒冬視為遠征失敗唯一原因時，AI 先引導比較時間線與補給證據，而非直接公布完整正解。"
+        "AI 保持中性助教身分，並從受測者的錯誤出發，引導重新檢視、反思、再次嘗試與自我修正。",
+        "AI 可以使用共同的歷史回應框架維持內容品質，但不明示要求受測者進行 sourcing、脈絡化、史料互證或證據論證。"
       ]],
       ["03：Standard Chat + Role-play", [
         "AI 以歷史人物第一人稱交流，但不主動執行 Historical EBL scaffold。",
         "拿破崙以自己的歷史處境回答俄羅斯遠征問題，互動方式仍屬一般聊天。"
       ]],
       ["04：Historical EBL + Role-play", [
-        "使用與 02 相同的 EBL 教學政策，再由歷史人物以第一人稱呈現。",
-        "拿破崙從補給、疾病與戰場處境反問，引導受測者重新檢查「寒冬是唯一原因」的主張。"
+        "使用與 02 相同的 EBL 修正流程，再由歷史人物以第一人稱呈現；Role-play 不改變 EBL 強度。",
+        "歷史人物引導受測者回到原錯誤、反思並重新作答，但不額外指定 Historical Thinking 操作。"
       ]],
       ["後端模型驗證固定因子；前端 Learner 僅顯示 01–04", [
         "後端確認每個代號對應的 EBL 與 Role-play 組合，Learner 畫面不揭露實驗條件名稱。",
@@ -2194,9 +2210,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "Learner 最新訊息只存在 canonical user_message module，不會再由 provider 外層重複附加。",
         "學生同一句問題在一次請求中只會被模型看見一次，減少 token 與重複加權。"
       ]],
-      ["Historical EBL 推理階段與 Disclosure D0–D4 分離", [
-        "系統分開決定學生正在練習的歷史思考行為，以及這一輪可提供多少資訊。",
-        "學生練習因果分析時，可使用 D1 提醒檢查時間線，但不直接揭露答案。"
+      ["EBL 修正流程與 Disclosure D0–D4 分離", [
+        "設計上由 EBL 決定目前是重新檢視錯誤、反思、再次嘗試或自我修正；Disclosure 只決定這一輪提供多少協助。",
+        "學生沒有進展時可增加一級提示，但提示不應轉成明示的 Historical Thinking 技能教學；現行程式仍待對齊。"
       ]],
       ["一次 structured completion 決定 learner progress、相鄰 Disclosure 與可見回覆", [
         "同一次 LLM 呼叫會判斷學生進展、決定 Disclosure 是否最多升降一級，並產生可見回覆。",
@@ -2218,13 +2234,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "正式受測者介面只顯示 AI 主回覆，不顯示 annotation explanation，避免 hover 形成未受 Disclosure 控制的第二條資訊通道。",
         "Admin dry-run 仍保留標記與 hover，讓研究者在收案前檢查 LLM 產生的術語說明。"
       ]],
-      ["Historical Thinking 操作、evidence IDs 與正式 RESOLVED criteria", [
-        "02／04 的同一次 LLM 呼叫會依目前錯誤選擇 Historical Thinking 操作，並分別回報主張修正、證據／脈絡使用、推理連結三項結果。",
-        "學生只改成正確答案但沒有說明證據如何支持它時，後端不接受 RESOLVED，會要求模型繼續引導。"
+      ["EBL 與 Historical Thinking 的研究角色分工", [
+        "EBL 是 02／04 額外加入的互動教學鷹架；Historical Thinking 則是四組共同採用的歷史領域回應框架。",
+        "AI 可以據此產生較合理的歷史內容，但不直接要求 learner 執行 sourcing、脈絡化、史料互證或證據論證。"
+      ]],
+      ["現行 Historical Thinking operator 與 RESOLVED criteria", [
+        "目前後端仍讓 02／04 選擇 Historical Thinking 操作，並要求證據／脈絡與推理連結才能 RESOLVED。",
+        "這是尚待修正的實作差距；新設計只應以 EBL 的反思、再嘗試與自我修正判斷互動進度。"
       ]],
       ["D4 後「處理下一個錯誤」與 unresolved_after_max_support 紀錄", [
         "學生在 D4 仍未解決且尚有下一項錯誤時，介面才顯示可選的「處理下一個錯誤」按鈕；系統不會自行跳題。",
         "按下後 q01 保存為 unresolved_after_max_support，q02 從 D0 開始；未按則可繼續和 AI 討論 q01。"
+      ]],
+      ["給史料素材：正式互動的核心要素", [
+        "需先決定四種 Condition 是否都看得到相同史料素材，以及素材是在一開始固定顯示，還是依互動進度逐步出現。",
+        "例如每個事件最多準備兩份圖文史料；若只讓 02／04 使用，研究效果將同時包含 EBL 與額外素材支援，較難分開解釋。"
       ]],
       ["跨事件史料素材類型一致性", [
         "正式實驗中的不同歷史事件必須使用相同類型、數量與呈現方式的史料素材，避免某一事件因素材較多或較容易而得到額外優勢。",

@@ -37,10 +37,21 @@ export interface TaskQuestion {
   explanation?: string | null;
 }
 
+export interface TaskAllCorrectFallback {
+  id: string;
+  incorrect_claim: string;
+  correct_interpretation: string;
+  source_text?: string | null;
+  historical_concept?: string | null;
+  reasoning_process?: string | null;
+  evidence_ids?: string[];
+}
+
 export interface TaskEvaluationPayload {
   questions?: TaskQuestion[];
   rubric?: string | null;
   target_misconceptions?: string[];
+  all_correct_fallback?: TaskAllCorrectFallback | null;
   [key: string]: unknown;
 }
 

@@ -434,6 +434,226 @@ def test_d4_learner_action_records_unresolved_and_starts_next_error_at_d0():
     assert next_runtime.previous_disclosure_level == "D0"
 
 
+def test_d4_failure_delivers_corrective_feedback_without_triggering_leak_rejection():
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="目前已整理出最強證據，請你完成判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "next_target_question_id": "q02",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "reflection_prompt",
+            "disclosure_level": "D4",
+            "completion_status": "continue",
+        },
+    )
+    runtime = build_interaction_runtime(_condition("02"), _multi_error_attempt(), [previous])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "corrective_feedback",
+            "disclosure_level": "D4",
+            "learner_progress": "no_progress",
+            "resolution_claim_corrected": False,
+            "resolution_evidence_used": False,
+            "resolution_reasoning_linked": False,
+        },
+        "原判斷忽略了代表人數的差異，正確答案是「按人數」。請用一句話重述修正後的判斷。",
+    )
+
+    assert runtime.corrective_feedback_required is True
+    assert enforced.retry_required is False
+    assert enforced.metadata["completion_status"] == "corrective_resolution_pending"
+    assert enforced.metadata["resolution_outcome"] == "corrective_feedback_delivered"
+    assert enforced.metadata["dialogue_move"] == "corrective_feedback"
+    assert enforced.metadata["corrective_feedback_revealed_answer"] is True
+    assert "early_answer_exposure" not in enforced.metadata["fidelity_flags"]
+
+
+def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback():
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="請用最強證據完成你的修正。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "disclosure_level": "D4",
+            "completion_status": "continue",
+        },
+    )
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [previous])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "ELICIT_REASONING",
+            "dialogue_move": "reasoning_probe",
+            "disclosure_level": "D4",
+            "learner_progress": "resolved",
+            "resolution_claim_corrected": True,
+            "resolution_evidence_used": True,
+            "resolution_reasoning_linked": True,
+        },
+        "你已用證據完成修正，正確答案是「按人數」。",
+    )
+
+    assert enforced.retry_required is False
+    assert enforced.metadata["dialogue_state"] == "RESOLVED"
+    assert enforced.metadata["completion_status"] == "resolved"
+    assert enforced.metadata["resolution_outcome"] == "learner_resolved"
+    assert enforced.metadata["corrective_feedback_revealed_answer"] is False
+
+
+def test_corrective_feedback_requires_the_answer_and_one_sentence_restatement():
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="目前已提供 D4 支援。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "reflection_prompt",
+            "disclosure_level": "D4",
+            "completion_status": "continue",
+        },
+    )
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [previous])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "corrective_feedback",
+            "disclosure_level": "D4",
+        },
+        "你的判斷仍需要修正。",
+    )
+
+    assert enforced.retry_required is True
+    assert "corrective_answer_missing" in enforced.metadata["fidelity_flags"]
+    assert "corrective_restatement_prompt_missing" in enforced.metadata["fidelity_flags"]
+
+
+def test_restatement_after_corrective_feedback_closes_target_and_starts_next_error():
+    corrective = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="正確答案是「按人數」。請用一句話重述修正後的判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "next_target_question_id": "q02",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "corrective_feedback",
+            "disclosure_level": "D4",
+            "completion_status": "corrective_resolution_pending",
+            "resolution_outcome": "corrective_feedback_delivered",
+        },
+    )
+    runtime = build_interaction_runtime(_condition("02"), _multi_error_attempt(), [corrective])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "RESOLVED",
+            "dialogue_move": "resolution",
+            "disclosure_level": "D4",
+        },
+        "收到你的重述。接著處理下一項判斷，先說明你原先的理由。",
+    )
+
+    assert runtime.awaiting_corrective_restatement is True
+    assert enforced.retry_required is False
+    assert enforced.metadata["completion_status"] == "corrected_after_feedback"
+    assert enforced.metadata["resolution_outcome"] == "corrected_after_feedback"
+    assert enforced.metadata["resolution_criteria_met"] is False
+    assert enforced.metadata["next_target_started"] is True
+
+    completed = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content=enforced.response,
+        metadata=enforced.metadata,
+    )
+    next_runtime = build_interaction_runtime(
+        _condition("02"),
+        _multi_error_attempt(),
+        [corrective, completed],
+    )
+    assert next_runtime.target.question_id == "q02"
+    assert next_runtime.previous_disclosure_level == "D0"
+
+
+def test_all_correct_attempt_uses_only_researcher_authored_fallback():
+    attempt = TaskAttempt(
+        task_id="task-1",
+        event_id="event-1",
+        status="submitted",
+        judgement_payload={
+            "result": "correct",
+            "question_results": [
+                {
+                    "question_id": "q01",
+                    "prompt": "第三等級要求如何表決？",
+                    "learner_answer": "按人數",
+                    "expected_answer": "按人數",
+                    "correctness": "correct",
+                }
+            ],
+            "all_correct_fallback": {
+                "id": "fallback-01",
+                "incorrect_claim": "三級會議一直採按人數表決。",
+                "correct_interpretation": "三級會議原先採按等級表決。",
+                "evidence_ids": ["E03"],
+            },
+        },
+    )
+
+    runtime = build_interaction_runtime(_condition("02"), attempt, [])
+
+    assert runtime.target.question_id == "fallback-01"
+    assert runtime.target.probe_kind == "controlled_fallback"
+    assert runtime.target.error_source == "researcher_authored_fallback"
+    assert runtime.target.learner_answer == "三級會議一直採按人數表決。"
+
+
+def test_all_correct_attempt_without_researcher_fallback_does_not_invent_an_error():
+    attempt = TaskAttempt(
+        task_id="task-1",
+        event_id="event-1",
+        status="submitted",
+        judgement_payload={
+            "result": "correct",
+            "question_results": [
+                {
+                    "question_id": "q01",
+                    "learner_answer": "按人數",
+                    "expected_answer": "按人數",
+                    "correctness": "correct",
+                }
+            ],
+        },
+    )
+
+    runtime = build_interaction_runtime(_condition("02"), attempt, [])
+
+    assert runtime.target is None
+    assert runtime.target_count == 0
+
+
 def test_standard_chat_has_no_mandated_task_target():
     condition = _condition("01")
     greeting = ChatMessage(

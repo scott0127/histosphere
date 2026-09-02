@@ -160,6 +160,11 @@
       </div>
 
       <div class="space-y-3">
+        <TaskAllCorrectFallbackEditor
+          :model-value="allCorrectFallback"
+          @update:model-value="updateAllCorrectFallback"
+        />
+
         <TaskControlValidation :issues="validationIssues" />
 
         <TaskAnswerKeyPreview :task="task" :questions="questions" />
@@ -187,7 +192,8 @@
 // TaskControlEditor 是研究者/老師端 task 編輯入口。
 // 它以 display_text 為主要編輯面，並同步維護 evaluation_payload.questions。
 import { computed, nextTick, ref, watch } from 'vue';
-import type { EventTask, TaskQuestion, TaskQuestionType } from '~/types';
+import type { EventTask, TaskAllCorrectFallback, TaskQuestion, TaskQuestionType } from '~/types';
+import TaskAllCorrectFallbackEditor from '~/components/task-control/TaskAllCorrectFallbackEditor.vue';
 import TaskAnswerKeyPreview from '~/components/task-control/TaskAnswerKeyPreview.vue';
 import TaskControlItemEditor from '~/components/task-control/TaskControlItemEditor.vue';
 import TaskControlPreview from '~/components/task-control/TaskControlPreview.vue';
@@ -203,7 +209,9 @@ import {
   questionInsertedInStory,
   removeQuestionAndToken,
   renumberQuestionLabels,
+  taskAllCorrectFallback,
   taskControlQuestions,
+  updateTaskAllCorrectFallback,
   updateTaskControlQuestion,
   validateTaskControlPayload,
   type TaskEditorHistoryEntry,
@@ -232,6 +240,7 @@ const historyIndex = ref(-1);
 const historyEntries = ref<TaskEditorHistoryEntry[]>([]);
 
 const questions = computed(() => taskControlQuestions(props.task, props.evaluationJson));
+const allCorrectFallback = computed(() => taskAllCorrectFallback(props.evaluationJson));
 const labeledQuestions = computed(() => renumberQuestionLabels(questions.value));
 const validationIssues = computed(() => validateTaskControlPayload(props.task, props.evaluationJson));
 const selectedQuestion = computed(() => {
@@ -444,5 +453,9 @@ const deleteQuestion = (questionId: string) => {
 
 const updateEvaluationJson = (event: Event) => {
   emit('update:evaluationJson', (event.target as HTMLTextAreaElement).value);
+};
+
+const updateAllCorrectFallback = (fallback: TaskAllCorrectFallback | null) => {
+  emit('update:evaluationJson', updateTaskAllCorrectFallback(props.evaluationJson, fallback));
 };
 </script>

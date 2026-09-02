@@ -198,3 +198,45 @@ def test_legacy_task_without_questions_preserves_provider_diagnosis():
     assert result["result"] == "partial"
     assert result["question_results"] == []
     assert "score" not in result
+
+
+def test_all_correct_fallback_is_frozen_into_the_task_judgement():
+    task = EventTask(
+        event_id="event-1",
+        title="Task",
+        story_text="Story",
+        display_text="{{blank:q01}}",
+        evaluation_payload={
+            "questions": [
+                {
+                    "id": "q01",
+                    "type": "cloze",
+                    "prompt": "表決方式是什麼？",
+                    "correct_answer": "按人數",
+                }
+            ],
+            "all_correct_fallback": {
+                "id": "fallback-01",
+                "incorrect_claim": "三級會議原先採按人數表決。",
+                "correct_interpretation": "三級會議原先採按等級表決。",
+                "evidence_ids": ["E03"],
+            },
+        },
+    )
+
+    result = enrich_task_judgement(
+        task,
+        {"answers": [{"question_id": "q01", "value": "按人數"}]},
+        {"result": "correct", "misconception_summary": "", "feedback": ""},
+    )
+
+    assert result["result"] == "correct"
+    assert result["all_correct_fallback"] == {
+        "id": "fallback-01",
+        "incorrect_claim": "三級會議原先採按人數表決。",
+        "correct_interpretation": "三級會議原先採按等級表決。",
+        "source_text": None,
+        "historical_concept": None,
+        "reasoning_process": None,
+        "evidence_ids": ["E03"],
+    }

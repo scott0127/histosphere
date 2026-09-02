@@ -37,8 +37,13 @@ def validate_task_authoring_payload(
 
     issues: list[dict[str, str]] = []
     raw_questions = evaluation_payload.get("questions")
+    all_correct_fallback = evaluation_payload.get("all_correct_fallback")
     token_ids = _blank_ids(display_text)
-    structured_mode = "questions" in evaluation_payload or bool(token_ids)
+    structured_mode = (
+        "questions" in evaluation_payload
+        or bool(token_ids)
+        or all_correct_fallback is not None
+    )
 
     if raw_questions is None and not structured_mode:
         return issues
@@ -74,8 +79,50 @@ def validate_task_authoring_payload(
     _validate_story_tokens(token_ids, questions, issues)
     for index, question in enumerate(questions):
         _validate_question(index, question, token_ids, issues)
+    _validate_all_correct_fallback(all_correct_fallback, issues)
 
     return issues
+
+
+def _validate_all_correct_fallback(
+    fallback: Any,
+    issues: list[dict[str, str]],
+) -> None:
+    """可選素材只在全數答對時使用，且必須由研究者提供完整錯誤與正解。"""
+
+    if fallback is None:
+        return
+    field = "evaluation_payload.all_correct_fallback"
+    if not isinstance(fallback, dict):
+        issues.append(_issue(field, "all_correct_fallback must be an object.", "invalid_all_correct_fallback"))
+        return
+    if not str(fallback.get("id") or "").strip():
+        issues.append(_issue(f"{field}.id", "Fallback id is required.", "missing_fallback_id"))
+    if not str(fallback.get("incorrect_claim") or "").strip():
+        issues.append(
+            _issue(
+                f"{field}.incorrect_claim",
+                "A researcher-authored incorrect claim is required.",
+                "missing_fallback_incorrect_claim",
+            )
+        )
+    if not str(fallback.get("correct_interpretation") or "").strip():
+        issues.append(
+            _issue(
+                f"{field}.correct_interpretation",
+                "A verified correct interpretation is required.",
+                "missing_fallback_correct_interpretation",
+            )
+        )
+    evidence_ids = fallback.get("evidence_ids")
+    if evidence_ids is not None and not isinstance(evidence_ids, list):
+        issues.append(
+            _issue(
+                f"{field}.evidence_ids",
+                "evidence_ids must be an array.",
+                "invalid_fallback_evidence_ids",
+            )
+        )
 
 
 def _blank_ids(display_text: str) -> list[str]:

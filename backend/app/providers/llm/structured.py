@@ -175,7 +175,13 @@ class ChatOutputPayload(BaseModel):
     ] | None = None
     disclosure_reason: str | None = None
     learner_revision_status: Literal["not_yet", "partial", "revised", "unresolved", "not_applicable"] | None = None
-    completion_status: Literal["continue", "resolved", "complete"] | None = None
+    completion_status: Literal[
+        "continue",
+        "resolved",
+        "complete",
+        "corrective_resolution_pending",
+        "corrected_after_feedback",
+    ] | None = None
     # 同一次生成判斷是否已達正式 RESOLVED；後端只在三項都成立時接受。
     resolution_claim_corrected: bool = False
     resolution_evidence_used: bool = False

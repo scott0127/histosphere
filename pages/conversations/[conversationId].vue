@@ -18,7 +18,6 @@
     @session-expired="handleSessionExpired"
     @send-message="sendMessage"
     @retry-message="retryMessage"
-    @skip-error="skipCurrentError"
   />
   <div v-else class="flex h-screen items-center justify-center bg-[var(--admin-page)] font-sans text-[var(--admin-copy)]">
     <div class="text-center">
@@ -48,7 +47,6 @@ const {
   resetConversationState,
   retryMessage,
   sendMessage,
-  skipCurrentError,
   session,
   streamStatus,
   task,

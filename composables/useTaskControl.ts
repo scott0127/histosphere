@@ -2,6 +2,7 @@
 // evaluation_payload 仍存在 JSON 欄位中，這裡提供結構化題目編輯與 JSON 相容層。
 import type {
   EventTask,
+  TaskAllCorrectFallback,
   TaskEvaluationPayload,
   TaskQuestion,
   TaskQuestionOption,
@@ -38,6 +39,32 @@ export const parseTaskEvaluationJson = (jsonText: string): ParsedTaskPayload => 
 // 將 payload 穩定格式化，避免儲存時產生難讀的一行 JSON。
 export const stringifyTaskEvaluationPayload = (payload: TaskEvaluationPayload) => {
   return JSON.stringify(payload || {}, null, 2);
+};
+
+export const taskAllCorrectFallback = (evaluationJson: string): TaskAllCorrectFallback | null => {
+  const { payload } = parseTaskEvaluationJson(evaluationJson);
+  const fallback = payload.all_correct_fallback;
+  return fallback && typeof fallback === 'object' ? fallback : null;
+};
+
+export const updateTaskAllCorrectFallback = (
+  evaluationJson: string,
+  fallback: TaskAllCorrectFallback | null,
+) => {
+  const { payload } = parseTaskEvaluationJson(evaluationJson);
+  const nextPayload = { ...payload };
+  if (fallback) {
+    nextPayload.all_correct_fallback = {
+      ...fallback,
+      id: fallback.id.trim() || 'all-correct-fallback',
+      incorrect_claim: fallback.incorrect_claim,
+      correct_interpretation: fallback.correct_interpretation,
+      evidence_ids: Array.isArray(fallback.evidence_ids) ? fallback.evidence_ids : [],
+    };
+  } else {
+    delete nextPayload.all_correct_fallback;
+  }
+  return stringifyTaskEvaluationPayload(nextPayload);
 };
 
 export const sameTaskHistoryEntry = (
@@ -276,7 +303,7 @@ export const removeTaskControlQuestion = (evaluationJson: string, questionId: st
 
 // 基本驗證只檢查前端能判定的格式；正式評分規則仍由後端/LLM judgement 處理。
 export const validateTaskControlPayload = (task: EventTask, evaluationJson: string) => {
-  const { error } = parseTaskEvaluationJson(evaluationJson);
+  const { payload, error } = parseTaskEvaluationJson(evaluationJson);
   if (error) return [error];
 
   const questions = taskControlQuestions(task, evaluationJson);
@@ -284,6 +311,20 @@ export const validateTaskControlPayload = (task: EventTask, evaluationJson: stri
   const blankIdSet = new Set<string>();
   const questionBlankIds = new Set(questions.map((question) => question.blank_id || question.id));
   const issues: string[] = [];
+  const fallback = payload.all_correct_fallback;
+  if (fallback !== undefined && fallback !== null) {
+    if (typeof fallback !== 'object') {
+      issues.push('全部答對時的對話素材格式不正確。');
+    } else {
+      if (!String(fallback.id || '').trim()) issues.push('全部答對時的對話素材缺少固定 ID。');
+      if (!String(fallback.incorrect_claim || '').trim()) {
+        issues.push('請填寫全部答對時使用的第三方錯誤說法。');
+      }
+      if (!String(fallback.correct_interpretation || '').trim()) {
+        issues.push('請填寫第三方錯誤說法的核定正確解釋。');
+      }
+    }
+  }
   if (questions.length === 0) issues.push('至少需要一題 task 題目。');
   for (const blankId of blankIds) {
     if (blankIdSet.has(blankId)) {

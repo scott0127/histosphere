@@ -33,6 +33,31 @@ def test_generated_task_accepts_current_inline_question_contract():
     assert payload.evaluation_payload["questions"][0]["correct_answer"] == "1789"
 
 
+def test_generated_task_accepts_complete_all_correct_fallback():
+    raw = _valid_payload()
+    raw["evaluation_payload"]["all_correct_fallback"] = {
+        "id": "fallback-01",
+        "incorrect_claim": "法國大革命只由單一事件造成。",
+        "correct_interpretation": "法國大革命由多項結構與事件因素共同造成。",
+        "evidence_ids": ["E01"],
+    }
+
+    payload = GeneratedTaskPayload.model_validate(raw)
+
+    assert payload.evaluation_payload["all_correct_fallback"]["id"] == "fallback-01"
+
+
+def test_generated_task_rejects_incomplete_all_correct_fallback():
+    raw = _valid_payload()
+    raw["evaluation_payload"]["all_correct_fallback"] = {
+        "id": "fallback-01",
+        "incorrect_claim": "法國大革命只由單一事件造成。",
+    }
+
+    with pytest.raises(ValidationError):
+        GeneratedTaskPayload.model_validate(raw)
+
+
 @pytest.mark.parametrize(
     ("display_text", "evaluation_payload"),
     [

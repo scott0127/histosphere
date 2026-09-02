@@ -29,9 +29,10 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v6"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v7"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v6",
     "2x2-interaction-v5",
     "2x2-interaction-v4",
     "2x2-interaction-v3",
@@ -95,6 +96,8 @@ INTERACTION_RETRY_FLAGS = frozenset(
         "early_answer_exposure",
         "incomplete_resolution_criteria",
         "next_target_transition_missing",
+        "corrective_answer_missing",
+        "corrective_restatement_prompt_missing",
     }
 )
 
@@ -114,6 +117,7 @@ class InteractionTarget:
     reasoning_process: str | None
     evidence_ids: tuple[str, ...]
     probe_kind: str
+    error_source: str
 
     def as_metadata(self) -> dict[str, Any]:
         return {
@@ -124,6 +128,7 @@ class InteractionTarget:
             "reasoning_process": self.reasoning_process,
             "evidence_ids": list(self.evidence_ids),
             "probe_kind": self.probe_kind,
+            "error_source": self.error_source,
         }
 
 
@@ -143,6 +148,28 @@ class InteractionRuntime:
     allowed_states: tuple[DialogueState, ...]
     previous_disclosure_level: str | None
     previous_attempts_in_state: int
+    previous_completion_status: str | None
+
+    @property
+    def corrective_feedback_required(self) -> bool:
+        """受測者已取得 D4 支援；本回合若仍未自我修正，就進入終止性回饋。"""
+
+        return bool(
+            self.interaction_mode == "scaffold"
+            and self.target is not None
+            and self.previous_disclosure_level == "D4"
+            and self.previous_completion_status == "continue"
+        )
+
+    @property
+    def awaiting_corrective_restatement(self) -> bool:
+        """上一回合已公布修正，這一回合只收一次重述後切換 target。"""
+
+        return bool(
+            self.interaction_mode == "scaffold"
+            and self.target is not None
+            and self.previous_completion_status == "corrective_resolution_pending"
+        )
 
     @property
     def allowed_disclosure_levels(self) -> tuple[str, ...]:
@@ -230,6 +257,28 @@ class InteractionRuntime:
             if self.next_target
             else None
         )
+        if self.awaiting_corrective_restatement:
+            terminal_instruction = (
+                "Terminal corrective phase: the learner has now responded to the one-sentence restatement request. "
+                "Briefly acknowledge the response without grading its quality, then bridge to the next unresolved "
+                "target when one exists. Use dialogue_state=RESOLVED, dialogue_move=resolution, "
+                "completion_status=corrected_after_feedback, and do not reopen the current error."
+            )
+        elif self.corrective_feedback_required:
+            terminal_instruction = (
+                "Max-support decision: this learner message follows a D4 scaffold. First apply the three formal "
+                "RESOLVED criteria. If all three are met, resolve normally. If any criterion is unmet, stop the "
+                "scaffold and provide corrective feedback: identify the error, state a non-empty expected_answer "
+                "exactly once "
+                "with a short evidence-based explanation, and ask the learner to restate the corrected interpretation "
+                "in one sentence. Keep the current dialogue_state, use dialogue_move=corrective_feedback, and set "
+                "completion_status=corrective_resolution_pending. This terminal corrective "
+                "feedback occurs after D4 and is not an additional Disclosure level."
+            )
+        else:
+            terminal_instruction = (
+                "Do not provide corrective feedback before the learner has responded to D4 support."
+            )
         return (
             f"{shared}\n"
             f"Target historical-thinking focus: "
@@ -273,7 +322,8 @@ class InteractionRuntime:
             "and disclosure level unchanged, use learner_progress=no_progress, and do not treat the off-topic message as "
             "another failed scaffold attempt. "
             "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
-            "not invent a source ID or quotation."
+            "not invent a source ID or quotation.\n"
+            f"{terminal_instruction}"
         )
 
 
@@ -313,18 +363,49 @@ def _interaction_queue(task_attempt: Any | None) -> list[dict[str, Any]]:
     ]
     if error_results:
         return error_results
-    return results[:1]
+    if not results:
+        return []
+
+    judgement = getattr(task_attempt, "judgement_payload", None) if task_attempt else None
+    fallback = judgement.get("all_correct_fallback") if isinstance(judgement, dict) else None
+    if not isinstance(fallback, dict):
+        return []
+    incorrect_claim = str(fallback.get("incorrect_claim") or "").strip()
+    correct_interpretation = str(fallback.get("correct_interpretation") or "").strip()
+    if not incorrect_claim or not correct_interpretation:
+        return []
+    evidence_ids = fallback.get("evidence_ids")
+    return [
+        {
+            "question_id": str(fallback.get("id") or "all-correct-fallback"),
+            "prompt": (
+                f"另一位學習者提出這個判斷：「{incorrect_claim}」"
+                "請判斷這個說法並說明理由。"
+            ),
+            "source_text": fallback.get("source_text"),
+            "learner_answer": incorrect_claim,
+            "expected_answer": correct_interpretation,
+            "correctness": "incorrect",
+            "error_code": "researcher_authored_controlled_error",
+            "historical_concept": fallback.get("historical_concept"),
+            "reasoning_process": fallback.get("reasoning_process"),
+            "evidence_ids": [str(item) for item in evidence_ids or [] if item],
+            "probe_kind": "controlled_fallback",
+            "error_source": "researcher_authored_fallback",
+        }
+    ]
 
 
 def _resolved_question_ids(messages: Sequence[Any]) -> set[str]:
     resolved: set[str] = set()
     for message in messages:
         metadata = _message_metadata(message)
-        # D4 後由 learner 主動切題，也要關閉目前 target，但不可標成已解決。
+        # corrective feedback 後的重述會關閉 target，但不冒充 learner 自行解決。
         if metadata.get("completion_status") not in {
             "resolved",
             "complete",
             "unresolved_after_max_support",
+            "corrected_after_feedback",
         }:
             continue
         question_id = metadata.get("target_question_id")
@@ -343,7 +424,10 @@ def _last_interaction_metadata(messages: Sequence[Any]) -> dict[str, Any]:
 
 def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
     correctness = str(result.get("correctness") or "ungraded")
-    probe_kind = "error_correction" if correctness != "correct" else "justification_probe"
+    probe_kind = str(
+        result.get("probe_kind")
+        or ("error_correction" if correctness != "correct" else "justification_probe")
+    )
     evidence_ids = result.get("evidence_ids")
     return InteractionTarget(
         question_id=str(result.get("question_id")) if result.get("question_id") else None,
@@ -365,6 +449,7 @@ def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
         ),
         evidence_ids=tuple(str(item) for item in evidence_ids or [] if item),
         probe_kind=probe_kind,
+        error_source=str(result.get("error_source") or "learner_task_response"),
     )
 
 
@@ -394,6 +479,7 @@ def select_interaction_target(task_attempt: Any | None, messages: Sequence[Any])
             reasoning_process=None,
             evidence_ids=(),
             probe_kind="error_correction",
+            error_source="legacy_judgement_summary",
         )
 
     queue = _interaction_queue(task_attempt)
@@ -462,6 +548,7 @@ def build_interaction_runtime(
             allowed_states=("STANDARD_CHAT",),
             previous_disclosure_level=None,
             previous_attempts_in_state=0,
+            previous_completion_status=None,
         )
 
     target = select_interaction_target(task_attempt, messages)
@@ -483,14 +570,17 @@ def build_interaction_runtime(
         and previous_metadata.get("next_target_question_id") == target.question_id
     )
     raw_previous_state = previous_metadata.get("dialogue_state")
+    raw_completion_status = previous_metadata.get("completion_status")
     if transition_started:
         previous_state: DialogueState | None = EBL_INITIAL_STATE
         previous_disclosure_level = "D0"
         previous_attempts_in_state = 0
+        previous_completion_status = None
     elif target_changed:
         previous_state = None
         previous_disclosure_level = None
         previous_attempts_in_state = 0
+        previous_completion_status = None
     else:
         previous_state = (
             raw_previous_state
@@ -501,8 +591,13 @@ def build_interaction_runtime(
             previous_metadata.get("disclosure_level") or previous_metadata.get("scaffold_level")
         )
         previous_attempts_in_state = int(previous_metadata.get("attempts_in_state") or 0)
+        previous_completion_status = (
+            str(raw_completion_status) if isinstance(raw_completion_status, str) else None
+        )
     if target is None:
         allowed_states: tuple[DialogueState, ...] = ("RESOLVED",)
+    elif previous_completion_status == "corrective_resolution_pending":
+        allowed_states = ("RESOLVED",)
     elif previous_state:
         allowed_states = EBL_STATE_TRANSITIONS[previous_state]
     else:
@@ -520,6 +615,7 @@ def build_interaction_runtime(
         allowed_states=allowed_states,
         previous_disclosure_level=previous_disclosure_level,
         previous_attempts_in_state=previous_attempts_in_state,
+        previous_completion_status=previous_completion_status,
     )
 
 
@@ -549,6 +645,7 @@ def unresolved_after_max_support_metadata(runtime: InteractionRuntime) -> dict[s
         "learner_progress": "no_progress",
         "learner_revision_status": "unresolved",
         "completion_status": "unresolved_after_max_support",
+        "resolution_outcome": "unresolved_after_max_support",
         "resolution_claim_corrected": False,
         "resolution_evidence_used": False,
         "resolution_reasoning_linked": False,
@@ -617,6 +714,11 @@ def _contains_expected_answer(response_text: str, expected_answer: Any) -> bool:
     )
 
 
+def _requests_one_sentence_restatement(response_text: str) -> bool:
+    compact = re.sub(r"\s+", "", response_text)
+    return "一句話" in compact and any(marker in compact for marker in ("重述", "修正", "說明"))
+
+
 def resolve_interaction_metadata(
     runtime: InteractionRuntime,
     provider_metadata: dict[str, Any] | None,
@@ -641,6 +743,7 @@ def resolve_interaction_metadata(
         "reasoning_process": None,
         "evidence_ids": [],
         "probe_kind": "general_question",
+        "error_source": "none",
     }
     target_metadata.update(
         {
@@ -677,13 +780,20 @@ def resolve_interaction_metadata(
             "resolution_evidence_used": False,
             "resolution_reasoning_linked": False,
             "resolution_criteria_met": False,
+            "resolution_outcome": "not_applicable",
             "fidelity_flags": sorted(flags),
             "provider_fidelity_flags": provider_flags,
             **target_metadata,
         }
 
+    awaiting_corrective_restatement = runtime.awaiting_corrective_restatement
+    corrective_feedback_required = runtime.corrective_feedback_required and not off_topic_redirect
     proposed_state = raw.get("dialogue_state")
-    if off_topic_redirect:
+    if awaiting_corrective_restatement:
+        # 收到一次重述後就結束目前 target；不再以重述品質延長互動。
+        off_topic_redirect = False
+        proposed_state = "RESOLVED"
+    elif off_topic_redirect:
         # 離題只做範圍重新導向，不視為學習進展，也不推進 EBL 階段。
         proposed_state = (
             runtime.previous_state
@@ -694,13 +804,20 @@ def resolve_interaction_metadata(
         flags.add("invalid_state_transition")
         proposed_state = runtime.previous_state if runtime.previous_state in runtime.allowed_states else runtime.allowed_states[0]
     expected_move = DIALOGUE_MOVE_BY_STATE[proposed_state]
-    if not off_topic_redirect and raw.get("dialogue_move") not in {None, expected_move}:
+    allowed_provider_moves = {None, expected_move}
+    if corrective_feedback_required:
+        allowed_provider_moves.add("corrective_feedback")
+    if (
+        not off_topic_redirect
+        and not awaiting_corrective_restatement
+        and raw.get("dialogue_move") not in allowed_provider_moves
+    ):
         flags.add("invalid_dialogue_move")
 
     resolution_claim_corrected = raw.get("resolution_claim_corrected") is True
     resolution_evidence_used = raw.get("resolution_evidence_used") is True
     resolution_reasoning_linked = raw.get("resolution_reasoning_linked") is True
-    if off_topic_redirect:
+    if off_topic_redirect or awaiting_corrective_restatement:
         resolution_claim_corrected = False
         resolution_evidence_used = False
         resolution_reasoning_linked = False
@@ -711,7 +828,34 @@ def resolve_interaction_metadata(
             resolution_reasoning_linked,
         )
     )
-    if runtime.target is not None and proposed_state == "RESOLVED" and not resolution_criteria_met:
+    learner_self_resolved = bool(
+        runtime.target is not None
+        and resolution_criteria_met
+        and (proposed_state == "RESOLVED" or corrective_feedback_required)
+    )
+    if learner_self_resolved and corrective_feedback_required:
+        # D4 後若三項標準已滿足，直接承認 learner 自行修正，不強迫走完整階段順序。
+        flags.discard("invalid_state_transition")
+        flags.discard("invalid_dialogue_move")
+        proposed_state = "RESOLVED"
+        expected_move = "resolution"
+    corrective_feedback_delivered = bool(
+        corrective_feedback_required and not learner_self_resolved
+    )
+    if corrective_feedback_delivered:
+        # Corrective resolution 是 D4 結束後的終止性回饋，不新增一個假的 Disclosure 等級。
+        proposed_state = (
+            runtime.previous_state
+            if runtime.previous_state and runtime.previous_state != "RESOLVED"
+            else "REFLECT"
+        )
+        expected_move = "corrective_feedback"
+    if (
+        runtime.target is not None
+        and proposed_state == "RESOLVED"
+        and not resolution_criteria_met
+        and not awaiting_corrective_restatement
+    ):
         flags.add("incomplete_resolution_criteria")
 
     question_count = response_text.count("？") + response_text.count("?")
@@ -719,7 +863,9 @@ def resolve_interaction_metadata(
         flags.add("excessive_scaffold_questions")
     if len(response_text) > 700:
         flags.add("overlong_scaffold_response")
-    if off_topic_redirect:
+    if awaiting_corrective_restatement or corrective_feedback_delivered:
+        resolved_disclosure_level = "D4"
+    elif off_topic_redirect:
         resolved_disclosure_level = (
             runtime.previous_disclosure_level
             if runtime.previous_disclosure_level in runtime.allowed_disclosure_levels
@@ -733,10 +879,19 @@ def resolve_interaction_metadata(
         if not disclosure_transition_valid:
             flags.add("invalid_disclosure_transition")
     expected_answer = runtime.target.expected_answer if runtime.target else None
-    if (
-        proposed_state != "RESOLVED"
-        and expected_answer is not None
+    answer_exposed = bool(
+        expected_answer is not None
         and _contains_expected_answer(response_text, expected_answer)
+    )
+    if corrective_feedback_delivered:
+        if expected_answer is not None and not answer_exposed:
+            flags.add("corrective_answer_missing")
+        if not _requests_one_sentence_restatement(response_text):
+            flags.add("corrective_restatement_prompt_missing")
+    elif (
+        not awaiting_corrective_restatement
+        and proposed_state != "RESOLVED"
+        and answer_exposed
     ):
         flags.add("early_answer_exposure")
 
@@ -746,15 +901,33 @@ def resolve_interaction_metadata(
         if off_topic_redirect
         else runtime.previous_attempts_in_state + 1 if same_state else 0
     )
-    completion_status = "resolved" if proposed_state == "RESOLVED" else "continue"
-    next_target_started = bool(proposed_state == "RESOLVED" and runtime.next_target)
+    if awaiting_corrective_restatement:
+        completion_status = "corrected_after_feedback"
+        resolution_outcome = "corrected_after_feedback"
+    elif corrective_feedback_delivered:
+        completion_status = "corrective_resolution_pending"
+        resolution_outcome = "corrective_feedback_delivered"
+    elif proposed_state == "RESOLVED":
+        completion_status = "resolved"
+        resolution_outcome = "learner_resolved" if runtime.target else "no_target"
+    else:
+        completion_status = "continue"
+        resolution_outcome = "in_progress"
+    next_target_started = bool(
+        runtime.next_target
+        and (awaiting_corrective_restatement or completion_status == "resolved")
+    )
     if (
         next_target_started
         and not any(marker in response_text for marker in ("下一", "接著", "再看", "換到"))
     ):
         flags.add("next_target_transition_missing")
     revision_status = raw.get("learner_revision_status")
-    if revision_status not in {"not_yet", "partial", "revised", "unresolved"}:
+    if awaiting_corrective_restatement:
+        revision_status = "revised"
+    elif corrective_feedback_delivered:
+        revision_status = "unresolved"
+    elif revision_status not in {"not_yet", "partial", "revised", "unresolved"}:
         revision_status = "revised" if proposed_state == "RESOLVED" else "not_yet"
     learner_progress = raw.get("learner_progress")
     if learner_progress not in {
@@ -765,12 +938,22 @@ def resolve_interaction_metadata(
         "resolved",
     }:
         learner_progress = "resolved" if proposed_state == "RESOLVED" else "not_assessed"
-    if off_topic_redirect:
+    if awaiting_corrective_restatement:
+        learner_progress = "not_assessed"
+    elif corrective_feedback_delivered and learner_progress == "resolved":
+        learner_progress = "partial_progress"
+    elif off_topic_redirect:
         learner_progress = "no_progress"
         revision_status = "not_yet"
     disclosure_reason = raw.get("disclosure_reason")
     if not isinstance(disclosure_reason, str) or not disclosure_reason.strip():
         disclosure_reason = None
+
+    primary_historical_thinking_move = (
+        "provide_corrective_resolution"
+        if corrective_feedback_delivered
+        else primary_reasoning_move(proposed_state)
+    )
 
     return {
         "interaction_policy_version": INTERACTION_POLICY_VERSION,
@@ -778,7 +961,7 @@ def resolve_interaction_metadata(
         "interaction_mode": "scaffold",
         "dialogue_state": proposed_state,
         "dialogue_move": expected_move,
-        "primary_historical_thinking_move": primary_reasoning_move(proposed_state),
+        "primary_historical_thinking_move": primary_historical_thinking_move,
         "disclosure_level": resolved_disclosure_level,
         "allowed_disclosure_levels": list(runtime.allowed_disclosure_levels),
         "learner_progress": learner_progress,
@@ -787,6 +970,8 @@ def resolve_interaction_metadata(
         "attempts_in_state": attempts_in_state,
         "learner_revision_status": revision_status,
         "completion_status": completion_status,
+        "resolution_outcome": resolution_outcome,
+        "corrective_feedback_revealed_answer": corrective_feedback_delivered and answer_exposed,
         "next_target_started": next_target_started,
         "resolution_claim_corrected": resolution_claim_corrected,
         "resolution_evidence_used": resolution_evidence_used,

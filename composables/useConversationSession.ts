@@ -387,8 +387,6 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
 
   const sendMessage = async (userInput: string) => queueMessage(userInput);
 
-  const skipCurrentError = async () => queueMessage('處理下一個錯誤', 'next_error');
-
   const retryMessage = async (requestId: string) => {
     if (!chatState.value || isSending.value) return;
     const learner = history.value.find((message) => {
@@ -435,7 +433,6 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     resetConversationState,
     retryMessage,
     sendMessage,
-    skipCurrentError,
     session,
     streamStatus,
     task,
