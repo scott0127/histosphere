@@ -1,6 +1,10 @@
+from copy import deepcopy
+
 import pytest
 
 from app.models.domain import EventTask
+from app.providers.llm.json_runner import LLMCallMetadata, LLMRunError
+from app.services.task_service import TaskService
 
 
 VERSION = "error_elicitation_v1"
@@ -106,3 +110,69 @@ def test_failed_judge_keeps_inputs_and_retries_same_attempt_without_false_grades
     complete = client.get(retried.json()["poll_url"], headers=HEADERS).json()
     assert complete["attempt"]["status"] == "submitted"
     assert complete["attempt"]["response_payload"] == request["response_payload"]
+
+
+@pytest.mark.parametrize("retry_path", ["submit", "unchanged_draft", "restart", "answer", "rationale", "task"])
+def test_opening_failure_reuses_only_a_valid_unchanged_judgement(client, retry_path):
+    initialized = initialize(client, "no_ebl_no_roleplay")
+    state = client.app.state
+    request = {"session_id": initialized["session_id"], "user_id": "participant-001", "response_payload": answers()}
+    task_url = f"/api/tasks/{initialized['task']['id']}"
+    judge_calls = []
+    judge_metadata = state.llm_provider._llm_metadata("judge_task_attempt")
+
+    async def judge(event, task, response):
+        judge_calls.append(deepcopy(response))
+        return {**judged(), **judge_metadata}
+
+    original_opening = state.opening_service.generate
+
+    async def failed_opening(**kwargs):
+        raise LLMRunError("Opening timed out", LLMCallMetadata(
+            correlation_id="failed-opening", task_name="generate_greeting", provider="fake-test",
+            model="fake-model", status="failed", latency_ms=1, attempt_count=1,
+            transient_retry_count=0, schema_repair_count=0, total_tokens=9,
+        ))
+
+    state.llm_provider.judge_task_attempt = judge
+    state.opening_service.generate = failed_opening
+    accepted = client.post(f"{task_url}/submit", headers=HEADERS, json=request).json()
+    failed = client.get(accepted["poll_url"], headers=HEADERS).json()
+    assert failed["attempt"]["status"] == "failed"
+    attempt = state.repository.get_task_attempt(accepted["attempt_id"])
+    assert attempt.judgement_payload["judgement_input_hash"]
+    assert attempt.judgement_payload["llm_call"] == judge_metadata["llm_call"]
+    assert "judgement_input_hash" not in failed["attempt"]["judgement_payload"]
+    assert state.repository.get_session(initialized["session_id"]).timer_ends_at is None
+
+    state.opening_service.generate = original_opening
+    if retry_path == "answer":
+        request["response_payload"]["answers"][0]["value"] = "Osaka"
+    elif retry_path == "rationale":
+        request["response_payload"]["answers"][0]["rationale"] = "A different reason."
+    elif retry_path == "task":
+        task = state.repository.get_event_task(initialized["task"]["id"])
+        task.evaluation_payload["questions"][0]["reasoning_criteria"] = "An amended criterion."
+        state.repository.save_event_task(task)
+    elif retry_path == "unchanged_draft":
+        assert client.patch(f"{task_url}/draft", headers=HEADERS, json=request).status_code == 200
+    elif retry_path == "restart":
+        # 模擬判題落盤後程序中斷；新 service 只能從 repository 恢復，不依賴記憶體快取。
+        attempt.status = "processing"
+        state.repository.save_task_attempt(attempt)
+        state.task_service = TaskService(state.repository, state.llm_provider, state.opening_service)
+
+    if retry_path != "restart":
+        retried = client.post(f"{task_url}/submit", headers=HEADERS, json=request)
+        assert retried.json()["attempt_id"] == accepted["attempt_id"]
+    complete = client.get(accepted["poll_url"], headers=HEADERS).json()
+    if retry_path == "restart":
+        complete = client.get(accepted["poll_url"], headers=HEADERS).json()
+    assert complete["attempt"]["status"] == "submitted"
+    assert len(judge_calls) == (2 if retry_path in {"answer", "rationale", "task"} else 1)
+    saved = state.repository.get_task_attempt(accepted["attempt_id"])
+    assert saved.response_payload == request["response_payload"]
+    assert saved.judgement_payload["llm_call"] == judge_metadata["llm_call"]
+    assert "error" not in saved.judgement_payload
+    assert len(state.repository.list_messages(complete["result"]["conversation_id"])) == 1
+    assert state.repository.get_session(initialized["session_id"]).timer_ends_at is not None

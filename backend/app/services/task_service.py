@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
 from app.core.error_elicitation_contract import validate_task_answers
-from app.core.research_reproducibility import record_prompt_snapshot
+from app.core.research_reproducibility import record_prompt_snapshot, stable_hash
 from app.models.domain import ChatMessage, Conversation, ResearchLog, TaskAttempt, utc_now
 from app.providers.llm.base import LLMProvider
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
@@ -61,8 +61,9 @@ class TaskService:
                 user_id=request.user_id or session.user_id,
             )
         attempt.status = "in_progress"
+        if attempt.response_payload != request.response_payload:
+            attempt.judgement_payload = {}
         attempt.response_payload = request.response_payload
-        attempt.judgement_payload = {}
         attempt.user_id = request.user_id or attempt.user_id or session.user_id
         saved = self.repository.save_task_attempt(attempt)
         self.repository.save_session(session)
@@ -94,8 +95,9 @@ class TaskService:
                 user_id=request.user_id or session.user_id,
             )
         attempt.status = "processing"
+        if attempt.response_payload != request.response_payload:
+            attempt.judgement_payload = {}
         attempt.response_payload = request.response_payload
-        attempt.judgement_payload = {}
         attempt.submitted_at = None
         attempt.user_id = request.user_id or attempt.user_id or session.user_id
         attempt = self.repository.save_task_attempt(attempt)
@@ -141,22 +143,36 @@ class TaskService:
             if not condition:
                 raise RuntimeError("Experiment condition is missing")
 
-            judgement = await self.llm_provider.judge_task_attempt(event, task, attempt.response_payload)
-            try:
-                judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
-            except ValueError as exc:
-                # 模型漏題等問題保留原輸出供查核；不可產生假的 incorrect 結果。
-                audit_id = record_rejected_generation(
-                    stage="task_judgement_contract",
-                    provider=str(judgement.get("provider", "unknown")),
-                    model=str(judgement.get("model", "unknown")),
-                    task_name="judge_task_attempt",
-                    raw_output=json.dumps(judgement, ensure_ascii=False),
-                    reasons=[str(exc)],
-                    context={"attempt_id": attempt.id, "task_id": task.id},
-                )
-                attempt.judgement_payload = {"llm_call": judgement.get("llm_call"), "judge_validation_audit_id": audit_id}
-                raise
+            judgement_input_hash = stable_hash({
+                "event": event,
+                "task": task,
+                "response_payload": attempt.response_payload,
+            })
+            # 只有已驗證並持久化的判題才有此標記；開場失敗或程序中斷後可接續，不能重判污染結果。
+            judgement_reused = attempt.judgement_payload.get("judgement_input_hash") == judgement_input_hash
+            if judgement_reused:
+                judgement = {
+                    key: value for key, value in attempt.judgement_payload.items()
+                    if key not in {"error", "error_type", "completion_validation"}
+                }
+            else:
+                judgement = await self.llm_provider.judge_task_attempt(event, task, attempt.response_payload)
+                try:
+                    judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
+                except ValueError as exc:
+                    # 模型漏題等問題保留原輸出供查核；不可產生假的 incorrect 結果。
+                    audit_id = record_rejected_generation(
+                        stage="task_judgement_contract",
+                        provider=str(judgement.get("provider", "unknown")),
+                        model=str(judgement.get("model", "unknown")),
+                        task_name="judge_task_attempt",
+                        raw_output=json.dumps(judgement, ensure_ascii=False),
+                        reasons=[str(exc)],
+                        context={"attempt_id": attempt.id, "task_id": task.id},
+                    )
+                    attempt.judgement_payload = {"llm_call": judgement.get("llm_call"), "judge_validation_audit_id": audit_id}
+                    raise
+                judgement["judgement_input_hash"] = judgement_input_hash
             # ``submitted`` is the polling terminal state. Keep the attempt processing
             # until the validated opening and its conversation are both durable.
             attempt.judgement_payload = judgement
@@ -210,6 +226,7 @@ class TaskService:
                     action_type="task_submission_processed",
                     payload={
                         "judgement_llm_call": judgement.get("llm_call"),
+                        "judgement_reused": judgement_reused,
                         "opening_llm_call": greeting_message.metadata.get("llm_call"),
                     },
                 )
@@ -266,7 +283,8 @@ class TaskService:
                 **previous_judgement,
                 "error": "Task processing failed. The submission can be retried.",
                 "error_type": type(exc).__name__,
-                **({"llm_call": llm_call} if llm_call else {}),
+                # 開場失敗的呼叫另存 research log，不覆蓋已成功判題的 token 與 provider 紀錄。
+                **({"llm_call": llm_call} if llm_call and not previous_judgement.get("judgement_input_hash") else {}),
                 **({"completion_validation": validation_failure} if validation_failure else {}),
             }
             self.repository.save_task_attempt(attempt)
