@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
+from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
+from app.core.task_payload_validator import validate_task_authoring_payload
 from app.providers.llm.structured import GeneratedTaskPayload
 
 
@@ -89,3 +91,80 @@ def test_generated_task_rejects_legacy_or_inconsistent_payloads(
 
     with pytest.raises(ValidationError):
         GeneratedTaskPayload.model_validate(raw)
+
+
+@pytest.mark.parametrize(
+    ("question_type", "answer", "options"),
+    [
+        ("cloze", ["1789", "一七八九"], None),
+        ("true_false", False, None),
+        ("multiple_choice", "A", [
+            {"id": "a", "label": "選項甲", "value": "A"},
+            {"id": "b", "label": "選項乙", "value": "B"},
+        ]),
+    ],
+)
+def test_error_elicitation_accepts_three_standalone_types_with_criteria(question_type, answer, options):
+    raw = _valid_payload()
+    raw["display_text"] = "請逐題作答並說明理由。"
+    evaluation = raw["evaluation_payload"]
+    evaluation["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
+    question = evaluation["questions"][0]
+    question.update(type=question_type, correct_answer=answer, reasoning_criteria="理由須由素材支持答案。")
+    if options:
+        question["options"] = options
+
+    result = GeneratedTaskPayload.model_validate(raw)
+
+    assert result.evaluation_payload == evaluation
+    assert result.evaluation_payload["questions"][0]["correct_answer"] == answer
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected_code"),
+    [
+        ({"reasoning_criteria": " "}, "missing_reasoning_criteria"),
+        ({"reasoning_criteria": {"text": "不能接受物件"}}, "missing_reasoning_criteria"),
+        ({"type": "short_answer"}, "unsupported_question_type"),
+        ({"correct_answer": []}, "missing_correct_answer"),
+        ({"correct_answer": ["1789", " "]}, "missing_correct_answer"),
+        ({"required": False}, "question_must_be_required"),
+        ({"id": " q01 "}, "invalid_question_id"),
+    ],
+)
+def test_error_elicitation_rejects_incomplete_authoring_contract(changes, expected_code):
+    evaluation = _valid_payload()["evaluation_payload"]
+    evaluation["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
+    evaluation["questions"][0]["reasoning_criteria"] = "理由須由素材支持答案。"
+    evaluation["questions"][0].update(changes)
+
+    issues = validate_task_authoring_payload("逐題作答", evaluation)
+
+    assert expected_code in {issue["code"] for issue in issues}
+
+
+def test_error_elicitation_rejects_duplicate_ids_and_unknown_versions():
+    evaluation = _valid_payload()["evaluation_payload"]
+    evaluation["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
+    question = evaluation["questions"][0]
+    question["reasoning_criteria"] = "理由須由素材支持答案。"
+    evaluation["questions"].append({**question, "blank_id": "another-blank"})
+    issues = validate_task_authoring_payload("逐題作答", evaluation)
+    assert "duplicate_question_id" in {issue["code"] for issue in issues}
+
+    evaluation["contract_version"] = "unknown-version"
+    issues = validate_task_authoring_payload("逐題作答", evaluation)
+    assert issues[0]["code"] == "unsupported_task_contract"
+
+
+def test_error_elicitation_choice_values_are_strings_and_unambiguous():
+    evaluation = _valid_payload()["evaluation_payload"]
+    evaluation["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
+    evaluation["questions"][0].update(
+        type="multiple_choice",
+        correct_answer=1,
+        reasoning_criteria="說明選項如何由素材支持。",
+        options=[{"value": 1}, {"value": "A"}, {"value": "a"}],
+    )
+    codes = {issue["code"] for issue in validate_task_authoring_payload("逐題作答", evaluation)}
+    assert {"missing_option_value", "duplicate_option_value", "answer_not_in_options"}.issubset(codes)

@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
 
+import pytest
+
+from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
 from app.models.domain import ChatMessage, utc_now
 from app.schemas.requests import TaskSubmitRequest
 
@@ -146,6 +149,34 @@ def test_task_submission_is_persisted_and_polled(client):
     )
     assert duplicate.status_code == 202
     assert duplicate.json()["attempt_id"] == submitted["attempt_id"]
+
+
+@pytest.mark.parametrize("version_location", ["task", "response"])
+def test_new_task_contract_cannot_accidentally_use_old_judge(client, version_location):
+    initialized = admin_initialize(client)
+    repository = client.app.state.repository
+    task = repository.get_event_task(initialized["task"]["id"])
+    payload = {"answer_text": "原因"}
+    if version_location == "task":
+        task.evaluation_payload["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
+        repository.save_event_task(task)
+    else:
+        payload = {
+            "contract_version": ERROR_ELICITATION_CONTRACT_VERSION,
+            "answers": [{"question_id": "q01", "value": "原因", "rationale": "尚待新版 Judge 檢查。"}],
+        }
+
+    async def unexpected_judge(*args, **kwargs):
+        pytest.fail("New-format answers must not reach the old judge")
+
+    client.app.state.llm_provider.judge_task_attempt = unexpected_judge
+    response = client.post(
+        f"/api/tasks/{task.id}/submit",
+        json={"session_id": initialized["session_id"], "response_payload": payload},
+    )
+    assert response.status_code == 409
+    assert "not enabled yet" in response.json()["detail"]
+    assert repository.get_task_attempt_for_session(initialized["session_id"], task.id) is None
 
 
 def test_processing_attempt_is_recovered_by_polling_after_worker_loss(client):

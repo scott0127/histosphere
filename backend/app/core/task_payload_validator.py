@@ -10,6 +10,8 @@ import re
 from collections import Counter
 from typing import Any
 
+from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
+
 
 INLINE_QUESTION_TYPES = {"cloze", "multiple_choice", "true_false"}
 SUPPORTED_QUESTION_TYPES = INLINE_QUESTION_TYPES | {"short_answer"}
@@ -20,10 +22,9 @@ def validate_task_authoring_payload(
     display_text: str,
     evaluation_payload: dict[str, Any] | Any,
 ) -> list[dict[str, str]]:
-    """回傳 story-first task 的欄位級驗證問題。
+    """回傳 Task 的欄位級驗證問題。
 
-    只有 ``evaluation_payload.questions`` 或 story token 已存在時才進入
-    strict mode，讓既有舊資料仍可由研究員打開後逐步轉換。
+    新版每題要求答案與理由通過標準；分批切換完成前不改變現行題目規則。
     """
 
     if not isinstance(evaluation_payload, dict):
@@ -36,6 +37,14 @@ def validate_task_authoring_payload(
         ]
 
     issues: list[dict[str, str]] = []
+    contract_version = evaluation_payload.get("contract_version")
+    if "contract_version" in evaluation_payload and contract_version != ERROR_ELICITATION_CONTRACT_VERSION:
+        return [_issue(
+            "evaluation_payload.contract_version",
+            "Unsupported task contract_version.",
+            "unsupported_task_contract",
+        )]
+    error_elicitation = contract_version == ERROR_ELICITATION_CONTRACT_VERSION
     raw_questions = evaluation_payload.get("questions")
     all_correct_fallback = evaluation_payload.get("all_correct_fallback")
     token_ids = _blank_ids(display_text)
@@ -43,6 +52,7 @@ def validate_task_authoring_payload(
         "questions" in evaluation_payload
         or bool(token_ids)
         or all_correct_fallback is not None
+        or error_elicitation
     )
 
     if raw_questions is None and not structured_mode:
@@ -77,8 +87,13 @@ def validate_task_authoring_payload(
         )
 
     _validate_story_tokens(token_ids, questions, issues)
+    if error_elicitation:
+        # 每題理由靠 question_id 關聯，不能讓重複 id 覆蓋另一題的作答。
+        ids = [str(question.get("id") or "").strip() for question in questions]
+        if len(ids) != len(set(ids)):
+            issues.append(_issue("evaluation_payload.questions", "Question ids must be unique.", "duplicate_question_id"))
     for index, question in enumerate(questions):
-        _validate_question(index, question, token_ids, issues)
+        _validate_question(index, question, token_ids, issues, error_elicitation=error_elicitation)
     _validate_all_correct_fallback(all_correct_fallback, issues)
 
     return issues
@@ -174,6 +189,8 @@ def _validate_question(
     question: dict[str, Any],
     token_ids: list[str],
     issues: list[dict[str, str]],
+    *,
+    error_elicitation: bool = False,
 ) -> None:
     field = f"evaluation_payload.questions[{index}]"
     question_id = str(question.get("id") or "").strip()
@@ -185,7 +202,8 @@ def _validate_question(
         issues.append(_issue(f"{field}.id", "Question id is required.", "missing_question_id"))
     if not prompt:
         issues.append(_issue(f"{field}.prompt", "Question prompt is required.", "missing_prompt"))
-    if question_type not in SUPPORTED_QUESTION_TYPES:
+    supported_types = INLINE_QUESTION_TYPES if error_elicitation else SUPPORTED_QUESTION_TYPES
+    if question_type not in supported_types:
         issues.append(
             _issue(
                 f"{field}.type",
@@ -195,7 +213,21 @@ def _validate_question(
         )
         return
 
-    if question_type in INLINE_QUESTION_TYPES and blank_id not in token_ids:
+    if error_elicitation:
+        if not isinstance(question.get("id"), str) or question["id"] != question_id:
+            issues.append(_issue(f"{field}.id", "Question id must be a string without surrounding whitespace.", "invalid_question_id"))
+        criteria = question.get("reasoning_criteria")
+        if not isinstance(criteria, str) or not criteria.strip():
+            issues.append(_issue(
+                f"{field}.reasoning_criteria",
+                "Each question requires nonblank researcher-defined reasoning criteria.",
+                "missing_reasoning_criteria",
+            ))
+        if question.get("required", True) is not True:
+            issues.append(_issue(f"{field}.required", "Every question requires an answer and rationale.", "question_must_be_required"))
+
+    # 新版每題有獨立答案與理由區，不再要求三種題型都插入故事 token。
+    if not error_elicitation and question_type in INLINE_QUESTION_TYPES and blank_id not in token_ids:
         issues.append(
             _issue(
                 f"{field}.blank_id",
@@ -205,8 +237,15 @@ def _validate_question(
         )
 
     if question_type == "cloze":
-        correct_answer = str(question.get("correct_answer") or "").strip()
-        if not correct_answer:
+        raw_answer = question.get("correct_answer")
+        if error_elicitation:
+            accepted_answers = raw_answer if isinstance(raw_answer, list) else [raw_answer]
+            valid_answer = bool(accepted_answers) and all(
+                isinstance(answer, str) and bool(answer.strip()) for answer in accepted_answers
+            )
+        else:
+            valid_answer = bool(str(raw_answer or "").strip())
+        if not valid_answer:
             issues.append(
                 _issue(
                     f"{field}.correct_answer",
@@ -215,7 +254,7 @@ def _validate_question(
                 )
             )
     elif question_type == "multiple_choice":
-        _validate_multiple_choice(field, question, question_id, blank_id, issues)
+        _validate_multiple_choice(field, question, question_id, blank_id, issues, strict_values=error_elicitation)
     elif question_type == "true_false" and not isinstance(question.get("correct_answer"), bool):
         issues.append(
             _issue(
@@ -232,6 +271,8 @@ def _validate_multiple_choice(
     question_id: str,
     blank_id: str,
     issues: list[dict[str, str]],
+    *,
+    strict_values: bool = False,
 ) -> None:
     options = question.get("options")
     if not isinstance(options, list) or len(options) < 2:
@@ -248,7 +289,7 @@ def _validate_multiple_choice(
     for option_index, option in enumerate(options):
         value = option.get("value") if isinstance(option, dict) else None
         value_text = str(value or "").strip()
-        if not value_text:
+        if not value_text or (strict_values and not isinstance(value, str)):
             issues.append(
                 _issue(
                     f"{field}.options[{option_index}].value",
@@ -258,8 +299,10 @@ def _validate_multiple_choice(
             )
         option_values.append(value_text)
 
+    if strict_values and len(option_values) != len(set(value.casefold() for value in option_values)):
+        issues.append(_issue(f"{field}.options", "Option values must be distinct under answer normalization.", "duplicate_option_value"))
     correct_answer = str(question.get("correct_answer") or "").strip()
-    if correct_answer not in option_values:
+    if correct_answer not in option_values or (strict_values and not isinstance(question.get("correct_answer"), str)):
         issues.append(
             _issue(
                 f"{field}.correct_answer",

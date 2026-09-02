@@ -81,6 +81,8 @@ class TaskService:
         if attempt and attempt.status == "processing":
             return self._accepted(attempt), False
 
+        self._require_current_submission_format(task.evaluation_payload, request.response_payload)
+
         if not attempt:
             attempt = TaskAttempt(
                 task_id=task.id,
@@ -131,6 +133,7 @@ class TaskService:
             event = self.repository.get_event(attempt.event_id)
             if not task or not session or not event:
                 raise RuntimeError("Task submission context is incomplete")
+            self._require_current_submission_format(task.evaluation_payload, attempt.response_payload)
             condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
             if not condition:
                 raise RuntimeError("Experiment condition is missing")
@@ -320,6 +323,15 @@ class TaskService:
         if user_id and not session.user_id:
             session.user_id = user_id
         return task, session
+
+    @staticmethod
+    def _require_current_submission_format(evaluation_payload: dict, response_payload: dict) -> None:
+        # 第 4 批接上新 Judge 後移除此切換保護；不能讓舊 Judge 忽略新格式的理由。
+        if "contract_version" in evaluation_payload or "contract_version" in response_payload:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Error-Elicitation Task judgement is not enabled yet. No answers were graded.",
+            )
 
     @staticmethod
     def _accepted(attempt: TaskAttempt) -> TaskSubmissionAcceptedResponse:

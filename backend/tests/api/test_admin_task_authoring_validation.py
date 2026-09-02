@@ -1,3 +1,6 @@
+from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
+
+
 def initialize_event(client, event_name="法國大革命") -> dict:
     response = client.post(
         "/api/event/initialize",
@@ -105,3 +108,21 @@ def test_admin_task_update_rejects_required_null_fields(client):
     detail = response.json()["detail"]
     assert detail["issues"][0]["field"] == "display_text"
     assert detail["issues"][0]["code"] == "required_field_null"
+
+
+def test_admin_can_save_new_task_contract_without_rewriting_existing_snapshot(client):
+    initialized = initialize_event(client)
+    repository = client.app.state.repository
+    snapshot = next(log for log in repository.list_research_logs() if log.action_type == "session_material_snapshot")
+    previous_snapshot = snapshot.model_dump_json()
+    evaluation = initialized["task"]["evaluation_payload"]
+    evaluation["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
+    evaluation["questions"][0]["reasoning_criteria"] = "說明題目素材如何支持答案。"
+    response = client.patch(
+        f"/api/admin/tasks/{initialized['task']['id']}",
+        headers={"x-admin-key": "test-admin"},
+        json={"display_text": "逐題作答並說明理由。", "evaluation_payload": evaluation},
+    )
+    assert response.status_code == 200
+    assert response.json()["evaluation_payload"] == evaluation
+    assert snapshot.model_dump_json() == previous_snapshot

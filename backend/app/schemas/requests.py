@@ -7,8 +7,9 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.error_elicitation_contract import validate_versioned_task_response
 from app.core.persona_prompt_contract import PersonaPromptProfile
 from app.models.domain import ChatMessage, ConditionKey
 
@@ -88,6 +89,8 @@ class TaskSubmitRequest(BaseModel):
     response_payload: dict[str, Any] = Field(default_factory=dict)
     user_id: str | None = None
 
+    _validate_response = field_validator("response_payload")(validate_versioned_task_response)
+
 
 class TaskDraftRequest(BaseModel):
     """Task 草稿儲存請求。
@@ -103,6 +106,8 @@ class TaskDraftRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     response_payload: dict[str, Any] = Field(default_factory=dict)
     user_id: str | None = None
+
+    _validate_response = field_validator("response_payload")(validate_versioned_task_response)
 
 
 class ConversationCreateRequest(BaseModel):

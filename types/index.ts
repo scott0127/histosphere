@@ -8,6 +8,10 @@ export type SpeakerType = 'learner' | 'assistant' | 'persona';
 
 export type TaskQuestionType = 'short_answer' | 'cloze' | 'multiple_choice' | 'true_false';
 
+export const ERROR_ELICITATION_CONTRACT_VERSION = 'error_elicitation_v1' as const;
+export type ErrorElicitationQuestionType = Exclude<TaskQuestionType, 'short_answer'>;
+export type ErrorElicitationCorrectness = 'correct' | 'incorrect';
+
 export type TaskAnswerValue = string | boolean | string[] | null;
 
 export type UserProgressStatus =
@@ -35,6 +39,15 @@ export interface TaskQuestion {
   required?: boolean;
   correct_answer?: unknown;
   explanation?: string | null;
+  // 研究者設定的理由通過標準，不在受測者作答介面顯示。
+  reasoning_criteria?: string;
+}
+
+export interface ErrorElicitationQuestion extends TaskQuestion {
+  type: ErrorElicitationQuestionType;
+  required?: true;
+  correct_answer: string | boolean | string[];
+  reasoning_criteria: string;
 }
 
 export interface TaskAllCorrectFallback {
@@ -48,11 +61,17 @@ export interface TaskAllCorrectFallback {
 }
 
 export interface TaskEvaluationPayload {
+  contract_version?: typeof ERROR_ELICITATION_CONTRACT_VERSION;
   questions?: TaskQuestion[];
   rubric?: string | null;
   target_misconceptions?: string[];
   all_correct_fallback?: TaskAllCorrectFallback | null;
   [key: string]: unknown;
+}
+
+export interface ErrorElicitationEvaluationPayload extends TaskEvaluationPayload {
+  contract_version: typeof ERROR_ELICITATION_CONTRACT_VERSION;
+  questions: ErrorElicitationQuestion[];
 }
 
 export interface TaskStudentAnswer {
@@ -61,6 +80,28 @@ export interface TaskStudentAnswer {
   type: TaskQuestionType;
   prompt: string;
   value: TaskAnswerValue;
+  // 分批切換前暫為選填；新版每題都收集學生原始理由。
+  rationale?: string;
+}
+
+export interface ErrorElicitationResponsePayload {
+  contract_version: typeof ERROR_ELICITATION_CONTRACT_VERSION;
+  answers: Array<Pick<TaskStudentAnswer, 'question_id'> & {
+    value: string | boolean | null;
+    rationale: string;
+  }>;
+}
+
+export interface ErrorElicitationReasoningJudgement {
+  question_id: string;
+  reasoning_correct: boolean;
+  reasoning_issue: 'none' | 'factual_error' | 'unsupported_inference' | 'insufficient_reasoning';
+  reasoning_feedback: string;
+}
+
+export interface ErrorElicitationQuestionResult extends ErrorElicitationReasoningJudgement {
+  answer_correct: boolean;
+  correctness: ErrorElicitationCorrectness;
 }
 
 export interface HistoricalEvent {
