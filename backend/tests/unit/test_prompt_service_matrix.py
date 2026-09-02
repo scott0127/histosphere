@@ -78,10 +78,10 @@ def test_prompt_modules_change_only_on_their_assigned_factor():
 
     assert matrix["01"]["interaction_runtime"] == matrix["03"]["interaction_runtime"]
     assert matrix["02"]["interaction_runtime"] == matrix["04"]["interaction_runtime"]
-    assert "Disclosure levels are not Historical EBL stages" in matrix["02"]["interaction_runtime"]
+    assert "The EBL action and Disclosure level are separate decisions" in matrix["02"]["interaction_runtime"]
     assert '"D0"' in matrix["02"]["interaction_runtime"]
     assert '"D4"' in matrix["02"]["interaction_runtime"]
-    assert "leaving the key answer blank" in matrix["02"]["interaction_runtime"]
+    assert "leaving the corrected answer for the learner to attempt" in matrix["02"]["interaction_runtime"]
     assert "D1 may identify the sentence" in matrix["02"]["interaction_runtime"]
     assert "must not disclose the evidence content" in matrix["02"]["interaction_runtime"]
     assert "第三等級反對每一等級各一票" in matrix["02"]["learner_task"]
@@ -92,9 +92,9 @@ def test_prompt_modules_change_only_on_their_assigned_factor():
     assert matrix["03"]["persona_event_context"] == matrix["04"]["persona_event_context"]
     assert "Frame mode: event-situated first-person historical persona" in matrix["03"]["persona_event_context"]
     assert "No persona context applies" in matrix["01"]["persona_event_context"]
-    assert "zero to two tightly related questions" in matrix["02"]["independent_2_prompt"]
-    assert "Keep one error in focus until it is resolved" in matrix["04"]["independent_2_prompt"]
-    assert "zero to two tightly related questions" not in matrix["01"]["independent_2_prompt"]
+    assert "zero to two closely related questions" in matrix["02"]["independent_2_prompt"]
+    assert "Keep one error in focus until final feedback has been delivered" in matrix["04"]["independent_2_prompt"]
+    assert "zero to two closely related questions" not in matrix["01"]["independent_2_prompt"]
 
 
 def test_all_conditions_share_the_event_scope_redirect_policy():

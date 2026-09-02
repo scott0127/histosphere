@@ -1,4 +1,6 @@
-from app.core.interaction_contract import INTERACTION_POLICY_VERSION
+import pytest
+
+from app.core.interaction_contract import INTERACTION_POLICY_VERSION, build_interaction_runtime
 from app.models.domain import ChatMessage, Event
 from app.providers.llm.base import ChatGenerationResult
 
@@ -394,12 +396,12 @@ def test_chat_policy_matrix(client):
             assert payload["response"].count("？") <= 2
             assert payload["message"]["metadata"]["interaction_mode"] == "scaffold"
             assert payload["message"]["metadata"]["dialogue_state"] in {
-                "ELICIT_REASONING",
-                "INSPECT_EVIDENCE",
+                "NOTICE_ERROR",
+                "REFLECT",
             }
             assert payload["message"]["metadata"]["dialogue_move"] in {
-                "reasoning_probe",
-                "evidence_probe",
+                "error_awareness_prompt",
+                "reflection_prompt",
             }
             assert payload["message"]["metadata"]["disclosure_level"] in {
                 "D0",
@@ -429,13 +431,15 @@ def test_chat_policy_matrix(client):
         assert [message["sequence_index"] for message in messages] == list(range(len(messages)))
 
 
-def test_d4_next_error_action_records_unresolved_and_moves_to_next_target(client):
-    initialized = initialize_event(client, "D4 切題測試事件", "ebl_roleplay")
+@pytest.mark.parametrize("condition_key", ["ebl_no_roleplay", "ebl_roleplay"])
+def test_d4_requires_final_answer_then_validated_feedback_before_advancing(client, condition_key):
+    initialized = initialize_event(client, "D4 切題測試事件", condition_key)
     submitted = submit_task(client, initialized)
     repository = client.app.state.repository
     attempt = repository.get_task_attempt(submitted["attempt_id"])
     judgement = dict(attempt.judgement_payload)
     question_results = list(judgement["question_results"])
+    question_results[0] = {**question_results[0], "expected_answer": "按人數"}
     question_results.append(
         {
             "question_id": "q02",
@@ -472,6 +476,7 @@ def test_d4_next_error_action_records_unresolved_and_moves_to_next_target(client
         )
     )
 
+    messages_before = repository.list_messages(submitted["conversation_id"])
     response = client.post(
         "/api/chat",
         json={
@@ -483,17 +488,71 @@ def test_d4_next_error_action_records_unresolved_and_moves_to_next_target(client
         },
     )
 
-    assert response.status_code == 200
-    assert response.json()["message"]["metadata"]["target_question_id"] == "q02"
-    loaded = client.get(f"/api/conversations/{submitted['conversation_id']}").json()
-    action = next(
-        message
-        for message in loaded["messages"]
-        if message.get("client_request_id") == "next-error-request" and message["speaker_type"] == "learner"
-    )
-    assert action["metadata"]["completion_status"] == "unresolved_after_max_support"
-    assert action["metadata"]["target_question_id"] == "q01"
-    assert action["metadata"]["next_target_question_id"] == "q02"
+    assert response.status_code == 409
+    assert "Direct error skipping" in response.json()["detail"]
+    assert repository.list_messages(submitted["conversation_id"]) == messages_before
+
+    calls = []
+    invalid_feedback = "我聽到你的說法了。接著看下一個問題。"
+    valid_feedback = "依我所見，應以「按人數」表決，不能把每個等級的一票與每個代表的一票混淆。接著看財政危機。"
+
+    async def scripted_response(**kwargs):
+        calls.append(kwargs["prompt"])
+        if len(calls) == 1:
+            assert "Max-support decision" in kwargs["prompt"]
+            return ChatGenerationResult(
+                response="我想先聽你把最後的判斷與理由整理清楚。",
+                interaction_metadata={
+                    "dialogue_state": "SELF_CORRECT", "dialogue_move": "final_answer_prompt",
+                    "disclosure_level": "D4", "completion_status": "final_answer_pending",
+                },
+            )
+        assert "Terminal feedback:" in kwargs["prompt"]
+        return ChatGenerationResult(
+            response=invalid_feedback if len(calls) == 2 else valid_feedback,
+            interaction_metadata={
+                "dialogue_state": "RESOLVED", "dialogue_move": "corrective_feedback",
+                "disclosure_level": "D4", "completion_status": "feedback_completed",
+                "resolution_self_corrected": False,
+            },
+        )
+
+    client.app.state.llm_provider.generate_chat_response = scripted_response
+    final_request = client.post("/api/chat", json={
+        "conversation_id": submitted["conversation_id"], "user_message": "我還是不太清楚。",
+        "client_request_id": "ask-final",
+    })
+    assert final_request.status_code == 200
+    assert final_request.json()["message"]["metadata"]["completion_status"] == "final_answer_pending"
+    assert "按人數" not in final_request.json()["response"]
+    stored_attempt = repository.get_task_attempt(submitted["attempt_id"])
+    condition = repository.get_condition_by_key(condition_key)
+    waiting = build_interaction_runtime(condition, stored_attempt, repository.list_messages(submitted["conversation_id"]))
+    assert waiting.target.question_id == "q01"
+    assert waiting.corrective_feedback_required is True
+
+    final_payload = {
+        "conversation_id": submitted["conversation_id"], "user_message": "我最後仍認為按等級，因為我把兩種投票方式當成同一件事。",
+        "client_request_id": "final-answer",
+    }
+    feedback = client.post("/api/chat", json=final_payload)
+    assert feedback.status_code == 200
+    metadata = feedback.json()["message"]["metadata"]
+    assert metadata["completion_status"] == "feedback_completed"
+    assert metadata["resolution_self_corrected"] is False
+    assert metadata["corrective_feedback_revealed_answer"] is True
+    assert metadata["next_target_started"] is True
+    assert feedback.json()["response"].index("按人數") < feedback.json()["response"].index("接著")
+    messages = repository.list_messages(submitted["conversation_id"])
+    assert all(message.content != invalid_feedback for message in messages)
+    resumed = build_interaction_runtime(condition, stored_attempt, messages)
+    assert resumed.target.question_id == "q02"
+    assert resumed.previous_disclosure_level == "D0"
+    # 重送最後答案只回讀已儲存回饋，不多生成、不再切換一次 target。
+    replay = client.post("/api/chat", json=final_payload)
+    assert replay.status_code == 200
+    assert replay.json()["response"] == valid_feedback
+    assert len(calls) == 3
 
 
 def test_invalid_persona_candidate_is_retried_and_never_persisted(client):

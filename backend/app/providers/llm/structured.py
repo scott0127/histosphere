@@ -157,11 +157,9 @@ class ChatOutputPayload(BaseModel):
     dynamic_context: str = ""
     dialogue_state: Literal[
         "STANDARD_CHAT",
-        "ELICIT_REASONING",
-        "INSPECT_EVIDENCE",
-        "CONTEXTUALIZE_OR_COMPARE",
-        "REVISE_CLAIM",
+        "NOTICE_ERROR",
         "REFLECT",
+        "SELF_CORRECT",
         "RESOLVED",
     ] | None = None
     dialogue_move: str | None = None
@@ -182,13 +180,13 @@ class ChatOutputPayload(BaseModel):
         "continue",
         "resolved",
         "complete",
-        "corrective_resolution_pending",
-        "corrected_after_feedback",
+        "final_answer_pending",
+        "feedback_completed",
     ] | None = None
-    # 同一次生成判斷是否已達正式 RESOLVED；後端只在三項都成立時接受。
-    resolution_claim_corrected: bool = False
-    resolution_evidence_used: bool = False
-    resolution_reasoning_linked: bool = False
+    # 只判斷 EBL 的認知錯誤、反思與自我修正，不另評 learner 的 Historical Thinking 技能。
+    resolution_error_recognized: bool = False
+    resolution_error_reflected: bool = False
+    resolution_self_corrected: bool = False
     # 同次生成判斷是否需要離題重新導向；僅供後端稽核，不顯示給受測者。
     off_topic_redirect: bool = False
     fidelity_flags: list[str] = Field(default_factory=list)

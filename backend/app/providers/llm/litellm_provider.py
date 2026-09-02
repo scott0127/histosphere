@@ -43,24 +43,23 @@ CHAT_OUTPUT_JSON_CONTRACT = (
     '"annotations":[{"text":"term","explanation":"short explanation"}],'
     '"related_events":[{"event_name":"name","event_year":1789,"event_id":null,'
     '"relevance_reason":"reason","is_explorable":false}],"dynamic_context":"",'
-    '"dialogue_state":"STANDARD_CHAT|ELICIT_REASONING|INSPECT_EVIDENCE|'
-    'CONTEXTUALIZE_OR_COMPARE|REVISE_CLAIM|REFLECT|RESOLVED",'
+    '"dialogue_state":"STANDARD_CHAT|NOTICE_ERROR|REFLECT|SELF_CORRECT|RESOLVED",'
     '"dialogue_move":"runtime-provided move","disclosure_level":null,'
     '"learner_progress":"not_assessed|no_progress|partial_progress|clear_progress|resolved",'
     '"disclosure_reason":"brief hidden reason or empty string",'
     '"learner_revision_status":"not_yet|partial|revised|unresolved|not_applicable",'
-    '"completion_status":"continue|resolved|complete",'
-    '"resolution_claim_corrected":false,"resolution_evidence_used":false,'
-    '"resolution_reasoning_linked":false,"off_topic_redirect":false,"fidelity_flags":[]}. '
+    '"completion_status":"continue|resolved|complete|final_answer_pending|feedback_completed",'
+    '"resolution_error_recognized":false,"resolution_error_reflected":false,'
+    '"resolution_self_corrected":false,"off_topic_redirect":false,"fidelity_flags":[]}. '
     "Each pipe-delimited field above is an enum: return exactly one allowed value, never the entire pipe string. "
     "Use an empty array instead of strings when there are no annotations or related events. "
     "Use the interaction_runtime values for dialogue_state and dialogue_move. In EBL mode, assess learner_progress "
     "and choose disclosure_level from the runtime-provided allowed list; in Standard Chat or before the learner has "
     "replied, use learner_progress=not_assessed. Keep disclosure_reason concise and do not expose it in response. "
-    "In EBL mode, set resolution_claim_corrected, resolution_evidence_used, and resolution_reasoning_linked from the "
-    "learner's demonstrated reasoning in the conversation. Propose RESOLVED only when all three are true. A correct "
-    "answer without relevant evidence/context and an explicit link to the revised claim is not RESOLVED. In Standard "
-    "Chat and opening turns, use false for all three fields. "
+    "In EBL mode, assess whether the learner has recognized the current error, reflected on why it needs changing, "
+    "and self-corrected the mistaken answer or rationale. Do not require citations or a Historical Thinking skill "
+    "checklist. These can be demonstrated together in one response or across prior turns, without named EBL terms. "
+    "Use false for all three resolution fields in Standard Chat and opening turns. "
     "Set off_topic_redirect=true only when the latest learner message is clearly unrelated to the selected historical "
     "event; when true, do not answer that unrelated request and only redirect to the event. If relevance is uncertain, "
     "use false. The opening turn must use false. "
@@ -451,9 +450,9 @@ class LiteLLMProvider:
                 "disclosure_reason": payload.disclosure_reason,
                 "learner_revision_status": payload.learner_revision_status,
                 "completion_status": payload.completion_status,
-                "resolution_claim_corrected": payload.resolution_claim_corrected,
-                "resolution_evidence_used": payload.resolution_evidence_used,
-                "resolution_reasoning_linked": payload.resolution_reasoning_linked,
+                "resolution_error_recognized": payload.resolution_error_recognized,
+                "resolution_error_reflected": payload.resolution_error_reflected,
+                "resolution_self_corrected": payload.resolution_self_corrected,
                 "off_topic_redirect": payload.off_topic_redirect,
                 "fidelity_flags": payload.fidelity_flags,
             },

@@ -3,7 +3,7 @@ import json
 import pytest
 
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS
-from app.core.interaction_contract import build_interaction_runtime, resolve_interaction_metadata
+from app.core.interaction_contract import build_interaction_runtime, enforce_interaction_response, resolve_interaction_metadata
 from app.core.learner_task_view import learner_view
 from app.models.domain import ChatMessage, Event, ExperimentCondition, TaskAttempt
 from app.services.prompt_service import PromptService
@@ -75,7 +75,7 @@ def test_targets_require_both_answer_and_reasoning_to_be_correct(answer_correct,
         assert runtime.target.learner_rationale == RAW_RATIONALE
         assert runtime.target.answer_correct == answer_correct
         assert runtime.target.reasoning_correct == reasoning_correct
-        assert runtime.allowed_states == ("ELICIT_REASONING",)
+        assert runtime.allowed_states == ("NOTICE_ERROR",)
         assert runtime.allowed_disclosure_levels == ("D0",)
     assert attempt.model_dump() == before
 
@@ -89,6 +89,15 @@ def test_two_dimensions_override_stale_correctness_for_queue_selection():
     assert runtime.target.correctness == "incorrect"
 
 
+def test_reasoning_error_can_restate_the_already_correct_answer_without_revealing_a_new_one():
+    runtime = build_interaction_runtime(_condition(), _attempt(), [])
+    output = {"dialogue_state": "NOTICE_ERROR", "dialogue_move": "error_awareness_prompt", "disclosure_level": "D0"}
+    response = "你原先選了「B」，能再看看原本的理由哪裡需要重新想一想？"
+    assert enforce_interaction_response(runtime, output, response).retry_required is False
+    wrong_answer_runtime = build_interaction_runtime(_condition(), _attempt(answer_correct=False), [])
+    assert "early_answer_exposure" in enforce_interaction_response(wrong_answer_runtime, output, response).metadata["fidelity_flags"]
+
+
 @pytest.mark.parametrize("issue", ["insufficient_reasoning", "factual_error", "unsupported_inference"])
 def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue):
     runtime = build_interaction_runtime(_condition(), _attempt(issue=issue), [])
@@ -100,8 +109,8 @@ def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue):
     assert payload["reasoning_criteria"] == "PRIVATE criteria"
     assert "not evidence of a factual misconception" in prompt
     metadata = resolve_interaction_metadata(runtime, {
-        "dialogue_state": "ELICIT_REASONING",
-        "dialogue_move": "reasoning_probe",
+        "dialogue_state": "NOTICE_ERROR",
+        "dialogue_move": "error_awareness_prompt",
         "disclosure_level": "D0",
     }, "What supported your answer?")
     assert metadata["answer_correct"] is True
@@ -145,9 +154,18 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
     assert context["question_results"][0]["learner_rationale"] == RAW_RATIONALE
     assert "prompt" not in context["question_results"][0]
     assert "not evidence of a factual misconception" in learner_task
+    general = next(module.content for module in modules if module.name == "general_prompt")
+    assert "ALL four conditions" in general
+    assert "Do not proactively prescribe sourcing" in general
+    assert general == service._general_prompt()
     if code in {"02", "04"}:
         assert len(context["question_results"]) == 1
         assert "OTHER TARGET feedback" not in rendered
+        interaction = next(module.content for module in modules if module.name == "independent_2_prompt")
+        assert interaction == service._independent_2_prompt(_condition("02"))
+        assert "recognition of the current error, analysis/reflection" in interaction
+        assert "Target historical-thinking focus:" not in rendered
+        assert "resolution_evidence_used" not in rendered
     else:
         assert len(context["question_results"]) == 2
         assert "Standard chat has no mandated error target" in learner_task
@@ -167,7 +185,8 @@ def test_resumed_target_retains_rationale_and_advances_only_after_existing_resol
     )
     runtime = build_interaction_runtime(_condition(), attempt, [message])
     assert runtime.target.learner_rationale == RAW_RATIONALE
-    assert runtime.previous_state == "INSPECT_EVIDENCE"
+    assert runtime.previous_state == "NOTICE_ERROR"
+    assert message.metadata["dialogue_state"] == "INSPECT_EVIDENCE"
     assert runtime.allowed_disclosure_levels == ("D0", "D1", "D2")
     message.metadata["completion_status"] = "resolved"
     assert build_interaction_runtime(_condition(), attempt, [message]).target is None

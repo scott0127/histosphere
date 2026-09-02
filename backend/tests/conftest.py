@@ -151,8 +151,8 @@ class FakeLLMProvider:
             else:
                 response = f"我們從{event.canonical_name}開始。你剛才是根據什麼理由作答？"
             metadata = {
-                "dialogue_state": "ELICIT_REASONING",
-                "dialogue_move": "reasoning_probe",
+                "dialogue_state": "NOTICE_ERROR",
+                "dialogue_move": "error_awareness_prompt",
                 "disclosure_level": "D0",
                 "learner_revision_status": "not_yet",
                 "completion_status": "continue",
@@ -200,11 +200,11 @@ class FakeLLMProvider:
         if condition.ebl_enabled:
             voice = "我請你" if persona else "請"
             response = (
-                f"{speaker}：{voice}對照題目中的證據，你原本的答案支持哪一種因果解釋？"
+                f"{speaker}：{voice}再想一想，原本的答案有哪裡需要改變，為什麼？"
             )
             interaction_metadata = {
-                "dialogue_state": "INSPECT_EVIDENCE",
-                "dialogue_move": "evidence_probe",
+                "dialogue_state": "REFLECT",
+                "dialogue_move": "reflection_prompt",
                 "disclosure_level": "D1",
                 "learner_revision_status": "not_yet",
                 "completion_status": "continue",

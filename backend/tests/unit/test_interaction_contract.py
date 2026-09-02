@@ -1,3 +1,5 @@
+import pytest
+
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS
 from app.core.interaction_contract import (
     INTERACTION_POLICY_VERSION,
@@ -5,7 +7,6 @@ from app.core.interaction_contract import (
     enforce_interaction_response,
     initial_greeting_metadata,
     resolve_interaction_metadata,
-    unresolved_after_max_support_metadata,
 )
 from app.core.historical_ebl_policy import HISTORICAL_EBL_POLICY_VERSION
 from app.models.domain import ChatMessage, ExperimentCondition, TaskAttempt
@@ -82,7 +83,7 @@ def test_standard_chat_cells_do_not_force_task_correction():
         runtime = build_interaction_runtime(condition, _attempt(), [])
         metadata = resolve_interaction_metadata(
             runtime,
-            {"dialogue_state": "ELICIT_REASONING", "dialogue_move": "reasoning_probe"},
+            {"dialogue_state": "NOTICE_ERROR", "dialogue_move": "error_awareness_prompt"},
             "正確答案是按人數，因為代表權按個別代表計算。",
         )
 
@@ -135,23 +136,23 @@ def test_ebl_cells_share_the_same_state_contract():
         metadata_by_code[code] = resolve_interaction_metadata(
             runtime,
             {
-                "dialogue_state": "INSPECT_EVIDENCE",
-                "dialogue_move": "evidence_probe",
+                "dialogue_state": "REFLECT",
+                "dialogue_move": "reflection_prompt",
                 "disclosure_level": "D1",
                 "learner_revision_status": "not_yet",
             },
             "請對照 E03，這項證據支持哪一種表決方式？",
         )
 
-    assert metadata_by_code["02"]["dialogue_state"] == "INSPECT_EVIDENCE"
-    assert metadata_by_code["04"]["dialogue_state"] == "INSPECT_EVIDENCE"
+    assert metadata_by_code["02"]["dialogue_state"] == "REFLECT"
+    assert metadata_by_code["04"]["dialogue_state"] == "REFLECT"
     assert metadata_by_code["02"]["dialogue_move"] == metadata_by_code["04"]["dialogue_move"]
     assert metadata_by_code["02"]["target_question_id"] == metadata_by_code["04"]["target_question_id"]
     assert metadata_by_code["02"]["disclosure_level"] == metadata_by_code["04"]["disclosure_level"]
     assert (
-        metadata_by_code["02"]["primary_historical_thinking_move"]
-        == metadata_by_code["04"]["primary_historical_thinking_move"]
-        == "inspect_source_or_task_evidence"
+        metadata_by_code["02"]["primary_ebl_move"]
+        == metadata_by_code["04"]["primary_ebl_move"]
+        == "analyze_and_reflect_on_the_error"
     )
 
 
@@ -166,8 +167,8 @@ def test_ebl_off_topic_redirect_preserves_state_disclosure_and_attempt_count():
             metadata={
                 "interaction_policy_version": INTERACTION_POLICY_VERSION,
                 "target_question_id": "q01",
-                "dialogue_state": "ELICIT_REASONING",
-                "dialogue_move": "reasoning_probe",
+                "dialogue_state": "NOTICE_ERROR",
+                "dialogue_move": "error_awareness_prompt",
                 "disclosure_level": "D1",
                 "attempts_in_state": 2,
                 "completion_status": "continue",
@@ -177,8 +178,8 @@ def test_ebl_off_topic_redirect_preserves_state_disclosure_and_attempt_count():
         enforced = enforce_interaction_response(
             runtime,
             {
-                "dialogue_state": "INSPECT_EVIDENCE",
-                "dialogue_move": "evidence_probe",
+                "dialogue_state": "REFLECT",
+                "dialogue_move": "reflection_prompt",
                 "disclosure_level": "D2",
                 "learner_progress": "clear_progress",
                 "learner_revision_status": "revised",
@@ -190,8 +191,8 @@ def test_ebl_off_topic_redirect_preserves_state_disclosure_and_attempt_count():
         assert enforced.retry_required is False
         assert enforced.metadata["condition_code"] == code
         assert enforced.metadata["off_topic_redirect"] is True
-        assert enforced.metadata["dialogue_state"] == "ELICIT_REASONING"
-        assert enforced.metadata["dialogue_move"] == "reasoning_probe"
+        assert enforced.metadata["dialogue_state"] == "NOTICE_ERROR"
+        assert enforced.metadata["dialogue_move"] == "error_awareness_prompt"
         assert enforced.metadata["disclosure_level"] == "D1"
         assert enforced.metadata["learner_progress"] == "no_progress"
         assert enforced.metadata["learner_revision_status"] == "not_yet"
@@ -219,14 +220,14 @@ def test_invalid_ebl_transition_is_blocked_and_flagged():
     metadata = resolve_interaction_metadata(
         runtime,
         {
-            "dialogue_state": "RESOLVED",
+            "dialogue_state": "UNKNOWN_STATE",
             "dialogue_move": "resolution",
             "disclosure_level": "D4",
         },
         "請先說明你的理由？",
     )
 
-    assert metadata["dialogue_state"] == "ELICIT_REASONING"
+    assert metadata["dialogue_state"] == "NOTICE_ERROR"
     assert "invalid_state_transition" in metadata["fidelity_flags"]
 
 
@@ -293,8 +294,8 @@ def test_ebl_advances_to_the_next_error_and_resets_the_scaffold():
     assert second_runtime.next_target is None
     assert second_runtime.target_sequence_number == 2
     assert second_runtime.target_count == 2
-    assert second_runtime.previous_state == "ELICIT_REASONING"
-    assert second_runtime.allowed_states == ("ELICIT_REASONING", "INSPECT_EVIDENCE")
+    assert second_runtime.previous_state == "NOTICE_ERROR"
+    assert second_runtime.allowed_states == ("NOTICE_ERROR", "REFLECT", "SELF_CORRECT", "RESOLVED")
     assert second_runtime.previous_disclosure_level == "D0"
     assert second_runtime.previous_attempts_in_state == 0
 
@@ -347,9 +348,9 @@ def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
             "dialogue_move": "resolution",
             "disclosure_level": "D4",
             "learner_revision_status": "revised",
-            "resolution_claim_corrected": True,
-            "resolution_evidence_used": True,
-            "resolution_reasoning_linked": True,
+            "resolution_error_recognized": True,
+            "resolution_error_reflected": True,
+            "resolution_self_corrected": True,
         },
         "你已完成這一項修正，正確答案是「按人數」。",
     )
@@ -363,7 +364,8 @@ def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
     assert "加劇政治與社會危機" not in enforced.response
 
 
-def test_resolved_requires_corrected_claim_evidence_and_reasoning_link():
+@pytest.mark.parametrize("missing", ["resolution_error_recognized", "resolution_error_reflected", "resolution_self_corrected"])
+def test_resolved_requires_error_recognition_reflection_and_self_correction(missing):
     condition = _condition("02")
     reflected = ChatMessage(
         conversation_id="conversation-1",
@@ -387,9 +389,10 @@ def test_resolved_requires_corrected_claim_evidence_and_reasoning_link():
             "dialogue_state": "RESOLVED",
             "dialogue_move": "resolution",
             "disclosure_level": "D4",
-            "resolution_claim_corrected": True,
-            "resolution_evidence_used": True,
-            "resolution_reasoning_linked": False,
+            "resolution_error_recognized": True,
+            "resolution_error_reflected": True,
+            "resolution_self_corrected": True,
+            missing: False,
         },
         "你的主張與證據已經接近完整。",
     )
@@ -399,7 +402,7 @@ def test_resolved_requires_corrected_claim_evidence_and_reasoning_link():
     assert "incomplete_resolution_criteria" in enforced.metadata["fidelity_flags"]
 
 
-def test_d4_learner_action_records_unresolved_and_starts_next_error_at_d0():
+def test_legacy_d4_skip_record_can_still_resume_without_rewriting_history():
     condition = _condition("02")
     previous = ChatMessage(
         conversation_id="conversation-1",
@@ -416,8 +419,15 @@ def test_d4_learner_action_records_unresolved_and_starts_next_error_at_d0():
             "completion_status": "continue",
         },
     )
-    current_runtime = build_interaction_runtime(condition, _multi_error_attempt(), [previous])
-    action_metadata = unresolved_after_max_support_metadata(current_runtime)
+    action_metadata = {
+        "interaction_policy_version": "2x2-interaction-v7",
+        "target_question_id": "q01",
+        "next_target_question_id": "q02",
+        "next_target_started": True,
+        "dialogue_state": "INSPECT_EVIDENCE",
+        "disclosure_level": "D4",
+        "completion_status": "unresolved_after_max_support",
+    }
     action = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="learner",
@@ -430,11 +440,12 @@ def test_d4_learner_action_records_unresolved_and_starts_next_error_at_d0():
 
     assert action_metadata["completion_status"] == "unresolved_after_max_support"
     assert next_runtime.target.question_id == "q02"
-    assert next_runtime.previous_state == "ELICIT_REASONING"
+    assert next_runtime.previous_state == "NOTICE_ERROR"
     assert next_runtime.previous_disclosure_level == "D0"
 
 
-def test_d4_failure_delivers_corrective_feedback_without_triggering_leak_rejection():
+@pytest.mark.parametrize("code", ["02", "04"])
+def test_d4_failure_requests_final_answer_without_revealing_or_switching(code):
     previous = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
@@ -450,29 +461,40 @@ def test_d4_failure_delivers_corrective_feedback_without_triggering_leak_rejecti
             "completion_status": "continue",
         },
     )
-    runtime = build_interaction_runtime(_condition("02"), _multi_error_attempt(), [previous])
+    runtime = build_interaction_runtime(_condition(code), _multi_error_attempt(), [previous])
 
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "REFLECT",
-            "dialogue_move": "corrective_feedback",
+            "dialogue_state": "SELF_CORRECT",
+            "dialogue_move": "final_answer_prompt",
             "disclosure_level": "D4",
+            "completion_status": "final_answer_pending",
             "learner_progress": "no_progress",
-            "resolution_claim_corrected": False,
-            "resolution_evidence_used": False,
-            "resolution_reasoning_linked": False,
+            "resolution_error_recognized": False,
+            "resolution_error_reflected": False,
+            "resolution_self_corrected": False,
         },
-        "原判斷忽略了代表人數的差異，正確答案是「按人數」。請用一句話重述修正後的判斷。",
+        "請先用自己的話整理這一題最後的答案與理由。",
     )
 
-    assert runtime.corrective_feedback_required is True
+    assert runtime.final_answer_required is True
+    assert runtime.corrective_feedback_required is False
     assert enforced.retry_required is False
-    assert enforced.metadata["completion_status"] == "corrective_resolution_pending"
-    assert enforced.metadata["resolution_outcome"] == "corrective_feedback_delivered"
-    assert enforced.metadata["dialogue_move"] == "corrective_feedback"
-    assert enforced.metadata["corrective_feedback_revealed_answer"] is True
+    assert enforced.metadata["completion_status"] == "final_answer_pending"
+    assert enforced.metadata["resolution_outcome"] == "awaiting_final_answer"
+    assert enforced.metadata["dialogue_move"] == "final_answer_prompt"
+    assert enforced.metadata["corrective_feedback_revealed_answer"] is False
+    assert enforced.metadata["next_target_started"] is False
     assert "early_answer_exposure" not in enforced.metadata["fidelity_flags"]
+    leaked = enforce_interaction_response(
+        runtime,
+        {"dialogue_state": "SELF_CORRECT", "dialogue_move": "corrective_feedback",
+         "disclosure_level": "D4", "completion_status": "feedback_completed"},
+        "正確答案是「按人數」。請用自己的話整理答案。",
+    )
+    assert leaked.retry_required is True
+    assert {"early_answer_exposure", "invalid_dialogue_move", "invalid_completion_status"} <= set(leaked.metadata["fidelity_flags"])
 
 
 def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback():
@@ -484,8 +506,8 @@ def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback(
         metadata={
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "target_question_id": "q01",
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D4",
             "completion_status": "continue",
         },
@@ -495,13 +517,13 @@ def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback(
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "RESOLVED",
+            "dialogue_move": "resolution",
             "disclosure_level": "D4",
             "learner_progress": "resolved",
-            "resolution_claim_corrected": True,
-            "resolution_evidence_used": True,
-            "resolution_reasoning_linked": True,
+            "resolution_error_recognized": True,
+            "resolution_error_reflected": True,
+            "resolution_self_corrected": True,
         },
         "你已用證據完成修正，正確答案是「按人數」。",
     )
@@ -513,7 +535,7 @@ def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback(
     assert enforced.metadata["corrective_feedback_revealed_answer"] is False
 
 
-def test_corrective_feedback_requires_the_answer_and_one_sentence_restatement():
+def test_terminal_feedback_cannot_close_target_without_showing_the_correct_answer():
     previous = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
@@ -525,7 +547,7 @@ def test_corrective_feedback_requires_the_answer_and_one_sentence_restatement():
             "dialogue_state": "REFLECT",
             "dialogue_move": "reflection_prompt",
             "disclosure_level": "D4",
-            "completion_status": "continue",
+            "completion_status": "final_answer_pending",
         },
     )
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [previous])
@@ -533,7 +555,7 @@ def test_corrective_feedback_requires_the_answer_and_one_sentence_restatement():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "REFLECT",
+            "dialogue_state": "RESOLVED",
             "dialogue_move": "corrective_feedback",
             "disclosure_level": "D4",
         },
@@ -542,43 +564,47 @@ def test_corrective_feedback_requires_the_answer_and_one_sentence_restatement():
 
     assert enforced.retry_required is True
     assert "corrective_answer_missing" in enforced.metadata["fidelity_flags"]
-    assert "corrective_restatement_prompt_missing" in enforced.metadata["fidelity_flags"]
 
 
-def test_restatement_after_corrective_feedback_closes_target_and_starts_next_error():
+@pytest.mark.parametrize("code", ["02", "04"])
+@pytest.mark.parametrize("pending_status", ["final_answer_pending", "corrective_resolution_pending"])
+def test_final_answer_gets_corrective_feedback_before_next_error_even_if_still_wrong(code, pending_status):
     corrective = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
         speaker_name="AI Tutor",
-        content="正確答案是「按人數」。請用一句話重述修正後的判斷。",
+        content="請整理這一題最後的答案與理由。",
         metadata={
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "target_question_id": "q01",
             "next_target_question_id": "q02",
-            "dialogue_state": "REFLECT",
-            "dialogue_move": "corrective_feedback",
+            "dialogue_state": "SELF_CORRECT",
+            "dialogue_move": "final_answer_prompt",
             "disclosure_level": "D4",
-            "completion_status": "corrective_resolution_pending",
-            "resolution_outcome": "corrective_feedback_delivered",
+            "completion_status": pending_status,
         },
     )
-    runtime = build_interaction_runtime(_condition("02"), _multi_error_attempt(), [corrective])
+    runtime = build_interaction_runtime(_condition(code), _multi_error_attempt(), [corrective])
 
     enforced = enforce_interaction_response(
         runtime,
         {
             "dialogue_state": "RESOLVED",
-            "dialogue_move": "resolution",
+            "dialogue_move": "corrective_feedback",
             "disclosure_level": "D4",
+            "completion_status": "feedback_completed",
+            "off_topic_redirect": True,
         },
-        "收到你的重述。接著處理下一項判斷，先說明你原先的理由。",
+        "正確答案是「按人數」，你原先把等級的一票和每個代表的一票混淆了。接著看你對財政危機的判斷。",
     )
 
-    assert runtime.awaiting_corrective_restatement is True
+    assert runtime.corrective_feedback_required is True
     assert enforced.retry_required is False
-    assert enforced.metadata["completion_status"] == "corrected_after_feedback"
-    assert enforced.metadata["resolution_outcome"] == "corrected_after_feedback"
+    assert enforced.metadata["completion_status"] == "feedback_completed"
+    assert enforced.metadata["resolution_outcome"] == "feedback_delivered"
     assert enforced.metadata["resolution_criteria_met"] is False
+    assert enforced.metadata["learner_revision_status"] == "unresolved"
+    assert enforced.metadata["corrective_feedback_revealed_answer"] is True
     assert enforced.metadata["next_target_started"] is True
 
     completed = ChatMessage(
@@ -589,12 +615,38 @@ def test_restatement_after_corrective_feedback_closes_target_and_starts_next_err
         metadata=enforced.metadata,
     )
     next_runtime = build_interaction_runtime(
-        _condition("02"),
+        _condition(code),
         _multi_error_attempt(),
         [corrective, completed],
     )
     assert next_runtime.target.question_id == "q02"
     assert next_runtime.previous_disclosure_level == "D0"
+
+
+@pytest.mark.parametrize("answer,feedback", [
+    ("西周", "這套構想由西周提出。"),
+    (["西周", "西先生"], "這套構想由西周提出。"),
+    ("B", "應選擇「B」。"),
+    (True, "這個判斷正確。"),
+    (False, "這個判斷不正確。"),
+])
+def test_terminal_feedback_accepts_answer_formats_and_does_not_mistake_shared_keys_for_next_answer(answer, feedback):
+    attempt = _multi_error_attempt()
+    for result in attempt.judgement_payload["question_results"][:2]:
+        result["expected_answer"] = answer
+    pending = ChatMessage(speaker_type="assistant", speaker_name="Tutor", content="請先整理最後判斷。", metadata={
+        "interaction_policy_version": INTERACTION_POLICY_VERSION,
+        "target_question_id": "q01", "dialogue_state": "SELF_CORRECT",
+        "disclosure_level": "D4", "completion_status": "final_answer_pending",
+    })
+    runtime = build_interaction_runtime(_condition("02"), attempt, [pending])
+    result = enforce_interaction_response(runtime, {
+        "dialogue_state": "RESOLVED", "dialogue_move": "corrective_feedback",
+        "disclosure_level": "D4", "completion_status": "feedback_completed",
+    }, feedback + "接著看下一個判斷。")
+    assert result.retry_required is False
+    assert result.metadata["corrective_feedback_revealed_answer"] is True
+    assert result.metadata["next_target_started"] is True
 
 
 def test_all_correct_attempt_uses_only_researcher_authored_fallback():
@@ -679,15 +731,9 @@ def test_ebl_can_progress_through_the_complete_state_sequence():
     condition = _condition("02")
     messages: list[ChatMessage] = []
     steps = [
-        ("ELICIT_REASONING", "reasoning_probe", "你是根據哪一項史實得出原先的判斷？"),
-        ("INSPECT_EVIDENCE", "evidence_probe", "題目中的哪一項證據支持或削弱你的判斷？"),
-        (
-            "CONTEXTUALIZE_OR_COMPARE",
-            "context_or_comparison_probe",
-            "比較三個等級的代表人口後，這種安排會造成什麼權力差異？",
-        ),
-        ("REVISE_CLAIM", "revision_prompt", "根據前面的證據，你會如何改寫原先的判斷？"),
-        ("REFLECT", "reflection_prompt", "哪一項證據最改變你原先的判斷？"),
+        ("NOTICE_ERROR", "error_awareness_prompt", "你覺得原來的答案有哪裡需要重新想一想？"),
+        ("REFLECT", "reflection_prompt", "你原來的判斷為什麼需要改變？"),
+        ("SELF_CORRECT", "self_correction_prompt", "那你會如何修改原本的答案與理由？"),
         ("RESOLVED", "resolution", "你已完成修正，正確答案是「按人數」。"),
     ]
 
@@ -695,9 +741,9 @@ def test_ebl_can_progress_through_the_complete_state_sequence():
         runtime = build_interaction_runtime(condition, _attempt(), messages)
         resolution_metadata = (
             {
-                "resolution_claim_corrected": True,
-                "resolution_evidence_used": True,
-                "resolution_reasoning_linked": True,
+                "resolution_error_recognized": True,
+                "resolution_error_reflected": True,
+                "resolution_self_corrected": True,
             }
             if state == "RESOLVED"
             else {}
@@ -707,13 +753,14 @@ def test_ebl_can_progress_through_the_complete_state_sequence():
             {
                 "dialogue_state": state,
                 "dialogue_move": move,
-                "disclosure_level": f"L{min(index, 4)}",
+                "disclosure_level": f"D{index}",
                 **resolution_metadata,
             },
             response,
         )
 
         assert enforced.fallback_applied is False
+        assert enforced.retry_required is False
         assert enforced.metadata["dialogue_state"] == state
         assert enforced.metadata["dialogue_move"] == move
         messages.append(
@@ -742,8 +789,8 @@ def test_same_ebl_state_accepts_model_selected_adjacent_disclosure_level():
         metadata={
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "target_question_id": "q01",
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D2",
             "completion_status": "continue",
         },
@@ -758,8 +805,8 @@ def test_same_ebl_state_accepts_model_selected_adjacent_disclosure_level():
         enforced = enforce_interaction_response(
             runtime,
             {
-                "dialogue_state": "ELICIT_REASONING",
-                "dialogue_move": "reasoning_probe",
+                "dialogue_state": "NOTICE_ERROR",
+                "dialogue_move": "error_awareness_prompt",
                 "disclosure_level": selected_level,
                 "learner_progress": learner_progress,
                 "disclosure_reason": "依受測者本回合的推理完整度調整。",
@@ -795,8 +842,8 @@ def test_first_learner_reply_may_choose_d0_or_d1_only():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "INSPECT_EVIDENCE",
-            "dialogue_move": "evidence_probe",
+            "dialogue_state": "REFLECT",
+            "dialogue_move": "reflection_prompt",
             "disclosure_level": "D1",
             "learner_progress": "no_progress",
             "disclosure_reason": "受測者尚未提出可檢查的史實依據。",
@@ -826,8 +873,8 @@ def test_initial_disclosure_cannot_jump_past_prompt_ceiling():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D4",
         },
         "你原先的判斷理由是什麼？",
@@ -845,8 +892,8 @@ def test_ebl_answer_leak_requires_regeneration_before_delivery():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D0",
         },
         raw_response,
@@ -866,8 +913,8 @@ def test_ebl_accepts_an_implicit_scaffold_without_a_question():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D0",
         },
         "先把你原先的判斷與作答理由說成一句完整的話。",
@@ -875,7 +922,7 @@ def test_ebl_accepts_an_implicit_scaffold_without_a_question():
 
     assert enforced.fallback_applied is False
     assert enforced.response.count("？") == 0
-    assert enforced.metadata["primary_historical_thinking_move"] == "make_initial_claim_and_reasoning_visible"
+    assert enforced.metadata["primary_ebl_move"] == "recognize_the_current_error"
 
 
 def test_ebl_accepts_two_tightly_related_questions_for_one_reasoning_move():
@@ -884,8 +931,8 @@ def test_ebl_accepts_two_tightly_related_questions_for_one_reasoning_move():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D0",
         },
         "你原先主張按等級表決的理由是什麼？這個理由依據題目中的哪項線索？",
@@ -901,8 +948,8 @@ def test_ebl_unfocused_question_checklist_requires_regeneration():
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "ELICIT_REASONING",
-            "dialogue_move": "reasoning_probe",
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
             "disclosure_level": "D0",
         },
         "你為什麼這樣想？有什麼證據？當時背景是什麼？還有誰的觀點？",

@@ -22,12 +22,20 @@ GENERAL_PROMPT = (
     "Reply in Traditional Chinese. Historical accuracy and explicit uncertainty take priority over fluency. "
     "Never fabricate quotations, sources, private thoughts, eyewitness experience, or unsupported facts. "
     "Do not collapse a complex event into one cause or one viewpoint. Keep chronology, geography, and cultural context consistent. "
+    "Historical Thinking is the shared domain-informed response framework for ALL four conditions: in your own "
+    "historical answers, distinguish a source's claims from established facts, respect the actor's available knowledge, "
+    "and keep evidence, context, perspectives, and causal explanations coherent. It is NOT an extra learner skill "
+    "curriculum in EBL. Do not proactively prescribe sourcing, contextualization, corroboration, multi-causal analysis, "
+    "or evidence-based argumentation exercises. A learner may use these practices spontaneously or ask about them; "
+    "answer that actual request normally without turning it into a required skill checklist. "
     "The shared conversation scope for every condition is the selected historical event, including its actors, chronology, "
     "context, evidence, and historical reasoning. If the latest learner message is clearly unrelated, set "
     "off_topic_redirect=true, provide no substantive answer, code, steps, definition, or partial solution to that unrelated "
     "request, and briefly redirect to the selected event. An off-topic redirect is not a task-scaffold turn: do not repeat "
     "the current question, test the learner, advance the dialogue state, or increase disclosure. Re-anchor the conversation "
-    "through the event's current situation instead. If relevance is uncertain, treat the message as related."
+    "through the event's current situation instead. If relevance is uncertain, treat the message as related. "
+    "Exception: when interaction_runtime requires terminal feedback after the learner's final-answer attempt, "
+    "finish that target with verified correction even if the reply is unrelated; never answer the unrelated request."
 )
 
 RETRY_REMEDIATION: dict[str, str] = {
@@ -71,6 +79,16 @@ RETRY_REMEDIATION: dict[str, str] = {
     "next_target_transition_missing": (
         "After resolving the current item, explicitly bridge to the next unresolved item without revealing its answer."
     ),
+    "next_answer_exposure": "Remove the next item's answer; only the current item's correction is authorized.",
+    "corrective_answer_missing": (
+        "Before leaving the current error, explicitly state its verified expected answer and explain its corrected "
+        "rationale. For an answer-alias list, use one accepted answer, not the entire list."
+    ),
+    "incomplete_resolution_criteria": (
+        "Do not claim learner resolution unless error recognition, reflection, and a correct revision are demonstrated. "
+        "Use the runtime-authorized EBL step; do not add mandatory citations or Historical Thinking exercises."
+    ),
+    "invalid_completion_status": "Use the completion status specified for the current runtime phase, not an old D4 rule.",
 }
 
 @dataclass(frozen=True)
@@ -201,20 +219,22 @@ class PromptService:
     def _independent_2_prompt(condition: ExperimentCondition) -> str:
         if condition.ebl_enabled:
             return (
-                "Interaction mode: EBL historical-thinking scaffold. The backend runtime selects one task item and the "
-                "allowed dialogue states. Treat that learner response as the productive starting point. First assess the "
-                "latest learner response, then choose one disclosure level from the runtime-provided allowed list in this "
-                "same completion. Disclosure may rise, stay, or fall by at most one level; it is not mechanically tied to "
-                "the dialogue state. Execute one primary runtime-selected historical-reasoning move. Express it through a "
-                "cue, evidence pointer, contrast, sentence stem, or zero to two tightly related questions as appropriate; "
-                "do not turn every turn into an interview. Keep one error in focus until it is resolved, then bridge to "
-                "the next unresolved error. Do not reveal the complete correction before RESOLVED. Disclosure support "
-                "never authorizes giving the answer."
+                "Interaction mode: Error-Based Learning. The added teaching scaffold is ONLY recognition of the current "
+                "error, analysis/reflection, a self-correction attempt, and final feedback/resolution. The backend selects "
+                "the current error and allowed dialogue states; select the next EBL action and Disclosure in this same "
+                "completion. Disclosure controls the amount of help, not a Historical Thinking skill or a mandatory "
+                "sequence of separate turns. It may change by at most one level. Use the original answer and rationale "
+                "without inventing a belief the learner never stated. Do not prescribe a historical-thinking operator "
+                "or require citations, source comparison, or a named reasoning technique to complete EBL. "
+                "Keep one error in focus until final feedback has been delivered, then bridge to the next. "
+                "During scaffolding, withhold the complete correction; when interaction_runtime authorizes terminal "
+                "feedback after the learner's final attempt, show the verified correction before switching errors. "
+                "Use a cue, partial structure, or zero to two closely related questions; do not turn every turn into an interview."
             )
         return (
             "Interaction mode: standard historical chat. Respond as a normal conversational assistant: when the learner's "
             "actual question is within the shared event scope, answer it, ask a natural clarification or follow-up when "
-            "useful, and maintain terminology and conversational consistency. Do not run the Historical EBL state sequence, "
+            "useful, and maintain terminology and conversational consistency. Do not run the EBL state sequence, "
             "deliberately withhold an answer, or force reason-evidence-revision-reflection steps. Do not automatically announce "
             "a task answer when the learner has not asked for it."
         )
@@ -272,8 +292,6 @@ class PromptService:
                     "learner_answer": result.get("learner_answer"),
                     "correctness": result.get("correctness"),
                     "error_code": result.get("error_code"),
-                    "historical_concept": result.get("historical_concept"),
-                    "reasoning_process": result.get("reasoning_process"),
                     "evidence_ids": result.get("evidence_ids") or [],
                 }
             )
@@ -414,7 +432,7 @@ class PromptService:
             return (
                 "Generate the first substantive AI turn after task review. "
                 f"{persona_entry}Perform only the initial backend-selected "
-                "Historical EBL move. End with a focused invitation for the learner action defined by interaction_runtime."
+                "EBL move. End with a focused invitation for the learner action defined by interaction_runtime."
             )
         persona_entry = (
             "Establish the configured persona's identity and current in-event situation, then "
