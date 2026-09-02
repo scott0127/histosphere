@@ -55,6 +55,8 @@ export interface TaskMaterial {
   title: string;
   text: string;
   image_url?: string | null;
+  // 作答必要的作者、年代或圖說；不同於僅供研究者查核的引用資料。
+  caption?: string | null;
   source_url?: string | null;
   attribution?: string | null;
 }

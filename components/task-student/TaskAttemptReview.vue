@@ -22,7 +22,7 @@
         </template>
       </div>
       <TaskAnswerReviewItem v-for="review in remainingReviews" :key="review.question.id" :review="review" show-question />
-      <TaskStudentMaterials :materials="task.evaluation_payload.materials || []" />
+      <TaskStudentMaterials v-if="task.evaluation_payload.materials?.length" class="mt-6 border-t border-[var(--admin-border-soft)] pt-5" :materials="task.evaluation_payload.materials" />
     </div>
   </details>
 </template>

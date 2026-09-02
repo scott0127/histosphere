@@ -166,8 +166,8 @@ test('task editor rejects malformed JSON structures without crashing or replacin
   for (const questions of [null, {}, [null], [true], [{ id: 5 }]]) assert.ok(issues({ contract_version: 'error_elicitation_v1', questions }).length);
 });
 
-test('task editor materials round-trip text, image, source and attribution without changing questions', () => {
-  const material = { ...taskControl.createTaskMaterial([]), title: '三級會議', text: '史料全文', image_url: 'https://example.org/image.png', source_url: 'https://example.org/source', attribution: '作者，CC BY' };
+test('task editor materials round-trip text, image, caption and private references without changing questions', () => {
+  const material = { ...taskControl.createTaskMaterial([]), title: '三級會議', text: '史料全文', image_url: 'https://example.org/image.png', caption: '十九世紀作品，描繪十八世紀事件。', source_url: 'https://example.org/source', attribution: '作者，CC BY' };
   const result = taskControl.updateTaskMaterials(json(), [material]);
   assert.deepEqual(taskControl.taskControlMaterials(result), [material]);
   assert.deepEqual(JSON.parse(result).questions, [question()]);
@@ -183,6 +183,7 @@ test('task editor validates material IDs, content and safe source URLs', () => {
   assert.ok(issues(payload(undefined, { materials: [material, material] })).length);
   assert.ok(issues(payload(undefined, { materials: [{ ...material, image_url: '' }] })).length);
   assert.ok(issues(payload(undefined, { materials: [null] })).length);
+  assert.ok(issues(payload(undefined, { materials: [{ ...material, caption: 1850 }] })).length);
 });
 
 test('task editor preserves, validates and removes all-correct fallback independently of materials', () => {

@@ -1,8 +1,7 @@
 <template>
-  <!-- 歷史故事區塊：學生端直接在故事中的關鍵知識空格作答。 -->
-  <article class="relative overflow-hidden rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] p-4 shadow-[var(--admin-shadow-soft)] md:p-5">
-    <div class="space-y-5">
-      <div class="flex flex-col gap-3 rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] md:flex-row md:items-end md:justify-between">
+  <article class="min-w-0 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-5 md:p-7">
+    <div class="space-y-7">
+      <div class="flex flex-col gap-3 border-b border-[var(--admin-border-soft)] pb-5 md:flex-row md:items-end md:justify-between">
         <div>
           <p class="text-xs font-bold text-[var(--admin-coffee)]">Error-Elicitation Task</p>
           <h2 class="mt-2 break-words font-serif text-2xl font-bold text-[var(--admin-text)]">{{ task.title || 'Error-Elicitation Task' }}</h2>
@@ -14,7 +13,7 @@
 
       <TaskStudentMaterials :materials="task.evaluation_payload.materials || []" />
 
-      <div class="relative rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.66),0_10px_24px_rgba(47,41,36,0.04)] md:p-6">
+      <div :class="task.evaluation_payload.materials?.length ? 'border-t border-[var(--admin-border-soft)] pt-6' : ''">
         <div v-if="newFormat" class="min-w-0 break-words text-lg leading-9 text-[var(--admin-text)]">
           <template v-for="(segment, index) in storySegments" :key="index">
             <span v-if="segment.type === 'text'" class="whitespace-pre-wrap">{{ segment.text }}</span>
@@ -66,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-// TaskStudentStory 呈現故事挖洞，並把內嵌空格答案整理成 TaskStudentAnswer[]。
+// 沿用題文標記連結答案與理由，不改動題目、作答資料或判分規則。
 import { computed } from 'vue';
 import type { EventTask, TaskAnswerValue, TaskQuestion, TaskStudentAnswer } from '~/types';
 import { buildTaskStorySegments, isErrorElicitationTask, normalizeTaskQuestions, updateTaskAnswer } from '~/composables/useStudentTask';

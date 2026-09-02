@@ -32,6 +32,7 @@ def _seed(client, admin_test=False):
                 "id": "m01", "title": "Public material", "text": "Public evidence",
                 "image_url": "/images/material.png", "source_url": "https://example.org/source",
                 "attribution": "Public archive credit",
+                "caption": "Artist, 1850; depicting events in 1600.",
                 "reasoning_criteria": "PRIVATE_CRITERIA",
             }],
             "questions": [{
@@ -104,7 +105,9 @@ def _assert_public_task(task):
     }]
     assert task["evaluation_payload"]["materials"][0]["text"] == "Public evidence"
     assert task["evaluation_payload"]["materials"][0]["image_url"] == "/images/material.png"
-    assert task["evaluation_payload"]["materials"][0]["attribution"] == "Public archive credit"
+    assert task["evaluation_payload"]["materials"][0]["caption"] == "Artist, 1850; depicting events in 1600."
+    assert "attribution" not in task["evaluation_payload"]["materials"][0]
+    assert "source_url" not in task["evaluation_payload"]["materials"][0]
     _assert_private_absent(task)
 
 

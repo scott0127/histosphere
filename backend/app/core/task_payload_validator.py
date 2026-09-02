@@ -349,6 +349,8 @@ def _validate_materials(materials: Any, issues: list[dict[str, str]]) -> None:
         ids.add(material_id)
         if not isinstance(material.get("text", ""), str):
             issues.append(_issue(f"{field}.text", "Material text must be a string.", "invalid_material"))
+        if material.get("caption") is not None and not isinstance(material["caption"], str):
+            issues.append(_issue(f"{field}.caption", "Material caption must be a string.", "invalid_material"))
         if not str(material.get("text") or "").strip() and not material.get("image_url"):
             issues.append(_issue(field, "Material requires text or an image.", "empty_material"))
         for key in ("image_url", "source_url"):

@@ -302,6 +302,7 @@ export const validateTaskControlPayload = (task: EventTask, evaluationJson: stri
           if (value != null && value !== '' && (typeof value !== 'string' || !isTaskMaterialUrl(value))) issues.push(`學習材料 ${material.id} 的 ${field} 必須是 HTTP(S) URL。`);
         }
         if (material.attribution != null && typeof material.attribution !== 'string') issues.push(`學習材料 ${material.id} 的來源署名必須是文字。`);
+        if (material.caption != null && typeof material.caption !== 'string') issues.push(`學習材料 ${material.id} 的圖說必須是文字。`);
       }
     }
   }

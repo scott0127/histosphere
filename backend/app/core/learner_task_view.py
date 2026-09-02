@@ -15,7 +15,7 @@ PUBLIC_QUESTION_FIELDS = {
     "id", "blank_id", "type", "prompt", "placeholder", "required",
 }
 PUBLIC_MATERIAL_FIELDS = {
-    "id", "title", "text", "image_url", "image_alt", "caption", "source_url", "attribution",
+    "id", "title", "text", "image_url", "image_alt", "caption",
 }
 PUBLIC_RESULT_FIELDS = {
     "question_id", "blank_id", "question_type", "question_text", "prompt",

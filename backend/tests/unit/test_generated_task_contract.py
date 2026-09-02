@@ -36,6 +36,23 @@ def test_generated_task_accepts_current_inline_question_contract():
     assert payload.evaluation_payload["questions"][0]["correct_answer"] == "1789"
 
 
+def test_reading_caption_is_optional_text_and_keeps_admin_references():
+    raw = _valid_payload()
+    material = {
+        "id": "m01", "title": "A painting", "text": "Reading passage.",
+        "image_url": "https://example.org/image.png",
+        "caption": "Artist, 1850; depicting events in 1600.",
+        "source_url": "https://example.org/source", "attribution": "Archive credit",
+    }
+    raw["evaluation_payload"]["materials"] = [material]
+    result = GeneratedTaskPayload.model_validate(raw)
+    assert result.evaluation_payload["materials"] == [material]
+
+    material["caption"] = 1850
+    with pytest.raises(ValidationError):
+        GeneratedTaskPayload.model_validate(raw)
+
+
 def test_generated_task_accepts_complete_all_correct_fallback():
     raw = _valid_payload()
     raw["evaluation_payload"]["all_correct_fallback"] = {

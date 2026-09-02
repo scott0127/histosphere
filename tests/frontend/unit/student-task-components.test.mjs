@@ -52,9 +52,10 @@ const render = async (name, props) => {
   return renderToString(app);
 };
 
-test('learner story renders prompt-free qNN answer/rationale controls and image/text sources', async () => {
+test('learner story renders reading text, image and caption before answer/rationale controls without research references', async () => {
   const task = structuredClone(errorElicitationTask);
   task.evaluation_payload.questions[0].prompt = 'DUPLICATE_QUESTION';
+  task.evaluation_payload.materials[0].caption = 'Artist, 1850; depicting events in 1600.';
   const html = await render('TaskStudentStory', { task, modelValue: [] });
   for (const id of ['q01', 'q02', 'q03']) {
     assert.equal(html.split(`aria-label="${id} 作答理由"`).length - 1, 1);
@@ -62,9 +63,9 @@ test('learner story renders prompt-free qNN answer/rationale controls and image/
   }
   assert.equal(html.split('First statement.').length - 1, 1);
   assert.match(html, /Source text/);
-  assert.match(html, /Source archive/);
+  assert.match(html, /Artist, 1850; depicting events in 1600\./);
   assert.match(html, /src="https:\/\/example.com\/source.png"/);
-  assert.match(html, /href="https:\/\/example.com\/source"/);
+  assert.doesNotMatch(html, /Source archive|href=|參考史料|原始來源|>m01</);
   assert.ok(html.indexOf('Source text') < html.indexOf('First statement.'));
   assert.doesNotMatch(html, /DUPLICATE_QUESTION|INTERNAL_KEY|INTERNAL_CRITERIA|blank:q/);
 });
@@ -91,7 +92,7 @@ test('review renders rationale and backend status without exposing grading conte
   });
   assert.match(html, /LEARNER_REASON/);
   assert.match(html, /答對/);
-  assert.doesNotMatch(html, /EXPECTED_ANSWER|GRADING_FEEDBACK|SECRET_CRITERIA|INTERNAL_/);
+  assert.doesNotMatch(html, /EXPECTED_ANSWER|GRADING_FEEDBACK|SECRET_CRITERIA|INTERNAL_|Source archive|href=|參考史料/);
   const failed = await render('TaskAnswerReviewItem', {
     review: { label: 'q03', answerText: '否', rationale: 'LEARNER_REASON', status: 'failed' },
   });

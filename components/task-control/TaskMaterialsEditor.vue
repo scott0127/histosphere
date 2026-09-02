@@ -2,8 +2,8 @@
   <section class="admin-editor-block min-w-0 p-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p class="admin-kicker">Learner materials</p>
-        <h4 class="admin-heading mt-1 text-base font-bold">學習材料</h4>
+        <p class="admin-kicker">Reading passage</p>
+        <h4 class="admin-heading mt-1 text-base font-bold">閱讀本文與圖片</h4>
       </div>
       <button type="button" class="admin-button-secondary inline-flex items-center gap-1 px-3 py-2 text-xs font-bold" @click="addMaterial">
         <Icon name="mdi:plus" class="h-4 w-4" />新增材料
@@ -20,12 +20,16 @@
         </div>
       </div>
       <label class="block">
-        <span class="admin-label">材料標題 *</span>
+        <span class="admin-label">閱讀段落標題 *</span>
         <input :value="material.title" class="admin-field mt-1 w-full px-3 py-2 text-sm" @input="updateField(index, 'title', $event)" />
       </label>
       <label class="block">
-        <span class="admin-label">材料文字</span>
+        <span class="admin-label">閱讀本文</span>
         <textarea :value="material.text" rows="4" class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6" @input="updateField(index, 'text', $event)" />
+      </label>
+      <label class="block">
+        <span class="admin-label">作者／年代／圖說（受測者可見）</span>
+        <textarea :value="material.caption" rows="2" class="admin-textarea mt-1 w-full px-3 py-2 text-sm leading-6" @input="updateField(index, 'caption', $event)" />
       </label>
       <div class="grid gap-3 lg:grid-cols-2">
         <label class="block min-w-0">
@@ -33,12 +37,12 @@
           <input :value="material.image_url" type="url" class="admin-field mt-1 w-full px-3 py-2 text-sm" @input="updateField(index, 'image_url', $event)" />
         </label>
         <label class="block min-w-0">
-          <span class="admin-label">來源 URL</span>
+          <span class="admin-label">來源 URL（僅 Admin）</span>
           <input :value="material.source_url" type="url" class="admin-field mt-1 w-full px-3 py-2 text-sm" @input="updateField(index, 'source_url', $event)" />
         </label>
       </div>
       <label class="block">
-        <span class="admin-label">來源署名／授權</span>
+        <span class="admin-label">研究引用／授權紀錄（僅 Admin）</span>
         <input :value="material.attribution" class="admin-field mt-1 w-full px-3 py-2 text-sm" @input="updateField(index, 'attribution', $event)" />
       </label>
       <template v-if="material.image_url && isTaskMaterialUrl(material.image_url)">
