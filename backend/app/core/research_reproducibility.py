@@ -14,7 +14,7 @@ from typing import Any, Iterable
 from pydantic import BaseModel
 
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import ExperimentSession, ResearchLog
+from app.models.domain import EventTask, ExperimentSession, ResearchLog, TaskAttempt
 
 
 SNAPSHOT_VERSION = "1"
@@ -51,6 +51,21 @@ def stable_hash(value: Any) -> str:
 def prompt_text_hash(prompt: str) -> str:
     """沿用訊息 metadata 的 Prompt 純文字 SHA-256 算法。"""
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
+def get_session_task(
+    repository: RepositoryProtocol,
+    session: ExperimentSession,
+    attempt: TaskAttempt | None = None,
+) -> EventTask | None:
+    """換題後仍讀取原活動的 Task，不把舊作答配到最新題組。"""
+    if attempt:
+        return repository.get_event_task(attempt.task_id)
+    for log in repository.list_research_logs_for_session(session.id):
+        if log.action_type == "session_material_snapshot" and log.task_id:
+            return repository.get_event_task(log.task_id)
+    # 相容尚未保存素材快照的舊活動；新活動都有原本的 Task 關聯。
+    return repository.get_latest_event_task(session.event_id)
 
 
 def record_session_material_snapshot(

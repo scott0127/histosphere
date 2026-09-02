@@ -8,7 +8,7 @@
 from fastapi import HTTPException, status
 
 from app.core.experiment_conditions import condition_code_for_key
-from app.core.research_reproducibility import record_session_material_snapshot
+from app.core.research_reproducibility import get_session_task, record_session_material_snapshot
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, EventTask, ExperimentCondition, ExperimentSession, Participant, ResearchLog
 from app.providers.llm.base import LLMProvider
@@ -104,6 +104,10 @@ class EventInitializationService:
             personas = await self._generate_primary_persona(event, sources)
 
         if learner_session:
+            attempt = self.repository.get_task_attempt_for_session(learner_session.id)
+            task = get_session_task(self.repository, learner_session, attempt)
+            if not task:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The original session task is unavailable.")
             session_condition = self.repository.get_condition_by_key(learner_session.condition_key_snapshot)
             if not session_condition:
                 raise HTTPException(

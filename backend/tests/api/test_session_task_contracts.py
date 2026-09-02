@@ -1,4 +1,5 @@
 from app.core.experiment_conditions import condition_code_for_key
+from app.models.domain import EventTask
 
 
 def initialize_event(client, event_name="法國大革命", condition_key="ebl_roleplay", user_id="participant-001"):
@@ -61,6 +62,38 @@ def test_route_uuid_contracts_return_validation_errors(client):
             "response_payload": {},
         },
     ).status_code == 422
+
+
+def test_replacing_task_keeps_existing_session_on_its_original_version(client):
+    initialized = initialize_event(client)
+    repository = client.app.state.repository
+    replacement = repository.save_event_task(EventTask(
+        event_id=initialized["event_id"],
+        title="新版閱讀題組",
+        error_elicitation_task_full_text="另一份題目。",
+    ))
+    state_url = f"/api/sessions/{initialized['session_id']}/state"
+    # 尚未作答也必須依初始化快照取回舊題，而不是誤用最新版。
+    assert client.get(state_url).json()["task"]["id"] == initialized["task"]["id"]
+
+    draft = client.patch(
+        f"/api/tasks/{initialized['task']['id']}/draft",
+        json={"session_id": initialized["session_id"], "response_payload": {"answer_text": "舊題的答案"}},
+    )
+    assert draft.status_code == 200
+    state = client.get(state_url).json()
+    assert state["task"]["id"] == initialized["task"]["id"]
+    assert state["attempt"]["response_payload"]["answer_text"] == "舊題的答案"
+    progress = client.get("/api/sessions/progress").json()["progress"]
+    assert next(item for item in progress if item["session_id"] == initialized["session_id"])["task_id"] == initialized["task"]["id"]
+
+    request = {"event_name": "法國大革命", "condition_key": "ebl_roleplay"}
+    resumed = client.post("/api/event/initialize", json=request)
+    assert resumed.status_code == 200
+    assert resumed.json()["task"]["id"] == initialized["task"]["id"]
+    new_test = client.post("/api/event/initialize", json=request, headers={"x-admin-key": "test-admin"})
+    assert new_test.status_code == 200
+    assert new_test.json()["task"]["id"] == replacement.id
 
 
 def test_session_state_progress_and_task_draft_follow_frontend_recovery_contract(client):

@@ -10,7 +10,7 @@ from datetime import timedelta
 from fastapi import HTTPException, status
 
 from app.core.research_audit import build_change_payload
-from app.core.research_reproducibility import record_session_material_snapshot
+from app.core.research_reproducibility import get_session_task, record_session_material_snapshot
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
 from app.schemas.responses import (
@@ -39,9 +39,9 @@ class SessionService:
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
-        task = self.repository.get_latest_event_task(event.id)
+        attempt = self.repository.get_task_attempt_for_session(session.id)
+        task = get_session_task(self.repository, session, attempt)
         condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
-        attempt = self.repository.get_task_attempt_for_session(session.id, task.id if task else None)
         conversation = self.repository.get_conversation_by_session(session.id)
 
         return SessionStateResponse(
@@ -64,8 +64,8 @@ class SessionService:
             if stored_session.is_admin_test:
                 continue
             session = expire_session_if_due(self.repository, stored_session)
-            task = self.repository.get_latest_event_task(session.event_id)
-            attempt = self.repository.get_task_attempt_for_session(session.id, task.id if task else None)
+            attempt = self.repository.get_task_attempt_for_session(session.id)
+            task = get_session_task(self.repository, session, attempt)
             conversation = self.repository.get_conversation_by_session(session.id)
             progress.append(
                 UserProgressItem(
