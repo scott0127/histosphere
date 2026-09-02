@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from typing import Any
+from urllib.parse import urlparse
 
 from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
 
@@ -19,7 +20,7 @@ BLANK_PATTERN = re.compile(r"\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}")
 
 
 def validate_task_authoring_payload(
-    display_text: str,
+    error_elicitation_task_full_text: str,
     evaluation_payload: dict[str, Any] | Any,
 ) -> list[dict[str, str]]:
     """回傳 Task 的欄位級驗證問題。
@@ -45,9 +46,13 @@ def validate_task_authoring_payload(
             "unsupported_task_contract",
         )]
     error_elicitation = contract_version == ERROR_ELICITATION_CONTRACT_VERSION
+    if error_elicitation:
+        if not str(error_elicitation_task_full_text or "").strip():
+            issues.append(_issue("error_elicitation_task_full_text", "Full task text is required.", "missing_full_text"))
+        _validate_materials(evaluation_payload.get("materials", []), issues)
     raw_questions = evaluation_payload.get("questions")
     all_correct_fallback = evaluation_payload.get("all_correct_fallback")
-    token_ids = _blank_ids(display_text)
+    token_ids = _blank_ids(error_elicitation_task_full_text)
     structured_mode = (
         "questions" in evaluation_payload
         or bool(token_ids)
@@ -140,8 +145,8 @@ def _validate_all_correct_fallback(
         )
 
 
-def _blank_ids(display_text: str) -> list[str]:
-    return [match.group(1) for match in BLANK_PATTERN.finditer(display_text or "")]
+def _blank_ids(error_elicitation_task_full_text: str) -> list[str]:
+    return [match.group(1) for match in BLANK_PATTERN.finditer(error_elicitation_task_full_text or "")]
 
 
 def _validate_story_tokens(
@@ -154,7 +159,7 @@ def _validate_story_tokens(
         if count > 1:
             issues.append(
                 _issue(
-                    "display_text",
+                    "error_elicitation_task_full_text",
                     f"Story text contains duplicate blank token '{blank_id}'.",
                     "duplicate_blank_token",
                 )
@@ -177,7 +182,7 @@ def _validate_story_tokens(
         if blank_id not in question_blank_set:
             issues.append(
                 _issue(
-                    "display_text",
+                    "error_elicitation_task_full_text",
                     f"Story token '{blank_id}' does not map to any question.",
                     "orphan_blank_token",
                 )
@@ -200,7 +205,7 @@ def _validate_question(
 
     if not question_id:
         issues.append(_issue(f"{field}.id", "Question id is required.", "missing_question_id"))
-    if not prompt:
+    if not error_elicitation and not prompt:
         issues.append(_issue(f"{field}.prompt", "Question prompt is required.", "missing_prompt"))
     supported_types = INLINE_QUESTION_TYPES if error_elicitation else SUPPORTED_QUESTION_TYPES
     if question_type not in supported_types:
@@ -214,6 +219,11 @@ def _validate_question(
         return
 
     if error_elicitation:
+        # 題目敘述只存在整份 full text；題號標記將作答區與判定標準連起來。
+        if "prompt" in question:
+            issues.append(_issue(f"{field}.prompt", "Write question statements in error_elicitation_task_full_text, not per-question prompt.", "duplicate_question_text"))
+        if blank_id != question_id or question_id not in token_ids:
+            issues.append(_issue(f"{field}.id", "Every question must have one matching {{blank:question_id}} in the full text.", "question_missing_token"))
         if not isinstance(question.get("id"), str) or question["id"] != question_id:
             issues.append(_issue(f"{field}.id", "Question id must be a string without surrounding whitespace.", "invalid_question_id"))
         criteria = question.get("reasoning_criteria")
@@ -231,7 +241,7 @@ def _validate_question(
         issues.append(
             _issue(
                 f"{field}.blank_id",
-                f"Inline question '{question_id or blank_id}' is not inserted in display_text.",
+                f"Inline question '{question_id or blank_id}' is not inserted in error_elicitation_task_full_text.",
                 "question_missing_token",
             )
         )
@@ -318,3 +328,34 @@ def _question_blank_id(question: dict[str, Any]) -> str:
 
 def _issue(field: str, message: str, code: str) -> dict[str, str]:
     return {"field": field, "message": message, "code": code}
+
+
+def _validate_materials(materials: Any, issues: list[dict[str, str]]) -> None:
+    if not isinstance(materials, list):
+        issues.append(_issue("evaluation_payload.materials", "Materials must be an array.", "invalid_materials"))
+        return
+    ids = set()
+    for index, material in enumerate(materials):
+        field = f"evaluation_payload.materials[{index}]"
+        if not isinstance(material, dict):
+            issues.append(_issue(field, "Material must be an object.", "invalid_material"))
+            continue
+        for key in ("id", "title"):
+            if not isinstance(material.get(key), str) or not material[key].strip():
+                issues.append(_issue(f"{field}.{key}", "Material id and title are required.", "invalid_material"))
+        material_id = str(material.get("id") or "")
+        if material_id in ids:
+            issues.append(_issue(f"{field}.id", "Material ids must be unique.", "duplicate_material_id"))
+        ids.add(material_id)
+        if not isinstance(material.get("text", ""), str):
+            issues.append(_issue(f"{field}.text", "Material text must be a string.", "invalid_material"))
+        if not str(material.get("text") or "").strip() and not material.get("image_url"):
+            issues.append(_issue(field, "Material requires text or an image.", "empty_material"))
+        for key in ("image_url", "source_url"):
+            value = material.get(key)
+            if not value:
+                continue
+            local_image = key == "image_url" and isinstance(value, str) and value.startswith("/images/") and ".." not in value
+            parsed = urlparse(str(value))
+            if not local_image and (parsed.scheme not in {"http", "https"} or not parsed.netloc):
+                issues.append(_issue(f"{field}.{key}", "Use an http(s) URL or a local /images/ image path.", "invalid_material_url"))

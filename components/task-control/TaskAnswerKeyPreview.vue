@@ -17,10 +17,11 @@
             'admin-answer-key-control',
             !segment.question ? 'admin-answer-key-control-missing' : ''
           ]"
-          :title="segment.question?.prompt || '找不到對應題目'"
+          :title="segment.question?.reasoning_criteria || '尚無理由通過標準'"
         >
           <span class="admin-answer-key-type">{{ segment.label }}</span>
           <strong>{{ answerText(segment.question) }}</strong>
+          <span v-if="segment.question?.reasoning_criteria" class="mt-1 block max-w-full whitespace-pre-wrap break-words text-xs font-normal">{{ segment.question.reasoning_criteria }}</span>
         </span>
       </template>
     </div>
@@ -55,7 +56,7 @@ const props = defineProps<{
 const blankPattern = /\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}/g;
 
 const questionTypeLabels: Record<TaskQuestion['type'], string> = {
-  short_answer: '簡答題',
+  short_answer: '不支援的舊版題型',
   cloze: '填空題',
   multiple_choice: '選擇題',
   true_false: '是非題',
@@ -64,7 +65,6 @@ const questionTypeLabels: Record<TaskQuestion['type'], string> = {
 const questionByBlankId = computed(() => {
   const map = new Map<string, TaskQuestion>();
   for (const question of props.questions) {
-    map.set(question.blank_id || question.id, question);
     map.set(question.id, question);
   }
   return map;
@@ -78,8 +78,12 @@ const labelForQuestion = (question: TaskQuestion | null, blankId: string) => {
 
 const answerText = (question: TaskQuestion | null) => {
   if (!question) return '未設定';
-  const value = question.correct_answer ?? question.source_text;
+  const value = question.correct_answer;
   if (value === undefined || value === null || value === '') return '未設定';
+  if (question.type === 'multiple_choice') {
+    const values = Array.isArray(value) ? value : [value];
+    return values.map((item) => question.options?.find((option) => option.value === item)?.label || String(item)).join(' / ');
+  }
   if (typeof value === 'boolean') return value ? '是' : '否';
   if (Array.isArray(value)) return value.join(' / ');
   if (typeof value === 'object') return JSON.stringify(value);
@@ -87,7 +91,7 @@ const answerText = (question: TaskQuestion | null) => {
 };
 
 const segments = computed<PreviewSegment[]>(() => {
-  const displayText = props.task.display_text || '';
+  const displayText = props.task.error_elicitation_task_full_text || '';
   const parsed: PreviewSegment[] = [];
   let lastIndex = 0;
   let textIndex = 0;
@@ -130,3 +134,25 @@ const segments = computed<PreviewSegment[]>(() => {
   return parsed;
 });
 </script>
+
+<style scoped>
+.admin-answer-key-control {
+  grid-auto-flow: row;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.75rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.admin-answer-key-control strong {
+  line-height: 1.5;
+}
+
+.admin-answer-key-type {
+  border-right: 0;
+  padding-right: 0;
+}
+</style>

@@ -10,15 +10,16 @@ def _valid_payload() -> dict:
     return {
         "title": "法國大革命：歷史思考任務",
         "story_text": "1789 年法國爆發革命。",
-        "display_text": "{{blank:q01}}年法國爆發革命。",
+        "error_elicitation_task_full_text": "{{blank:q01}}年法國爆發革命。",
         "evaluation_payload": {
+            "contract_version": ERROR_ELICITATION_CONTRACT_VERSION,
             "rubric": "檢查時間脈絡。",
             "questions": [
                 {
                     "id": "q01",
                     "blank_id": "q01",
                     "type": "cloze",
-                    "prompt": "請填入革命爆發年份。",
+                    "reasoning_criteria": "說明年份如何符合題文的時間脈絡。",
                     "source_text": "1789",
                     "correct_answer": "1789",
                     "required": True,
@@ -31,7 +32,7 @@ def _valid_payload() -> dict:
 def test_generated_task_accepts_current_inline_question_contract():
     payload = GeneratedTaskPayload.model_validate(_valid_payload())
 
-    assert payload.display_text == "{{blank:q01}}年法國爆發革命。"
+    assert payload.error_elicitation_task_full_text == "{{blank:q01}}年法國爆發革命。"
     assert payload.evaluation_payload["questions"][0]["correct_answer"] == "1789"
 
 
@@ -61,7 +62,7 @@ def test_generated_task_rejects_incomplete_all_correct_fallback():
 
 
 @pytest.mark.parametrize(
-    ("display_text", "evaluation_payload"),
+    ("error_elicitation_task_full_text", "evaluation_payload"),
     [
         ("____年法國爆發革命。", {"rubric": "舊格式"}),
         ("1789 年法國爆發革命。", {"rubric": "缺少 questions"}),
@@ -82,11 +83,11 @@ def test_generated_task_rejects_incomplete_all_correct_fallback():
     ],
 )
 def test_generated_task_rejects_legacy_or_inconsistent_payloads(
-    display_text: str,
+    error_elicitation_task_full_text: str,
     evaluation_payload: dict,
 ):
     raw = _valid_payload()
-    raw["display_text"] = display_text
+    raw["error_elicitation_task_full_text"] = error_elicitation_task_full_text
     raw["evaluation_payload"] = evaluation_payload
 
     with pytest.raises(ValidationError):
@@ -106,7 +107,7 @@ def test_generated_task_rejects_legacy_or_inconsistent_payloads(
 )
 def test_error_elicitation_accepts_three_standalone_types_with_criteria(question_type, answer, options):
     raw = _valid_payload()
-    raw["display_text"] = "請逐題作答並說明理由。"
+    raw["error_elicitation_task_full_text"] = "請逐題作答並說明理由。{{blank:q01}}"
     evaluation = raw["evaluation_payload"]
     evaluation["contract_version"] = ERROR_ELICITATION_CONTRACT_VERSION
     question = evaluation["questions"][0]

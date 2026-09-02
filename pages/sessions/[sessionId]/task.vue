@@ -1,5 +1,5 @@
 <template>
-  <!-- Session task route: /sessions/[sessionId]/task 是正式前置任務入口。 -->
+  <!-- Session task route: /sessions/[sessionId]/task 是 Error-Elicitation Task 入口。 -->
   <TaskStudentGate
     v-model="answers"
     :task-data="taskData"
@@ -9,6 +9,7 @@
     :is-submitting="isSubmitting"
     :judgement="judgement"
     :session="session"
+    :activity-mode="activityMode"
     @submit="submitTask"
   />
 </template>
@@ -27,6 +28,9 @@ const authUserId = computed(() => {
     ? route.query.authUserId.trim()
     : null;
 });
+
+const { activityMode, initAdminMode } = useAdminMode();
+onMounted(initAdminMode);
 
 const {
   answers,

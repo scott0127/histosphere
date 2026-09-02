@@ -181,7 +181,7 @@
         <div v-else class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
           <h2 class="text-sm font-semibold text-[var(--admin-text)]">對話夥伴</h2>
           <p class="mt-2 text-sm leading-6 text-[var(--admin-copy)]">
-            你可以針對前置任務與歷史事件提出問題。
+            你可以針對 Error-Elicitation Task 與歷史事件提出問題。
           </p>
         </div>
       </aside>

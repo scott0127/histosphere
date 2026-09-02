@@ -48,7 +48,7 @@
                 <p class="mt-1 text-sm font-medium leading-6 text-[var(--admin-copy)]">{{ event.personas[0]?.role || '尚未設定角色定位' }}</p>
               </div>
               <div class="rounded-[9px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)] p-3">
-                <p class="text-xs font-black uppercase tracking-[0.18em] text-[var(--admin-coffee)]">前置任務</p>
+                <p class="text-xs font-black text-[var(--admin-coffee)]">Error-Elicitation Task</p>
                 <p class="mt-2 text-base font-black text-[var(--admin-text)]">{{ event.latest_task ? '已建立' : '尚未建立' }}</p>
               </div>
             </div>

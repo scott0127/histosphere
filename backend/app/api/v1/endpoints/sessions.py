@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_session_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
+from app.core.learner_task_view import learner_view
 from app.schemas.responses import SessionStateResponse, UserProgressResponse
 from app.services import SessionService
 
@@ -64,4 +65,4 @@ def session_state(
     """
     response = service.load_state(str(session_id))
     actor.require_owner(response.session.user_id)
-    return response
+    return learner_view(response)

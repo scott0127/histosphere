@@ -131,7 +131,9 @@ def test_task_submission_is_persisted_and_polled(client):
     submitted = submit_and_poll(client, initialized)
     assert submitted["conversation_id"]
     assert submitted["attempt"]["status"] == "submitted"
-    assert submitted["judgement"]["llm_call"]["task_name"] == "judge_task_attempt"
+    stored_attempt = client.app.state.repository.get_task_attempt(submitted["attempt_id"])
+    assert stored_attempt.judgement_payload["llm_call"]["task_name"] == "judge_task_attempt"
+    assert "llm_call" not in submitted["judgement"]
     assert submitted["history"][0]["metadata"]["llm_call"]["task_name"] == "generate_greeting"
 
     processed_log = next(
@@ -152,7 +154,7 @@ def test_task_submission_is_persisted_and_polled(client):
 
 
 @pytest.mark.parametrize("version_location", ["task", "response"])
-def test_new_task_contract_cannot_accidentally_use_old_judge(client, version_location):
+def test_task_and_answer_contract_mismatch_never_reaches_judge(client, version_location):
     initialized = admin_initialize(client)
     repository = client.app.state.repository
     task = repository.get_event_task(initialized["task"]["id"])
@@ -174,8 +176,7 @@ def test_new_task_contract_cannot_accidentally_use_old_judge(client, version_loc
         f"/api/tasks/{task.id}/submit",
         json={"session_id": initialized["session_id"], "response_payload": payload},
     )
-    assert response.status_code == 409
-    assert "not enabled yet" in response.json()["detail"]
+    assert response.status_code == 422
     assert repository.get_task_attempt_for_session(initialized["session_id"], task.id) is None
 
 

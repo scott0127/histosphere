@@ -16,6 +16,7 @@ import type {
 } from '~/types';
 import {
   buildAdminEditableJson,
+  buildAdminTaskPatch,
   conditionModeLabel,
   conditionOrdinal,
   eventYearRange,
@@ -153,8 +154,7 @@ export const useAdminWorkspace = () => {
 
   type TaskDraftSnapshot = {
     title: string | null | undefined;
-    storyText: string;
-    displayText: string;
+    fullText: string;
     evaluationJson: string;
   };
 
@@ -165,8 +165,7 @@ export const useAdminWorkspace = () => {
       if (!task || task.id === exceptTaskId || !isTaskDirty(task)) continue;
       drafts[task.id] = {
         title: task.title,
-        storyText: task.story_text,
-        displayText: task.display_text,
+        fullText: task.error_elicitation_task_full_text,
         evaluationJson: taskJson.value[task.id] || '{}',
       };
     }
@@ -195,8 +194,7 @@ export const useAdminWorkspace = () => {
         const draft = drafts[task.id];
         if (!draft) continue;
         task.title = draft.title;
-        task.story_text = draft.storyText;
-        task.display_text = draft.displayText;
+        task.error_elicitation_task_full_text = draft.fullText;
         editable.taskJson[task.id] = draft.evaluationJson;
       }
 
@@ -244,23 +242,18 @@ export const useAdminWorkspace = () => {
   };
 
   const saveTask = async (task: EventTask) => {
-    let evaluationPayload = {};
+    if (savingTaskId.value) return;
+    let patch: ReturnType<typeof buildAdminTaskPatch>;
     try {
-      evaluationPayload = JSON.parse(taskJson.value[task.id] || '{}');
-    } catch {
-      error.value = `Task ${task.id} 的 evaluation_payload 不是合法 JSON。`;
+      patch = buildAdminTaskPatch(task, taskJson.value[task.id] || '{}');
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : '任務格式不正確。';
       return;
     }
     savingTaskId.value = task.id;
     error.value = null;
     try {
-      await updateAdminTask(adminKey.value, task.id, {
-        title: task.title,
-        story_text: task.story_text,
-        display_text: task.display_text,
-        evaluation_payload: evaluationPayload,
-        revision_state: 'teacher_modified',
-      });
+      await updateAdminTask(adminKey.value, task.id, patch);
       await loadSnapshot({
         preserveUnsavedTaskDrafts: true,
         exceptTaskId: task.id,

@@ -7,7 +7,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.error_elicitation_contract import validate_versioned_task_response
 from app.core.persona_prompt_contract import PersonaPromptProfile
@@ -227,15 +227,17 @@ class EventTaskUpdateRequest(BaseModel):
 
     Attributes:
         title: 新的 task 標題（可選）。
-        story_text: 新的完整故事文字（可選）。
-        display_text: 新的顯示用文字（可選）。
+        story_text: 舊格式相容欄位；新版題目不使用。
+        error_elicitation_task_full_text: 整份 Error-Elicitation Task 的題目全文（可選）。
         evaluation_payload: 新的評量結構（可選）。
         revision_state: 修訂狀態；只有 request 明確提供時才會套用。
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     story_text: str | None = None
-    display_text: str | None = None
+    error_elicitation_task_full_text: str | None = None
     evaluation_payload: dict[str, Any] | None = None
     revision_state: Literal["llm_generated", "teacher_modified", "manual"] | None = "teacher_modified"
 

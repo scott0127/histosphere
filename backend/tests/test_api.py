@@ -122,7 +122,7 @@ def test_event_initialize_creates_workspace_without_conversation(client):
     assert data["session_id"]
     assert "conversation_id" not in data
     assert data["event"]["canonical_name"] == "諾曼第登陸"
-    assert data["task"]["display_text"]
+    assert data["task"]["error_elicitation_task_full_text"]
     assert len(data["personas"]) == 1
     assert data["condition"]["condition_key"] == "ebl_roleplay"
 
@@ -229,47 +229,35 @@ def test_event_check_and_list_events(client):
     public_task = payload[0]["latest_task"]
     assert public_task
     assert public_task["story_text"] == ""
-    assert public_task["display_text"] == ""
+    assert public_task["error_elicitation_task_full_text"] == ""
     assert public_task["evaluation_payload"] == {"question_count": 1}
 
     snapshot = client.get("/api/admin/snapshot", headers={"x-admin-key": "test-admin"})
     assert snapshot.status_code == 200
     admin_task = snapshot.json()["events"][0]["latest_task"]
-    assert admin_task["story_text"] == initialized["task"]["story_text"]
+    assert admin_task["story_text"] == client.app.state.repository.get_event_task(admin_task["id"]).story_text
+    assert initialized["task"]["story_text"] == ""
     assert admin_task["evaluation_payload"]["questions"][0]["correct_answer"] == "原因"
 
 
-def test_existing_event_without_task_gets_structured_fallback(client):
+def test_existing_event_without_task_requires_admin_prepared_material(client):
     repository = client.app.state.repository
-    repository.save_event(
+    event = repository.save_event(
         Event(
             canonical_name="缺少任務的事件",
             context="缺少任務的事件用來測試系統建立可編輯的保守題目。",
         )
     )
 
-    # 此測試只驗證 Task fallback；非 role-play 條件不需要額外建立 persona。
-    initialized = initialize_event(
-        client,
-        "缺少任務的事件",
-        condition_key="no_ebl_no_roleplay",
+    # 不能在缺少題目時偷偷建立只需抄事件名稱、又沒有理由標準的題目。
+    response = client.post(
+        "/api/event/initialize",
+        headers={"x-admin-key": "test-admin"},
+        json={"event_name": "缺少任務的事件", "condition_key": "no_ebl_no_roleplay", "rebuild": False},
     )
-    task = initialized["task"]
-
-    assert task["display_text"].count("{{blank:q01}}") == 1
-    assert "____" not in task["display_text"]
-    assert task["evaluation_payload"]["questions"] == [
-        {
-            "id": "q01",
-            "blank_id": "q01",
-            "type": "cloze",
-            "prompt": "請填入這個歷史事件的名稱。",
-            "placeholder": "請輸入事件名稱",
-            "source_text": "缺少任務的事件",
-            "correct_answer": "缺少任務的事件",
-            "required": True,
-        }
-    ]
+    assert response.status_code == 409
+    assert "Task" in response.json()["detail"]
+    assert not repository.list_event_tasks(event.id)
 
 
 def test_task_submit_creates_attempt_conversation_messages_and_logs(client):

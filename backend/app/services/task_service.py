@@ -8,6 +8,7 @@ from datetime import timedelta
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
+from app.core.error_elicitation_contract import validate_task_answers
 from app.core.research_reproducibility import record_prompt_snapshot
 from app.models.domain import ChatMessage, Conversation, ResearchLog, TaskAttempt, utc_now
 from app.providers.llm.base import LLMProvider
@@ -25,6 +26,7 @@ from app.services.conversation_opening_service import (
 )
 from app.services.session_runtime import EXPERIMENT_CHAT_DURATION_MINUTES, expire_session_if_due
 from app.services.task_judgement import enrich_task_judgement
+from app.services.llm_generation_audit import record_rejected_generation
 
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,7 @@ class TaskService:
     def save_draft(self, task_id: str, request: TaskDraftRequest) -> TaskDraftResponse:
         """Save a recoverable learner draft without invoking the LLM."""
         task, session = self._task_and_session(task_id, request.session_id, request.user_id)
+        self._validate_answers(task.evaluation_payload, request.response_payload, complete=False)
         attempt = self.repository.get_task_attempt_for_session(session.id, task.id)
         if attempt and attempt.status in {"processing", "submitted"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task already submitted")
@@ -81,7 +84,7 @@ class TaskService:
         if attempt and attempt.status == "processing":
             return self._accepted(attempt), False
 
-        self._require_current_submission_format(task.evaluation_payload, request.response_payload)
+        self._validate_answers(task.evaluation_payload, request.response_payload, complete=True)
 
         if not attempt:
             attempt = TaskAttempt(
@@ -133,13 +136,27 @@ class TaskService:
             event = self.repository.get_event(attempt.event_id)
             if not task or not session or not event:
                 raise RuntimeError("Task submission context is incomplete")
-            self._require_current_submission_format(task.evaluation_payload, attempt.response_payload)
+            self._validate_answers(task.evaluation_payload, attempt.response_payload, complete=True)
             condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
             if not condition:
                 raise RuntimeError("Experiment condition is missing")
 
             judgement = await self.llm_provider.judge_task_attempt(event, task, attempt.response_payload)
-            judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
+            try:
+                judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
+            except ValueError as exc:
+                # 模型漏題等問題保留原輸出供查核；不可產生假的 incorrect 結果。
+                audit_id = record_rejected_generation(
+                    stage="task_judgement_contract",
+                    provider=str(judgement.get("provider", "unknown")),
+                    model=str(judgement.get("model", "unknown")),
+                    task_name="judge_task_attempt",
+                    raw_output=json.dumps(judgement, ensure_ascii=False),
+                    reasons=[str(exc)],
+                    context={"attempt_id": attempt.id, "task_id": task.id},
+                )
+                attempt.judgement_payload = {"llm_call": judgement.get("llm_call"), "judge_validation_audit_id": audit_id}
+                raise
             # ``submitted`` is the polling terminal state. Keep the attempt processing
             # until the validated opening and its conversation are both durable.
             attempt.judgement_payload = judgement
@@ -325,13 +342,14 @@ class TaskService:
         return task, session
 
     @staticmethod
-    def _require_current_submission_format(evaluation_payload: dict, response_payload: dict) -> None:
-        # 第 4 批接上新 Judge 後移除此切換保護；不能讓舊 Judge 忽略新格式的理由。
-        if "contract_version" in evaluation_payload or "contract_version" in response_payload:
+    def _validate_answers(evaluation_payload: dict, response_payload: dict, *, complete: bool) -> None:
+        try:
+            validate_task_answers(evaluation_payload, response_payload, complete=complete)
+        except ValueError as exc:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Error-Elicitation Task judgement is not enabled yet. No answers were graded.",
-            )
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
 
     @staticmethod
     def _accepted(attempt: TaskAttempt) -> TaskSubmissionAcceptedResponse:

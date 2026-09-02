@@ -293,14 +293,14 @@ class EventTask(BaseModel):
     """事件學習任務。
 
     對應 ``event_tasks`` 資料表，儲存 LLM 生成或教師手動編輯的
-    historical thinking task 內容與評量結構。
+    Error-Elicitation Task 內容與判定結構，作為後續對話的學習起點。
 
     Attributes:
         id: Task UUID。
         event_id: 關聯事件 ID。
         title: Task 標題。
-        story_text: 完整原始文本，供研究者對照與編輯。
-        display_text: 學生端故事文字，以 ``{{blank:qNN}}`` token 標記文中題目。
+        story_text: 舊版原始文本欄位；新版完整題目只使用 full_text 欄位。
+        error_elicitation_task_full_text: 共用脈絡與全部題目敘述，以 ``{{blank:qNN}}`` 標記作答區域。
         evaluation_payload: 評量結構，包含 rubric 與 questions 題目定義。
         revision_state: 修訂狀態（LLM 生成 / 教師修改 / 手動）。
         created_at: 建立時間。
@@ -310,8 +310,8 @@ class EventTask(BaseModel):
     id: str = Field(default_factory=new_id)
     event_id: str
     title: str | None = None
-    story_text: str
-    display_text: str
+    story_text: str = ""
+    error_elicitation_task_full_text: str
     evaluation_payload: dict[str, Any] = Field(default_factory=dict)
     revision_state: Literal["llm_generated", "teacher_modified", "manual"] = "llm_generated"
     created_at: datetime = Field(default_factory=utc_now)

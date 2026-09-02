@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
 from app.api.deps import get_task_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
+from app.core.learner_task_view import learner_view
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
 from app.schemas.responses import (
     TaskDraftResponse,
@@ -72,7 +73,7 @@ def save_task_draft(
     """
     user_id = actor.resolve_user_id(request.user_id)
     verified_request = request.model_copy(update={"user_id": user_id})
-    return service.save_draft(str(task_id), verified_request)
+    return learner_view(service.save_draft(str(task_id), verified_request))
 
 
 @router.post(
@@ -130,4 +131,4 @@ def task_submission_status(
     actor.require_owner(owner_user_id)
     if response.attempt.status == "processing":
         _schedule_processing(request, background_tasks, service, str(attempt_id))
-    return response
+    return learner_view(response)

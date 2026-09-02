@@ -32,7 +32,7 @@ export interface TaskQuestion {
   id: string;
   type: TaskQuestionType;
   blank_id?: string | null;
-  prompt: string;
+  prompt?: string;
   placeholder?: string | null;
   source_text?: string | null;
   options?: TaskQuestionOption[];
@@ -50,6 +50,15 @@ export interface ErrorElicitationQuestion extends TaskQuestion {
   reasoning_criteria: string;
 }
 
+export interface TaskMaterial {
+  id: string;
+  title: string;
+  text: string;
+  image_url?: string | null;
+  source_url?: string | null;
+  attribution?: string | null;
+}
+
 export interface TaskAllCorrectFallback {
   id: string;
   incorrect_claim: string;
@@ -63,6 +72,7 @@ export interface TaskAllCorrectFallback {
 export interface TaskEvaluationPayload {
   contract_version?: typeof ERROR_ELICITATION_CONTRACT_VERSION;
   questions?: TaskQuestion[];
+  materials?: TaskMaterial[];
   rubric?: string | null;
   target_misconceptions?: string[];
   all_correct_fallback?: TaskAllCorrectFallback | null;
@@ -153,7 +163,7 @@ export interface EventTask {
   event_id: string;
   title?: string | null;
   story_text: string;
-  display_text: string;
+  error_elicitation_task_full_text: string;
   evaluation_payload: TaskEvaluationPayload;
   revision_state: 'llm_generated' | 'teacher_modified' | 'manual';
   created_at: string;

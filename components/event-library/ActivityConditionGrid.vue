@@ -11,7 +11,7 @@
         <h3 class="mt-1 font-serif text-2xl font-black text-[var(--admin-text)]">選擇學習活動</h3>
       </div>
       <p class="text-xs font-bold leading-6 text-[var(--admin-coffee)]">
-        完成前置任務後進入對話
+        完成 Error-Elicitation Task 後進入對話
       </p>
     </div>
 

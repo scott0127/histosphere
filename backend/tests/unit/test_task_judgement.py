@@ -12,7 +12,7 @@ def test_enrich_task_judgement_builds_stable_question_results():
         event_id="event-1",
         title="Task",
         story_text="Story",
-        display_text="{{blank:q01}} / {{blank:q02}}",
+        error_elicitation_task_full_text="{{blank:q01}} / {{blank:q02}}",
         evaluation_payload={
             "questions": [
                 {
@@ -64,7 +64,7 @@ def test_enrich_task_judgement_supports_single_question_legacy_answer_text():
         event_id="event-1",
         title="Task",
         story_text="Story",
-        display_text="{{blank:q01}}",
+        error_elicitation_task_full_text="{{blank:q01}}",
         evaluation_payload={
             "questions": [
                 {
@@ -91,7 +91,7 @@ def test_open_question_uses_llm_judgement_even_with_reference_answer():
         event_id="event-1",
         title="Task",
         story_text="Story",
-        display_text="Story",
+        error_elicitation_task_full_text="Story",
         evaluation_payload={
             "questions": [
                 {
@@ -135,7 +135,7 @@ def test_answered_open_question_requires_a_valid_llm_judgement():
         event_id="event-1",
         title="Task",
         story_text="Story",
-        display_text="Story",
+        error_elicitation_task_full_text="Story",
         evaluation_payload={
             "questions": [
                 {
@@ -160,7 +160,7 @@ def test_unanswered_open_question_does_not_require_llm_classification():
         event_id="event-1",
         title="Task",
         story_text="Story",
-        display_text="Story",
+        error_elicitation_task_full_text="Story",
         evaluation_payload={
             "questions": [{"id": "q01", "type": "short_answer", "prompt": "請說明。"}]
         },
@@ -205,7 +205,7 @@ def test_all_correct_fallback_is_frozen_into_the_task_judgement():
         event_id="event-1",
         title="Task",
         story_text="Story",
-        display_text="{{blank:q01}}",
+        error_elicitation_task_full_text="{{blank:q01}}",
         evaluation_payload={
             "questions": [
                 {

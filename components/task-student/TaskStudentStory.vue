@@ -4,16 +4,31 @@
     <div class="space-y-5">
       <div class="flex flex-col gap-3 rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] md:flex-row md:items-end md:justify-between">
         <div>
-          <p class="text-xs font-bold uppercase tracking-[0.18em] text-[var(--admin-coffee)]">歷史故事挖洞</p>
-          <h2 class="mt-2 font-serif text-2xl font-bold tracking-[0.02em] text-[var(--admin-text)]">{{ task.title || '前置任務' }}</h2>
+          <p class="text-xs font-bold text-[var(--admin-coffee)]">Error-Elicitation Task</p>
+          <h2 class="mt-2 break-words font-serif text-2xl font-bold text-[var(--admin-text)]">{{ task.title || 'Error-Elicitation Task' }}</h2>
         </div>
         <span class="rounded-full border border-[var(--admin-border)] bg-[var(--admin-coffee-soft)] px-3 py-1 text-xs font-bold text-[var(--admin-coffee)]">
-          補上關鍵知識
+          {{ newFormat ? `${questions.length} 題` : '補上關鍵知識' }}
         </span>
       </div>
 
+      <TaskStudentMaterials :materials="task.evaluation_payload.materials || []" />
+
       <div class="relative rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.66),0_10px_24px_rgba(47,41,36,0.04)] md:p-6">
-        <p class="whitespace-pre-wrap text-xl font-medium leading-10 text-[var(--admin-text)] md:text-2xl md:leading-[2.35]">
+        <div v-if="newFormat" class="min-w-0 break-words text-lg leading-9 text-[var(--admin-text)]">
+          <template v-for="(segment, index) in storySegments" :key="index">
+            <span v-if="segment.type === 'text'" class="whitespace-pre-wrap">{{ segment.text }}</span>
+            <TaskStudentAnswerBlock
+              v-else
+              :question="segment.question"
+              :model-value="answerValue(segment.question.id)"
+              :rationale="answerRationale(segment.question.id)"
+              @update:model-value="updateAnswer(segment.question, $event)"
+              @update:rationale="updateRationale(segment.question, $event)"
+            />
+          </template>
+        </div>
+        <p v-else class="whitespace-pre-wrap text-xl font-medium leading-10 text-[var(--admin-text)] md:text-2xl md:leading-[2.35]">
           <template v-for="(segment, index) in storySegments" :key="index">
             <span v-if="segment.type === 'text'">{{ segment.text }}</span>
             <TaskStudentInlineBlank
@@ -54,7 +69,9 @@
 // TaskStudentStory 呈現故事挖洞，並把內嵌空格答案整理成 TaskStudentAnswer[]。
 import { computed } from 'vue';
 import type { EventTask, TaskAnswerValue, TaskQuestion, TaskStudentAnswer } from '~/types';
-import { buildTaskStorySegments, normalizeTaskQuestions } from '~/composables/useStudentTask';
+import { buildTaskStorySegments, isErrorElicitationTask, normalizeTaskQuestions, updateTaskAnswer } from '~/composables/useStudentTask';
+import TaskStudentAnswerBlock from './TaskStudentAnswerBlock.vue';
+import TaskStudentMaterials from './TaskStudentMaterials.vue';
 
 const props = defineProps<{
   task: EventTask;
@@ -66,6 +83,8 @@ const emit = defineEmits<{
 }>();
 
 const storySegments = computed(() => buildTaskStorySegments(props.task));
+const newFormat = computed(() => isErrorElicitationTask(props.task));
+const questions = computed(() => normalizeTaskQuestions(props.task));
 const inlineQuestionIds = computed(() => {
   const ids = new Set<string>();
   for (const segment of storySegments.value) {
@@ -74,6 +93,7 @@ const inlineQuestionIds = computed(() => {
   return ids;
 });
 const scenarioQuestions = computed(() => {
+  if (newFormat.value) return [];
   return normalizeTaskQuestions(props.task).filter((question) => {
     return question.type === 'true_false' && !inlineQuestionIds.value.has(question.id);
   });
@@ -86,15 +106,14 @@ const answerValue = (questionId: string) => {
 
 // 更新故事中單一空格答案，並維持答案陣列穩定。
 const updateAnswer = (question: TaskQuestion, value: TaskAnswerValue) => {
-  const current = props.modelValue || [];
-  const next = current.filter((answer) => answer.question_id !== question.id);
-  next.push({
-    question_id: question.id,
-    blank_id: question.blank_id || question.id,
-    type: question.type,
-    prompt: question.prompt,
-    value,
-  });
-  emit('update:modelValue', next);
+  emit('update:modelValue', updateTaskAnswer(props.modelValue || [], question, { value }));
+};
+
+const answerRationale = (questionId: string) => {
+  return props.modelValue?.find((answer) => answer.question_id === questionId)?.rationale ?? '';
+};
+
+const updateRationale = (question: TaskQuestion, rationale: string) => {
+  emit('update:modelValue', updateTaskAnswer(props.modelValue || [], question, { rationale }));
 };
 </script>

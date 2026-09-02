@@ -32,7 +32,7 @@ export const sampleTask = {
   event_id: 'event-1',
   title: '法國大革命：舊制度危機與革命轉折',
   story_text: '1789 年以前，法國舊制度面臨財政危機。',
-  display_text: '1789 年以前，法國舊制度面臨 {{blank:q01}}，第三等級主張以 {{blank:q02}} 表決。',
+  error_elicitation_task_full_text: '1789 年以前，法國舊制度面臨 {{blank:q01}}，第三等級主張以 {{blank:q02}} 表決。',
   revision_state: 'teacher_modified',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',

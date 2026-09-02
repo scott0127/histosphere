@@ -1,26 +1,25 @@
 <template>
-  <!-- Story-first task composer：研究員以故事文本為主，將單一題目插入文中。 -->
   <TaskControlShell>
     <template #actions>
       <button
         class="admin-button-secondary inline-flex items-center gap-1 px-3 py-2 text-xs font-bold"
         type="button"
-        :disabled="!canUndo"
+        :disabled="saving || !canUndo"
         title="回到上一步"
+        aria-label="回到上一步"
         @click="undoTaskEdit"
       >
         <Icon name="mdi:undo-variant" class="h-4 w-4" />
-        上一步
       </button>
       <button
         class="admin-button-secondary inline-flex items-center gap-1 px-3 py-2 text-xs font-bold"
         type="button"
-        :disabled="!canRedo"
+        :disabled="saving || !canRedo"
         title="前往下一步"
+        aria-label="前往下一步"
         @click="redoTaskEdit"
       >
         <Icon name="mdi:redo-variant" class="h-4 w-4" />
-        下一步
       </button>
       <button
         class="admin-button-primary inline-flex min-w-28 items-center justify-center gap-2 px-3 py-2 text-xs font-bold"
@@ -38,15 +37,13 @@
     </template>
 
     <div class="space-y-4" @keydown.capture="handleEditorKeydown">
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-        <section class="admin-editor-block p-4">
+      <fieldset :disabled="saving || Boolean(payloadError)" class="min-w-0 space-y-4">
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+        <section class="admin-editor-block min-w-0 p-4">
           <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p class="admin-kicker">Authoring mode</p>
-              <h4 class="admin-heading mt-1 text-lg font-bold">出題文本編輯</h4>
-              <p class="admin-copy mt-1 text-xs font-semibold leading-5">
-                選取文字或把游標放在句中，再插入一個填空、選擇或是非題。
-              </p>
+              <h4 class="admin-heading mt-1 text-lg font-bold">Error-Elicitation Task 完整題目內容</h4>
             </div>
             <span class="admin-badge">{{ questions.length }} 題</span>
           </div>
@@ -59,47 +56,45 @@
 
             <div class="admin-composer-toolbar p-3">
               <div>
-                <p class="admin-label">插入題目</p>
+                <p class="admin-label">新增題目作答區</p>
                 <p class="admin-copy mt-1 text-xs font-semibold">{{ selectionSummary }}</p>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button class="admin-button-secondary px-3 py-2 text-xs font-bold" type="button" @click="insertInlineQuestion('cloze')">
-                  插入填空
+                  <Icon name="mdi:plus" class="mr-1 h-4 w-4" />填空題
                 </button>
                 <button class="admin-button-secondary px-3 py-2 text-xs font-bold" type="button" @click="insertInlineQuestion('multiple_choice')">
-                  插入選擇
+                  <Icon name="mdi:plus" class="mr-1 h-4 w-4" />選擇題
                 </button>
                 <button class="admin-button-secondary px-3 py-2 text-xs font-bold" type="button" @click="insertInlineQuestion('true_false')">
-                  插入是非
+                  <Icon name="mdi:plus" class="mr-1 h-4 w-4" />是非題
                 </button>
               </div>
             </div>
 
-            <section class="admin-subpanel p-3">
+            <div>
               <div class="flex items-center justify-between gap-3">
-                <p class="admin-label">編輯模式</p>
-                <span class="admin-code-badge">{{ inlineQuestionCount }} inline</span>
+                <p class="admin-label">完整題文 *</p>
+                <span class="admin-code-badge">{{ inlineQuestionCount }} 個作答標記</span>
               </div>
               <TaskStoryComposer
-                v-model="task.display_text"
+                v-model="task.error_elicitation_task_full_text"
                 class="mt-2"
-                :questions="questions"
                 :selected-question-id="selectedQuestion?.id || null"
                 @selection-change="captureStorySelection"
                 @select-question="selectQuestion"
-                @delete-question="deleteQuestion"
               />
-            </section>
+            </div>
           </div>
         </section>
 
-        <aside class="admin-editor-block p-4">
+        <aside class="admin-editor-block min-w-0 p-4">
           <div class="flex items-start justify-between gap-3">
             <div>
               <p class="admin-kicker">Question list</p>
               <h4 class="admin-heading mt-1 text-lg font-bold">題目清單</h4>
             </div>
-            <span class="admin-code-badge">{{ inlineQuestionCount }} inline</span>
+            <span class="admin-code-badge">{{ questions.length }} 題</span>
           </div>
 
           <div class="mt-4 space-y-2">
@@ -107,15 +102,15 @@
               v-for="item in labeledQuestions"
               :key="item.question.id"
               :class="[
-                'admin-question-row p-3',
+                'admin-question-row flex-wrap p-3',
                 selectedQuestion?.id === item.question.id ? 'admin-question-row-active' : 'admin-question-row-idle'
               ]"
             >
-              <button class="min-w-0 flex-1 rounded-[8px] bg-transparent text-left outline-none" type="button" @click="selectQuestion(item.question.id)">
+              <button class="min-w-0 basis-full rounded-[8px] bg-transparent text-left outline-none" type="button" @click="selectQuestion(item.question.id)">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
                     <p class="admin-caption text-xs font-bold">{{ item.label }} / {{ questionTypeLabel(item.question.type) }}</p>
-                    <h5 class="admin-heading mt-1 truncate text-sm font-bold">{{ item.question.prompt || '尚未輸入題目文字' }}</h5>
+                    <h5 class="admin-heading mt-1 line-clamp-2 break-words text-sm font-bold">{{ taskQuestionExcerpt(task.error_elicitation_task_full_text, item.question.id) || '尚無對應題文' }}</h5>
                   </div>
                   <span :class="['admin-status-chip', questionInserted(item.question) ? 'admin-status-chip-ok' : 'admin-status-chip-warning']">
                     {{ questionStatusLabel(item.question) }}
@@ -123,26 +118,28 @@
                 </div>
                 <div class="mt-2 grid gap-2 text-xs md:grid-cols-2">
                   <div class="admin-answer-cell">
-                    <span>答案</span>
-                    <strong>{{ answerText(item.question) }}</strong>
+                    <span class="shrink-0">答案</span>
+                    <strong class="line-clamp-2 min-w-0 break-words" :title="answerText(item.question)">{{ answerText(item.question) }}</strong>
                   </div>
                   <div class="admin-answer-cell">
-                    <span>空格</span>
-                    <strong>{{ item.question.blank_id || item.question.id }}</strong>
+                    <span>固定 ID</span>
+                    <strong>{{ item.question.id }}</strong>
                   </div>
                 </div>
               </button>
-              <button class="admin-button-danger px-3 py-2 text-xs font-bold" type="button" @click.stop="deleteQuestion(item.question.id)">
-                刪除
-              </button>
+              <div class="flex shrink-0 gap-1">
+                <button class="admin-button-secondary flex h-8 w-8 items-center justify-center" type="button" :disabled="!canMoveQuestion(item.question.id, -1)" title="上移題文段落與作答標記（題目須各自成段）" :aria-label="`上移 ${item.label}`" @click="moveQuestion(item.question.id, -1)"><Icon name="mdi:arrow-up" class="h-4 w-4" /></button>
+                <button class="admin-button-secondary flex h-8 w-8 items-center justify-center" type="button" :disabled="!canMoveQuestion(item.question.id, 1)" title="下移題文段落與作答標記（題目須各自成段）" :aria-label="`下移 ${item.label}`" @click="moveQuestion(item.question.id, 1)"><Icon name="mdi:arrow-down" class="h-4 w-4" /></button>
+                <button class="admin-button-danger flex h-8 w-8 items-center justify-center" type="button" title="刪除題目與標記，保留題文" :aria-label="`刪除 ${item.label}`" @click.stop="deleteQuestion(item.question.id)"><Icon name="mdi:trash-can-outline" class="h-4 w-4" /></button>
+              </div>
             </article>
 
             <div v-if="!questions.length" class="admin-empty-state p-4">
-              尚未建立題目。請在故事中選取文字後插入題目。
+              尚未建立題目。
             </div>
           </div>
 
-          <section v-if="selectedQuestion" class="admin-inspector-panel mt-4 p-3">
+          <section v-if="selectedQuestion" class="mt-4 border-t border-[var(--admin-border)] pt-4">
             <div class="mb-3 flex items-center justify-between gap-3">
               <div>
                 <p class="admin-kicker">Inspector</p>
@@ -153,21 +150,24 @@
             <TaskControlItemEditor
               :question="selectedQuestion"
               @update="updateQuestion"
-              @remove="deleteQuestion"
             />
+            <button v-if="!questionInserted(selectedQuestion)" type="button" class="admin-button-secondary mt-3 px-3 py-2 text-xs font-bold" @click="insertExistingMarker(selectedQuestion.id)">補上作答標記</button>
           </section>
         </aside>
       </div>
 
       <div class="space-y-3">
+        <TaskMaterialsEditor :model-value="materials" @update:model-value="updateMaterials" />
         <TaskAllCorrectFallbackEditor
           :model-value="allCorrectFallback"
           @update:model-value="updateAllCorrectFallback"
         />
 
-        <TaskControlValidation :issues="validationIssues" />
-
         <TaskAnswerKeyPreview :task="task" :questions="questions" />
+      </div>
+      </fieldset>
+
+      <TaskControlValidation :issues="validationIssues" />
 
         <details class="admin-subpanel p-3">
           <summary class="admin-label cursor-pointer">進階：題目判斷 JSON</summary>
@@ -175,6 +175,7 @@
             :value="evaluationJson"
             rows="8"
             class="admin-textarea admin-code-editor mt-2 w-full px-3 py-2 font-mono text-xs leading-5"
+            :disabled="saving"
             @input="updateEvaluationJson"
           />
         </details>
@@ -183,16 +184,15 @@
           <summary class="admin-label cursor-pointer">進階：學生端互動預覽</summary>
           <TaskControlPreview class="mt-2" :task="task" :evaluation-json="evaluationJson" />
         </details>
-      </div>
     </div>
   </TaskControlShell>
 </template>
 
 <script setup lang="ts">
 // TaskControlEditor 是研究者/老師端 task 編輯入口。
-// 它以 display_text 為主要編輯面，並同步維護 evaluation_payload.questions。
+// 它以 error_elicitation_task_full_text 為主要編輯面，並同步維護 evaluation_payload.questions。
 import { computed, nextTick, ref, watch } from 'vue';
-import type { EventTask, TaskAllCorrectFallback, TaskQuestion, TaskQuestionType } from '~/types';
+import type { EventTask, TaskAllCorrectFallback, TaskMaterial, TaskQuestion, TaskQuestionType } from '~/types';
 import TaskAllCorrectFallbackEditor from '~/components/task-control/TaskAllCorrectFallbackEditor.vue';
 import TaskAnswerKeyPreview from '~/components/task-control/TaskAnswerKeyPreview.vue';
 import TaskControlItemEditor from '~/components/task-control/TaskControlItemEditor.vue';
@@ -200,19 +200,26 @@ import TaskControlPreview from '~/components/task-control/TaskControlPreview.vue
 import TaskControlShell from '~/components/task-control/TaskControlShell.vue';
 import TaskControlValidation from '~/components/task-control/TaskControlValidation.vue';
 import TaskStoryComposer from '~/components/task-control/TaskStoryComposer.vue';
+import TaskMaterialsEditor from '~/components/task-control/TaskMaterialsEditor.vue';
 import {
   appendTaskHistoryEntry,
   blankIdsInDisplayText,
   createTaskQuestion,
   insertQuestionToken,
   nextTaskQuestionIndex,
+  moveTaskControlQuestion,
+  parseTaskEvaluationJson,
   questionInsertedInStory,
   removeQuestionAndToken,
   renumberQuestionLabels,
   taskAllCorrectFallback,
   taskControlQuestions,
+  taskControlMaterials,
+  taskQuestionExcerpt,
+  syncTaskQuestionOrder,
   updateTaskAllCorrectFallback,
   updateTaskControlQuestion,
+  updateTaskMaterials,
   validateTaskControlPayload,
   type TaskEditorHistoryEntry,
 } from '~/composables/useTaskControl';
@@ -231,8 +238,8 @@ const emit = defineEmits<{
 
 const selectedQuestionId = ref<string | null>(null);
 const storySelection = ref({
-  start: props.task.display_text?.length || 0,
-  end: props.task.display_text?.length || 0,
+  start: props.task.error_elicitation_task_full_text?.length || 0,
+  end: props.task.error_elicitation_task_full_text?.length || 0,
 });
 const isRestoringHistory = ref(false);
 const historyIndex = ref(-1);
@@ -240,6 +247,8 @@ const historyIndex = ref(-1);
 const historyEntries = ref<TaskEditorHistoryEntry[]>([]);
 
 const questions = computed(() => taskControlQuestions(props.task, props.evaluationJson));
+const payloadError = computed(() => parseTaskEvaluationJson(props.evaluationJson).error);
+const materials = computed(() => taskControlMaterials(props.evaluationJson));
 const allCorrectFallback = computed(() => taskAllCorrectFallback(props.evaluationJson));
 const labeledQuestions = computed(() => renumberQuestionLabels(questions.value));
 const validationIssues = computed(() => validateTaskControlPayload(props.task, props.evaluationJson));
@@ -251,26 +260,26 @@ const selectedQuestionLabel = computed(() => {
   return item?.label || '未選取題目';
 });
 const inlineQuestionCount = computed(() => {
-  const blankIds = blankIdsInDisplayText(props.task.display_text || '');
-  return questions.value.filter((question) => blankIds.includes(question.blank_id || question.id)).length;
+  const blankIds = blankIdsInDisplayText(props.task.error_elicitation_task_full_text || '');
+  return questions.value.filter((question) => blankIds.filter((id) => id === question.id).length === 1).length;
 });
 const selectedText = computed(() => {
-  const text = props.task.display_text || '';
+  const text = props.task.error_elicitation_task_full_text || '';
   return text.slice(storySelection.value.start, storySelection.value.end);
 });
 const selectionSummary = computed(() => {
   const text = selectedText.value.trim();
   if (!text) {
-    return '目前會插入在游標位置。';
+    return `游標位置：${storySelection.value.end}`;
   }
-  return `目前選取：「${text.slice(0, 32)}${text.length > 32 ? '...' : ''}」`;
+  return `選取末端：「${text.slice(0, 32)}${text.length > 32 ? '...' : ''}」`;
 });
 const historySnapshotKey = computed(() => JSON.stringify(createHistoryEntry()));
 const canUndo = computed(() => historyIndex.value > 0);
 const canRedo = computed(() => historyIndex.value >= 0 && historyIndex.value < historyEntries.value.length - 1);
 
 const questionTypeLabels: Record<TaskQuestion['type'], string> = {
-  short_answer: '簡答題',
+  short_answer: '不支援的舊版題型',
   cloze: '填空題',
   multiple_choice: '選擇題',
   true_false: '是非題',
@@ -295,13 +304,15 @@ watch(
   () => {
     pushHistoryEntry();
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 );
 
 watch(
-  () => props.task.display_text,
-  (displayText) => {
-    storySelection.value = clampStorySelection(storySelection.value, displayText || '');
+  () => props.task.error_elicitation_task_full_text,
+  (fullText) => {
+    storySelection.value = clampStorySelection(storySelection.value, fullText || '');
+    const ordered = syncTaskQuestionOrder(props.evaluationJson, fullText || '');
+    if (ordered !== props.evaluationJson) emit('update:evaluationJson', ordered);
   },
 );
 
@@ -311,6 +322,7 @@ watch(
     selectedQuestionId.value = null;
     historyEntries.value = [];
     historyIndex.value = -1;
+    storySelection.value = { start: props.task.error_elicitation_task_full_text?.length || 0, end: props.task.error_elicitation_task_full_text?.length || 0 };
     pushHistoryEntry();
   },
 );
@@ -320,8 +332,7 @@ const questionTypeLabel = (type: TaskQuestion['type']) => questionTypeLabels[typ
 function createHistoryEntry(): TaskEditorHistoryEntry {
   return {
     title: props.task.title || '',
-    displayText: props.task.display_text || '',
-    storyText: props.task.story_text || '',
+    fullText: props.task.error_elicitation_task_full_text || '',
     evaluationJson: props.evaluationJson || '',
   };
 }
@@ -340,10 +351,9 @@ function pushHistoryEntry() {
 const restoreHistoryEntry = async (entry: TaskEditorHistoryEntry) => {
   isRestoringHistory.value = true;
   props.task.title = entry.title;
-  props.task.display_text = entry.displayText;
-  props.task.story_text = entry.storyText;
+  props.task.error_elicitation_task_full_text = entry.fullText;
   emit('update:evaluationJson', entry.evaluationJson);
-  storySelection.value = { start: entry.displayText.length, end: entry.displayText.length };
+  storySelection.value = { start: entry.fullText.length, end: entry.fullText.length };
   await nextTick();
   isRestoringHistory.value = false;
 };
@@ -364,17 +374,23 @@ const redoTaskEdit = async () => {
   await restoreHistoryEntry(entry);
 };
 
-const handleEditorKeydown = (event: KeyboardEvent) => {
+const handleEditorKeydown = async (event: KeyboardEvent) => {
   if (!event.ctrlKey && !event.metaKey) return;
   const key = event.key.toLowerCase();
+  if (props.saving || !['z', 'y'].includes(key)) return;
+  // Commit an inspector draft before applying the shared task history.
+  event.preventDefault();
+  const target = event.target as HTMLElement;
+  target.blur();
+  await nextTick();
   if (key === 'z' && !event.shiftKey) {
-    event.preventDefault();
-    void undoTaskEdit();
+    await undoTaskEdit();
+    target.focus();
     return;
   }
   if (key === 'y' || (key === 'z' && event.shiftKey)) {
-    event.preventDefault();
-    void redoTaskEdit();
+    await redoTaskEdit();
+    target.focus();
   }
 };
 
@@ -382,6 +398,10 @@ const answerText = (question: TaskQuestion) => {
   const value = question.correct_answer;
   if (value === undefined || value === null || value === '') {
     return '尚未設定';
+  }
+  if (question.type === 'multiple_choice') {
+    const values = Array.isArray(value) ? value : [value];
+    return values.map((item) => question.options?.find((option) => option.value === item)?.label || String(item)).join(' / ');
   }
   if (typeof value === 'boolean') {
     return value ? '是' : '否';
@@ -400,7 +420,7 @@ type StorySelection = {
   end: number;
 };
 
-const clampStorySelection = (selection: StorySelection, displayText = props.task.display_text || '') => {
+const clampStorySelection = (selection: StorySelection, displayText = props.task.error_elicitation_task_full_text || '') => {
   const length = displayText.length;
   const start = Math.max(0, Math.min(selection.start, length));
   const end = Math.max(start, Math.min(selection.end, length));
@@ -416,22 +436,20 @@ const selectQuestion = (questionId: string) => {
 };
 
 const questionInserted = (question: TaskQuestion) => {
-  return questionInsertedInStory(props.task.display_text || '', question);
+  return questionInsertedInStory(props.task.error_elicitation_task_full_text || '', question);
 };
 
 const questionStatusLabel = (question: TaskQuestion) => {
   if (questionInserted(question)) return '文中';
-  if (question.type === 'short_answer') return '文後';
   return '未插入';
 };
 
 const insertInlineQuestion = (type: Extract<TaskQuestionType, 'cloze' | 'multiple_choice' | 'true_false'>) => {
-  const currentText = props.task.display_text || '';
+  const currentText = props.task.error_elicitation_task_full_text || '';
   const selection = clampStorySelection(storySelection.value, currentText);
-  const selected = currentText.slice(selection.start, selection.end);
-  const question = createTaskQuestion(type, selected, nextTaskQuestionIndex(props.evaluationJson));
+  const question = createTaskQuestion(type, '', nextTaskQuestionIndex(props.evaluationJson, currentText));
   const result = insertQuestionToken(currentText, question.id, selection.start, selection.end);
-  props.task.display_text = result.displayText;
+  props.task.error_elicitation_task_full_text = result.fullText;
   emit('update:evaluationJson', updateTaskControlQuestion(props.task, props.evaluationJson, question));
   selectedQuestionId.value = question.id;
   storySelection.value = { start: result.cursorPosition, end: result.cursorPosition };
@@ -443,8 +461,8 @@ const updateQuestion = (question: TaskQuestion) => {
 };
 
 const deleteQuestion = (questionId: string) => {
-  const result = removeQuestionAndToken(props.evaluationJson, props.task.display_text || '', questionId);
-  props.task.display_text = result.displayText;
+  const result = removeQuestionAndToken(props.evaluationJson, props.task.error_elicitation_task_full_text || '', questionId);
+  props.task.error_elicitation_task_full_text = result.fullText;
   emit('update:evaluationJson', result.evaluationJson);
   if (selectedQuestionId.value === questionId) {
     selectedQuestionId.value = questions.value.find((question) => question.id !== questionId)?.id || null;
@@ -457,5 +475,26 @@ const updateEvaluationJson = (event: Event) => {
 
 const updateAllCorrectFallback = (fallback: TaskAllCorrectFallback | null) => {
   emit('update:evaluationJson', updateTaskAllCorrectFallback(props.evaluationJson, fallback));
+};
+
+const updateMaterials = (value: TaskMaterial[]) => {
+  emit('update:evaluationJson', updateTaskMaterials(props.evaluationJson, value));
+};
+
+const canMoveQuestion = (questionId: string, direction: -1 | 1) => {
+  return !payloadError.value && moveTaskControlQuestion(props.evaluationJson, props.task.error_elicitation_task_full_text || '', questionId, direction).moved;
+};
+
+const moveQuestion = (questionId: string, direction: -1 | 1) => {
+  const result = moveTaskControlQuestion(props.evaluationJson, props.task.error_elicitation_task_full_text || '', questionId, direction);
+  if (!result.moved) return;
+  props.task.error_elicitation_task_full_text = result.fullText;
+  emit('update:evaluationJson', result.evaluationJson);
+};
+
+const insertExistingMarker = (questionId: string) => {
+  const result = insertQuestionToken(props.task.error_elicitation_task_full_text || '', questionId, storySelection.value.start, storySelection.value.end);
+  props.task.error_elicitation_task_full_text = result.fullText;
+  storySelection.value = { start: result.cursorPosition, end: result.cursorPosition };
 };
 </script>

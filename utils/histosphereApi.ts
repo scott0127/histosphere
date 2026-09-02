@@ -77,7 +77,7 @@ export type EventUpdateInput = Pick<
 
 export type TaskUpdateInput = Pick<
   EventTask,
-  'title' | 'story_text' | 'display_text' | 'evaluation_payload'
+  'title' | 'story_text' | 'error_elicitation_task_full_text' | 'evaluation_payload'
 > & {
   revision_state: EventTask['revision_state'];
 };

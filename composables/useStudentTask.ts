@@ -1,5 +1,3 @@
-// useStudentTask 集中管理受測者 task 頁會用到的純前端邏輯。
-// 這裡不直接操作 DOM；主要負責題目正規化、答案整理、活動名稱與本機進度紀錄。
 import type {
   EventTask,
   ExperimentCondition,
@@ -8,6 +6,7 @@ import type {
   TaskQuestion,
   TaskStudentAnswer,
 } from '~/types';
+import { ERROR_ELICITATION_CONTRACT_VERSION } from '~/types/index';
 import { experimentConditionCode } from '~/utils/experimentConditions';
 
 export type TaskStorySegment =
@@ -15,219 +14,251 @@ export type TaskStorySegment =
   | { type: 'blank'; question: TaskQuestion };
 
 const createBlankPattern = () => /\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}/g;
+const objectiveTypes = new Set(['cloze', 'multiple_choice', 'true_false']);
 
-export const studentConditionCode = (condition: ExperimentCondition) => {
-  return experimentConditionCode(condition);
+export const isErrorElicitationTask = (task?: EventTask | null) => {
+  return task?.evaluation_payload?.contract_version === ERROR_ELICITATION_CONTRACT_VERSION;
 };
 
-// 學生端只顯示實驗代號，避免暴露實際 treatment。
+export const studentConditionCode = (condition: ExperimentCondition) => experimentConditionCode(condition);
+
 export const studentActivityTitle = (condition: ExperimentCondition) => {
   const code = studentConditionCode(condition);
   return code ? `${code}模式` : '活動代號未設定';
 };
 
-// 從 event_tasks.evaluation_payload 取出正式題目；若舊資料還沒有 questions，就建立可作答的 fallback 題。
 export const normalizeTaskQuestions = (task: EventTask): TaskQuestion[] => {
   const questions = Array.isArray(task.evaluation_payload?.questions)
     ? task.evaluation_payload.questions
     : [];
+  const newFormat = isErrorElicitationTask(task);
 
-  const normalized = questions
-    .filter((question): question is TaskQuestion => Boolean(question && question.id && question.prompt))
-    .map((question) => ({
+  return questions
+    .filter((question) => question && typeof question.id === 'string' && question.id.trim()
+      && (newFormat
+        ? objectiveTypes.has(question.type)
+        : (objectiveTypes.has(question.type) || question.type === 'short_answer')
+          && typeof question.prompt === 'string' && question.prompt.trim()))
+    .map((question) => newFormat ? {
+      id: question.id,
+      blank_id: question.id,
+      type: question.type,
+      required: true,
+      options: Array.isArray(question.options) ? question.options : [],
+    } : {
       ...question,
       blank_id: question.blank_id || question.id,
       required: question.required !== false,
       options: Array.isArray(question.options) ? question.options : [],
-    }));
-
-  if (normalized.length > 0) return normalized;
-
-  return [
-    {
-      id: 'main-answer',
-      blank_id: 'main-answer',
-      type: 'short_answer',
-      prompt: task.display_text || task.title || '請完成前置任務。',
-      placeholder: '請用自己的話補上你認為重要的缺口、理由或不確定之處...',
-      required: true,
-    },
-  ];
+    });
 };
 
-// 判斷這份 task 是否使用故事內嵌空格；有 blank token 時，學生會直接在故事中作答。
 export const hasInlineTaskBlanks = (task: EventTask) => {
-  return createBlankPattern().test(task.display_text || '');
+  return createBlankPattern().test(task.error_elicitation_task_full_text || '');
 };
 
-// 將 display_text 切成文字與空格片段；空格 token 格式為 {{blank:question_id}}。
-export const buildTaskStorySegments = (task: EventTask): TaskStorySegment[] => {
-  const displayText = task.display_text || '';
-  const blankPattern = createBlankPattern();
+export const taskConfigurationError = (task: EventTask): string | null => {
   const questions = normalizeTaskQuestions(task);
+  if (!questions.length) return '任務尚未提供可作答的題目，請聯絡研究人員。';
+  if (!isErrorElicitationTask(task)) return null;
+
+  const markers = [...(task.error_elicitation_task_full_text || '').matchAll(createBlankPattern())]
+    .map((match) => match[1]);
+  const ids = questions.map((question) => question.id);
+  const valid = questions.length === task.evaluation_payload.questions?.length
+    && ids.every((id) => /^q\d{2,}$/.test(id))
+    && new Set(ids).size === ids.length
+    && markers.length === ids.length
+    && ids.every((id) => markers.filter((marker) => marker === id).length === 1)
+    && questions.every((question) => question.type !== 'multiple_choice' || Boolean(question.options?.length));
+  return valid ? null : '任務題目與作答欄位不完整，請聯絡研究人員。';
+};
+
+export const buildTaskStorySegments = (task: EventTask): TaskStorySegment[] => {
+  const fullText = task.error_elicitation_task_full_text || '';
   const questionByBlankId = new Map(
-    questions.map((question) => [question.blank_id || question.id, question]),
+    normalizeTaskQuestions(task).map((question) => [question.blank_id || question.id, question]),
   );
   const segments: TaskStorySegment[] = [];
+  const renderedIds = new Set<string>();
   let lastIndex = 0;
 
-  displayText.replace(blankPattern, (match, blankId: string, offset: number) => {
-    if (offset > lastIndex) {
-      segments.push({ type: 'text', text: displayText.slice(lastIndex, offset) });
-    }
-
+  fullText.replace(createBlankPattern(), (match, blankId: string, offset: number) => {
+    if (offset > lastIndex) segments.push({ type: 'text', text: fullText.slice(lastIndex, offset) });
     const question = questionByBlankId.get(blankId);
-    if (question) {
+    if (question && !renderedIds.has(question.id)) {
       segments.push({ type: 'blank', question });
+      renderedIds.add(question.id);
     } else {
       segments.push({ type: 'text', text: '____' });
     }
-
     lastIndex = offset + match.length;
     return match;
   });
 
-  if (lastIndex < displayText.length) {
-    segments.push({ type: 'text', text: displayText.slice(lastIndex) });
-  }
-
-  return segments.length > 0 ? segments : [{ type: 'text', text: displayText }];
+  if (lastIndex < fullText.length) segments.push({ type: 'text', text: fullText.slice(lastIndex) });
+  return segments.length ? segments : [{ type: 'text', text: fullText }];
 };
 
-// 檢查必填題是否都有答案，避免空白送出。
-export const isTaskAnswerComplete = (questions: TaskQuestion[], answers: TaskStudentAnswer[]) => {
+const hasTaskAnswerValue = (value: TaskAnswerValue) => {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return typeof value === 'boolean';
+};
+
+export const isTaskAnswerComplete = (
+  questions: TaskQuestion[],
+  answers: TaskStudentAnswer[],
+  task?: EventTask | null,
+) => {
+  if (!questions.length || (task && taskConfigurationError(task))) return false;
+  const newFormat = isErrorElicitationTask(task);
   return questions.every((question) => {
-    if (question.required === false) return true;
+    if (!newFormat && question.required === false) return true;
     const answer = answers.find((item) => item.question_id === question.id);
-    if (!answer) return false;
-    if (typeof answer.value === 'string') return answer.value.trim().length > 0;
-    if (Array.isArray(answer.value)) return answer.value.length > 0;
-    return answer.value !== null && answer.value !== undefined;
+    if (!answer || !hasTaskAnswerValue(answer.value)) return false;
+    if (!newFormat) return true;
+    if (typeof answer.rationale !== 'string' || !answer.rationale.trim()) return false;
+    if (question.type === 'true_false') return typeof answer.value === 'boolean';
+    if (typeof answer.value !== 'string') return false;
+    return question.type !== 'multiple_choice'
+      || Boolean(question.options?.some((option) => option.value === answer.value));
   });
 };
 
-// 將結構化答案轉成後端既有 LLM judgement 可讀的 payload，同時保留 answer_text 相容舊 prompt。
-export const buildTaskResponsePayload = (answers: TaskStudentAnswer[]) => {
-  const answerText = answers
-    .map((answer) => `${answer.prompt}\n${taskAnswerValueToText(answer.value)}`)
-    .join('\n\n');
+export const updateTaskAnswer = (
+  answers: TaskStudentAnswer[],
+  question: TaskQuestion,
+  patch: Partial<Pick<TaskStudentAnswer, 'value' | 'rationale'>>,
+): TaskStudentAnswer[] => {
+  const existing = answers.find((answer) => answer.question_id === question.id);
+  const next: TaskStudentAnswer = {
+    question_id: question.id,
+    blank_id: question.blank_id || question.id,
+    type: question.type,
+    prompt: question.prompt || '',
+    value: existing?.value ?? null,
+    rationale: existing?.rationale ?? '',
+    ...patch,
+  };
+  return [...answers.filter((answer) => answer.question_id !== question.id), next];
+};
 
+export const restoreTaskAnswers = (
+  task: EventTask,
+  payload?: Record<string, unknown> | null,
+): TaskStudentAnswer[] => {
+  const rawAnswers = Array.isArray(payload?.answers) ? payload.answers : [];
+  return normalizeTaskQuestions(task).flatMap((question) => {
+    const answer = rawAnswers.find((item) => item && typeof item === 'object'
+      && (item.question_id === question.id || (!isErrorElicitationTask(task)
+        && item.blank_id === (question.blank_id || question.id))));
+    if (!answer) return [];
+    const value = typeof answer.value === 'string' || typeof answer.value === 'boolean'
+      || (!isErrorElicitationTask(task) && Array.isArray(answer.value)) ? answer.value : null;
+    return updateTaskAnswer([], question, {
+      value,
+      rationale: typeof answer.rationale === 'string' ? answer.rationale : '',
+    });
+  });
+};
+
+export const buildTaskResponsePayload = (answers: TaskStudentAnswer[], task?: EventTask | null) => {
+  if (task && isErrorElicitationTask(task)) {
+    const orderedAnswers = normalizeTaskQuestions(task).flatMap((question) => {
+      const answer = answers.find((item) => item.question_id === question.id);
+      return answer ? [answer] : [];
+    });
+    return {
+      contract_version: ERROR_ELICITATION_CONTRACT_VERSION,
+      answers: orderedAnswers.map((answer) => ({
+        question_id: answer.question_id,
+        value: answer.value,
+        rationale: answer.rationale ?? '',
+      })),
+    };
+  }
   return {
-    answer_text: answerText,
+    answer_text: answers.map((answer) => `${answer.prompt}\n${taskAnswerValueToText(answer.value)}`).join('\n\n'),
     answers: answers.map((answer) => ({
       question_id: answer.question_id,
       blank_id: answer.blank_id,
       type: answer.type,
       prompt: answer.prompt,
       value: answer.value,
+      rationale: answer.rationale ?? '',
     })),
   };
 };
 
-// 將 UI 中不同型別的答案轉成給 LLM 閱讀的文字。
 export const taskAnswerValueToText = (value: TaskAnswerValue) => {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'boolean') return value ? '是' : '否';
   return value || '';
 };
 
-export type TaskAnswerReviewStatus = 'correct' | 'partial' | 'incorrect' | 'unanswered';
+export type TaskAnswerReviewStatus = 'correct' | 'incorrect' | 'unanswered' | 'pending' | 'failed';
 
 export type TaskAnswerReview = {
-  question: TaskQuestion;
+  question: Pick<TaskQuestion, 'id' | 'type'>;
   label: string;
   value: TaskAnswerValue;
+  questionText: string;
   answerText: string;
+  rationale: string;
   status: TaskAnswerReviewStatus;
 };
 
-const hasTaskAnswerValue = (value: TaskAnswerValue) => {
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  return value !== null && value !== undefined;
-};
-
-const normalizeComparableText = (value: unknown) => {
-  return String(value ?? '')
-    .normalize('NFKC')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLocaleLowerCase();
-};
-
-const taskAnswerMatches = (answer: TaskAnswerValue, expected: unknown) => {
-  if (typeof expected === 'boolean') {
-    if (typeof answer === 'boolean') return answer === expected;
-    const normalized = normalizeComparableText(answer);
-    return expected ? ['true', '是'].includes(normalized) : ['false', '否'].includes(normalized);
-  }
-
-  if (Array.isArray(expected)) {
-    if (Array.isArray(answer)) {
-      const actualValues = answer.map(normalizeComparableText).sort();
-      const expectedValues = expected.map(normalizeComparableText).sort();
-      return actualValues.length === expectedValues.length
-        && actualValues.every((value, index) => value === expectedValues[index]);
-    }
-    return expected.some((value) => normalizeComparableText(value) === normalizeComparableText(answer));
-  }
-
-  return normalizeComparableText(answer) === normalizeComparableText(expected);
-};
-
-const taskAttemptAnswers = (attempt: TaskAttempt): TaskStudentAnswer[] => {
-  const rawAnswers = attempt.response_payload?.answers;
-  if (!Array.isArray(rawAnswers)) return [];
-
-  return rawAnswers.flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const answer = item as Partial<TaskStudentAnswer>;
-    if (typeof answer.question_id !== 'string') return [];
-    return [{
-      question_id: answer.question_id,
-      blank_id: typeof answer.blank_id === 'string' ? answer.blank_id : answer.question_id,
-      type: answer.type || 'short_answer',
-      prompt: typeof answer.prompt === 'string' ? answer.prompt : '',
-      value: answer.value ?? null,
-    }];
-  });
-};
-
-// 將提交答案轉成逐題事實；只判斷正誤，不產生 misconception summary 或解析。
 export const buildTaskAnswerReviews = (task: EventTask, attempt: TaskAttempt): TaskAnswerReview[] => {
-  const answers = taskAttemptAnswers(attempt);
-  const answerByQuestionId = new Map(answers.map((answer) => [answer.question_id, answer]));
-  const rawQuestionResults = attempt.judgement_payload?.question_results;
+  const answers = restoreTaskAnswers(task, attempt.response_payload);
+  const rawResults = attempt.judgement_payload?.question_results;
   const judgementByQuestionId = new Map(
-    (Array.isArray(rawQuestionResults) ? rawQuestionResults : [])
+    (Array.isArray(rawResults) ? rawResults : [])
       .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
       .map((item) => [String(item.question_id || ''), item]),
   );
 
   return normalizeTaskQuestions(task).map((question, index) => {
-    const answer = answerByQuestionId.get(question.id)
-      || answers.find((item) => item.blank_id === (question.blank_id || question.id));
-    const value = answer?.value ?? null;
-    const backendStatus = judgementByQuestionId.get(question.id)?.correctness;
-    let status: TaskAnswerReviewStatus;
+    const answer = answers.find((item) => item.question_id === question.id);
+    const result = judgementByQuestionId.get(question.id);
+    const learnerAnswer = result?.learner_answer;
+    const value = typeof learnerAnswer === 'string' || typeof learnerAnswer === 'boolean' || Array.isArray(learnerAnswer)
+      ? learnerAnswer as TaskAnswerValue : answer?.value ?? null;
+    const backendStatus = result?.correctness;
+    let status: TaskAnswerReviewStatus = 'pending';
+    // A processing failure is never evidence of an incorrect learner answer.
+    if (attempt.status === 'failed') status = 'failed';
+    else if (!hasTaskAnswerValue(value)) status = 'unanswered';
+    else if (attempt.status === 'submitted'
+      && (backendStatus === 'correct' || backendStatus === 'incorrect')) status = backendStatus;
 
-    if (!hasTaskAnswerValue(value)) {
-      status = 'unanswered';
-    } else if (['correct', 'partial', 'incorrect'].includes(String(backendStatus))) {
-      status = backendStatus as TaskAnswerReviewStatus;
-    } else if (question.correct_answer !== undefined && question.correct_answer !== null) {
-      status = taskAnswerMatches(value, question.correct_answer) ? 'correct' : 'incorrect';
-    } else {
-      // 正式流程一定有後端判定；此分支只讓舊資料安全顯示。
-      status = 'incorrect';
-    }
-
+    const selectedOption = question.options?.find((option) => option.value === value);
     return {
-      question,
-      label: `Q${String(index + 1).padStart(2, '0')}`,
+      question: { id: question.id, type: question.type },
+      label: isErrorElicitationTask(task) ? question.id : `Q${String(index + 1).padStart(2, '0')}`,
       value,
-      answerText: taskAnswerValueToText(value) || '未作答',
+      questionText: typeof result?.question_text === 'string' ? result.question_text : '',
+      answerText: selectedOption?.label || taskAnswerValueToText(value) || '未作答',
+      rationale: typeof result?.learner_rationale === 'string' ? result.learner_rationale : answer?.rationale ?? '',
       status,
     };
   });
+};
+
+export const taskReviewStatusLabel = (status?: TaskAnswerReviewStatus) => {
+  if (status === 'correct') return '答對';
+  if (status === 'incorrect') return '答錯';
+  if (status === 'failed') return '處理失敗';
+  if (status === 'unanswered') return '未作答';
+  return '尚未判定';
+};
+
+export const taskMaterialUrl = (url?: string | null) => {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
 };

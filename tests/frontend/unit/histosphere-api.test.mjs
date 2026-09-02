@@ -114,7 +114,7 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
   await api.updateAdminTask('test-admin', 'task-1', {
     title: sampleTask.title,
     story_text: sampleTask.story_text,
-    display_text: sampleTask.display_text,
+    error_elicitation_task_full_text: sampleTask.error_elicitation_task_full_text,
     evaluation_payload: sampleTask.evaluation_payload,
     revision_state: 'teacher_modified',
   }, fetcher);

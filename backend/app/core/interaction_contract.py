@@ -118,6 +118,14 @@ class InteractionTarget:
     evidence_ids: tuple[str, ...]
     probe_kind: str
     error_source: str
+    blank_id: str | None = None
+    question_type: str | None = None
+    learner_rationale: str | None = None
+    answer_correct: bool | None = None
+    reasoning_correct: bool | None = None
+    reasoning_issue: str | None = None
+    reasoning_feedback: str | None = None
+    reasoning_criteria: Any = None
 
     def as_metadata(self) -> dict[str, Any]:
         return {
@@ -129,6 +137,11 @@ class InteractionTarget:
             "evidence_ids": list(self.evidence_ids),
             "probe_kind": self.probe_kind,
             "error_source": self.error_source,
+            "blank_id": self.blank_id,
+            "question_type": self.question_type,
+            "answer_correct": self.answer_correct,
+            "reasoning_correct": self.reasoning_correct,
+            "reasoning_issue": self.reasoning_issue,
         }
 
 
@@ -211,6 +224,14 @@ class InteractionRuntime:
             "reasoning_process": target.reasoning_process if target else None,
             "evidence_ids": list(target.evidence_ids) if target else [],
             "probe_kind": target.probe_kind if target else "general_question",
+            "blank_id": target.blank_id if target else None,
+            "question_type": target.question_type if target else None,
+            "learner_rationale": target.learner_rationale if target else None,
+            "answer_correct": target.answer_correct if target else None,
+            "reasoning_correct": target.reasoning_correct if target else None,
+            "reasoning_issue": target.reasoning_issue if target else None,
+            "reasoning_feedback": target.reasoning_feedback if target else None,
+            "reasoning_criteria": target.reasoning_criteria if target else None,
         }
         shared = (
             f"Policy version: {INTERACTION_POLICY_VERSION}\n"
@@ -218,10 +239,21 @@ class InteractionRuntime:
             f"Interaction mode: {self.interaction_mode}\n"
             f"Current target position: {self.target_sequence_number or 0}/{self.target_count}\n"
             f"Current target: {json.dumps(target_payload, ensure_ascii=False)}\n"
-            "Private evaluation context: task_source_text, expected_answer, and evidence_ids are available only "
+            "Private evaluation context: task_source_text, expected_answer, reasoning_criteria, reasoning_feedback, "
+            "and evidence_ids are available only "
             "to assess learner progress. They do not authorize learner-visible disclosure; every response must "
             "stay within the selected Disclosure level."
         )
+        if target and target.reasoning_correct is not None:
+            shared += (
+                "\nThe submitted learner_rationale is the learner's original wording, not an inferred belief. "
+                "An item is correct only when answer_correct and reasoning_correct are both true. "
+                "When the answer is right but the reasoning is not, focus on the reasoning gap; do not describe "
+                "the answer itself as wrong. insufficient_reasoning means the rationale does not establish the "
+                "required reasoning, not evidence of a factual misconception. Do not invent a misconception or "
+                "attribute an unstated belief to the learner. These distinctions do not change the dialogue "
+                "states, Disclosure progression, or formal RESOLVED criteria."
+            )
         if self.interaction_mode == "standard_chat":
             return (
                 f"{shared}\n"
@@ -359,7 +391,7 @@ def _interaction_queue(task_attempt: Any | None) -> list[dict[str, Any]]:
     error_results = [
         result
         for result in results
-        if str(result.get("correctness") or "ungraded") != "correct"
+        if question_result_correctness(result) != "correct"
     ]
     if error_results:
         return error_results
@@ -422,16 +454,24 @@ def _last_interaction_metadata(messages: Sequence[Any]) -> dict[str, Any]:
     return {}
 
 
+def question_result_correctness(result: dict[str, Any]) -> str:
+    """Use both judgement dimensions when present; preserve legacy results."""
+    if isinstance(result.get("answer_correct"), bool) and isinstance(result.get("reasoning_correct"), bool):
+        return "correct" if result["answer_correct"] and result["reasoning_correct"] else "incorrect"
+    return str(result.get("correctness") or "ungraded")
+
+
 def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
-    correctness = str(result.get("correctness") or "ungraded")
+    correctness = question_result_correctness(result)
     probe_kind = str(
         result.get("probe_kind")
+        or ("reasoning_gap" if result.get("answer_correct") is True and result.get("reasoning_correct") is False else None)
         or ("error_correction" if correctness != "correct" else "justification_probe")
     )
     evidence_ids = result.get("evidence_ids")
     return InteractionTarget(
         question_id=str(result.get("question_id")) if result.get("question_id") else None,
-        prompt=str(result.get("prompt") or "請說明你的判斷。"),
+        prompt=str(result.get("question_text") or result.get("prompt") or "請說明你的判斷。"),
         source_text=result.get("source_text"),
         learner_answer=result.get("learner_answer"),
         expected_answer=result.get("expected_answer"),
@@ -450,6 +490,14 @@ def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
         evidence_ids=tuple(str(item) for item in evidence_ids or [] if item),
         probe_kind=probe_kind,
         error_source=str(result.get("error_source") or "learner_task_response"),
+        blank_id=result.get("blank_id"),
+        question_type=result.get("question_type"),
+        learner_rationale=result.get("learner_rationale"),
+        answer_correct=result.get("answer_correct"),
+        reasoning_correct=result.get("reasoning_correct"),
+        reasoning_issue=result.get("reasoning_issue"),
+        reasoning_feedback=result.get("reasoning_feedback"),
+        reasoning_criteria=result.get("reasoning_criteria"),
     )
 
 

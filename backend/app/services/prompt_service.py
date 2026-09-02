@@ -4,7 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from app.core.interaction_contract import InteractionRuntime, build_interaction_runtime
+from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
+from app.core.interaction_contract import InteractionRuntime, build_interaction_runtime, question_result_correctness
 from app.core.persona_prompt_contract import (
     PersonaPromptProfile,
     build_persona_runtime_context,
@@ -238,6 +239,8 @@ class PromptService:
             return "No task attempt is attached."
         judgement = task_attempt.judgement_payload if isinstance(task_attempt.judgement_payload, dict) else {}
         question_results = judgement.get("question_results")
+        if judgement.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
+            return PromptService._error_elicitation_context(judgement, runtime)
         if runtime.interaction_mode == "standard_chat":
             compact_results = [
                 {
@@ -284,6 +287,46 @@ class PromptService:
             "summary. Source content in this module is private evaluation context, not permission to expose it. "
             "The interaction_runtime module is authoritative for the current and next target.\n"
             f"Judgement: {json.dumps(compact_judgement, ensure_ascii=False)}"
+        )
+
+    @staticmethod
+    def _error_elicitation_context(judgement: dict, runtime: InteractionRuntime) -> str:
+        standard_chat = runtime.interaction_mode == "standard_chat"
+        target_id = runtime.target.question_id if runtime.target else None
+        results = []
+        for result in judgement.get("question_results") or []:
+            if not isinstance(result, dict) or (not standard_chat and result.get("question_id") != target_id):
+                continue
+            results.append({
+                key: result.get(key)
+                for key in (
+                    "question_id", "blank_id", "question_type", "question_text", "source_text",
+                    "learner_answer", "learner_rationale", "answer_correct", "reasoning_correct",
+                    "reasoning_issue", "reasoning_feedback", "reasoning_criteria", "expected_answer",
+                    "error_code", "evidence_ids",
+                )
+            })
+            results[-1]["correctness"] = question_result_correctness(result)
+        context = {
+            "error_elicitation_task_full_text": judgement.get("error_elicitation_task_full_text"),
+            "question_results": results,
+        }
+        mode = (
+            "Use these results only as conversational background. Standard chat has no mandated error target; "
+            "do not start an EBL sequence or announce a task-answer summary. "
+            if standard_chat else
+            "Only the runtime-selected item's evaluation is included. The shared full text supplies context, "
+            "not permission to move to another error. interaction_runtime is authoritative for target selection. "
+        )
+        return (
+            "The shared full text is the authored task; question_text is an extracted locator, not a separately "
+            "authored prompt. Learners receive inline correctness, not the private evaluation below. "
+            f"{mode}"
+            "Preserve learner_rationale as submitted. A correct answer with incorrect reasoning remains a learning "
+            "target. insufficient_reasoning is not evidence of a factual misconception: do not invent beliefs "
+            "or call a correct answer wrong. Criteria, source_text, expected_answer, and reasoning_feedback are "
+            "private evaluation context, not learner-visible feedback or authorization to bypass Disclosure.\n"
+            f"Task context: {json.dumps(context, ensure_ascii=False)}"
         )
 
     @staticmethod

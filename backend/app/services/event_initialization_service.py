@@ -302,38 +302,13 @@ class EventInitializationService:
             )
 
     def _ensure_task(self, event: Event, sources) -> EventTask:
-        """確保事件至少有一份可作答 task；缺少時建立保守 fallback。"""
+        """缺少正式題目時明確停止，不臨時捏造沒有理由標準的替代題。"""
         task = self.repository.get_latest_event_task(event.id)
         if task:
             return task
-        fallback_text = event.context or event.description or event.canonical_name
-        if event.canonical_name in fallback_text:
-            display_text = fallback_text.replace(event.canonical_name, "{{blank:q01}}", 1)
-        else:
-            display_text = f"本次歷史事件為「{{{{blank:q01}}}}」。{fallback_text}"
-        return self.repository.save_event_task(
-            EventTask(
-                event_id=event.id,
-                title=f"{event.canonical_name}：歷史故事挖洞",
-                story_text=fallback_text,
-                display_text=display_text,
-                evaluation_payload={
-                    "rubric": "此為系統 fallback 題目，正式實驗前需由研究員確認。",
-                    "questions": [
-                        {
-                            "id": "q01",
-                            "blank_id": "q01",
-                            "type": "cloze",
-                            "prompt": "請填入這個歷史事件的名稱。",
-                            "placeholder": "請輸入事件名稱",
-                            "source_text": event.canonical_name,
-                            "correct_answer": event.canonical_name,
-                            "required": True,
-                        }
-                    ],
-                },
-                revision_state="manual",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This event needs an Error-Elicitation Task prepared by an admin before it can start.",
         )
 
     def _ensure_personas(

@@ -455,13 +455,13 @@ def update_task(
     """更新 task 文字與 evaluation_payload，保存前檢查故事 token 與題目結構。
 
     先驗證必填欄位不為 null，再透過 ``validate_task_authoring_payload``
-    檢查 display_text 與 evaluation_payload 的結構完整性。
+    檢查 error_elicitation_task_full_text 與 evaluation_payload 的結構完整性。
     修改後會自動寫入 ``task_updated`` 類型的 ResearchLog 紀錄。
 
     Args:
         task_id: 目標 task 的 UUID 字串。
         request: 部分更新請求，可包含 title、story_text、
-            display_text、evaluation_payload、revision_state。
+            error_elicitation_task_full_text、evaluation_payload、revision_state。
         repository: 由 Dependency Injection 注入的資料存取層實例。
 
     Returns:
@@ -483,7 +483,7 @@ def update_task(
             "message": f"{field} cannot be null.",
             "code": "required_field_null",
         }
-        for field in ("story_text", "display_text", "evaluation_payload", "revision_state")
+        for field in ("story_text", "error_elicitation_task_full_text", "evaluation_payload", "revision_state")
         if field in updates and updates[field] is None
     ]
     if required_field_issues:
@@ -495,10 +495,10 @@ def update_task(
             },
         )
 
-    next_display_text = updates.get("display_text", task.display_text)
+    next_error_elicitation_task_full_text = updates.get("error_elicitation_task_full_text", task.error_elicitation_task_full_text)
     next_evaluation_payload = updates.get("evaluation_payload", task.evaluation_payload)
     validation_issues = validate_task_authoring_payload(
-        display_text=next_display_text,
+        error_elicitation_task_full_text=next_error_elicitation_task_full_text,
         evaluation_payload=next_evaluation_payload,
     )
     if validation_issues:

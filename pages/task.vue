@@ -2,7 +2,7 @@
   <!-- Legacy route kept for existing links: /task?sessionId=... -->
   <TaskStudentShell>
     <div class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-6 text-[var(--admin-copy)] shadow-[var(--admin-shadow-soft)]">
-      正在開啟前置任務...
+      正在開啟 Error-Elicitation Task...
     </div>
   </TaskStudentShell>
 </template>

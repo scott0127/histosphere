@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_chat_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
+from app.core.learner_task_view import learner_view
 from app.models.domain import ChatMessage
 from app.schemas.requests import ChatRequest
 from app.schemas.responses import ChatOperationStatusResponse, ChatResponse
@@ -92,7 +93,7 @@ async def chat(
             dynamic_context 以及 rag_sources。
     """
     _require_conversation_access(request, actor, service)
-    return await service.chat(request)
+    return learner_view(await service.chat(request))
 
 
 @router.get(
@@ -107,7 +108,7 @@ async def chat_operation_status(
 ) -> ChatOperationStatusResponse:
     """斷線或重整後查詢同一聊天回合，不會再次呼叫模型。"""
     _require_conversation_id_access(conversation_id, actor, service)
-    return service.get_operation_status(conversation_id, client_request_id)
+    return learner_view(service.get_operation_status(conversation_id, client_request_id))
 
 
 @router.post("/chat/stream")
@@ -147,7 +148,7 @@ async def chat_stream(
             yield _sse_event(
                 {
                     "type": "user_message",
-                    "message": persisted_message.model_dump(mode="json"),
+                    "message": learner_view(persisted_message).model_dump(mode="json"),
                 }
             )
             yield _sse_event(
@@ -185,7 +186,7 @@ async def chat_stream(
             yield _sse_event(
                 {
                     "type": "complete",
-                    "response": response.model_dump(mode="json"),
+                    "response": learner_view(response).model_dump(mode="json"),
                 }
             )
         except HTTPException as exc:

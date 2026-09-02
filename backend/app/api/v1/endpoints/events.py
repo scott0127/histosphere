@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_event_initialization_service, get_event_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
+from app.core.learner_task_view import learner_view
 from app.schemas.requests import EventCheckRequest, EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse, EventListItem
 from app.services import EventInitializationService, EventService
@@ -64,7 +65,7 @@ async def initialize_event(
     """
     user_id = request.user_id if actor.is_admin else actor.resolve_user_id()
     verified_request = request.model_copy(update={"user_id": user_id})
-    return await service.initialize(verified_request, admin_override=actor.is_admin)
+    return learner_view(await service.initialize(verified_request, admin_override=actor.is_admin))
 
 
 @router.get("/events", response_model=list[EventListItem])
@@ -80,4 +81,4 @@ def list_events(service: EventService = Depends(get_event_service)) -> list[Even
     Returns:
         list[EventListItem]: 含 personas 與 latest_task 的事件清單。
     """
-    return service.list_events()
+    return learner_view(service.list_events())

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_conversation_service, require_active_participant_actor
 from app.core.auth import AuthenticatedActor
+from app.core.learner_task_view import learner_view
 from app.schemas.requests import ConversationCreateRequest
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.services import ConversationService
@@ -43,12 +44,13 @@ async def create_conversation(
             personas、condition、greeting 與初始 history。
     """
     user_id = actor.resolve_user_id(request.user_id)
-    return await service.create_conversation(
+    response = await service.create_conversation(
         event_id=request.event_id,
         task_attempt_id=request.task_attempt_id,
         session_id=request.session_id,
         user_id=user_id,
     )
+    return learner_view(response)
 
 
 @router.get("/{conversation_id}", response_model=ConversationLoadResponse)
@@ -74,4 +76,4 @@ def load_conversation(
     response = service.load_conversation(str(conversation_id))
     conversation = service.repository.get_conversation(str(conversation_id))
     actor.require_owner(conversation.user_id if conversation else response.session.user_id if response.session else None)
-    return response
+    return learner_view(response)

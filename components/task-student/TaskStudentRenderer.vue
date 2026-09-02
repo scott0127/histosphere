@@ -1,5 +1,5 @@
 <template>
-  <!-- 根據 evaluation_payload.questions 動態渲染題目；舊資料會由 normalizeTaskQuestions 補成一題簡答。 -->
+  <!-- 僅呈現舊格式中明確提供的題目。 -->
   <section class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-5 shadow-md">
     <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div>
@@ -26,7 +26,7 @@
 // 它不判斷答案對錯，只把不同題型的輸入整理成 TaskStudentAnswer[]。
 import { computed } from 'vue';
 import type { EventTask, TaskAnswerValue, TaskQuestion, TaskStudentAnswer } from '~/types';
-import { normalizeTaskQuestions } from '~/composables/useStudentTask';
+import { normalizeTaskQuestions, updateTaskAnswer } from '~/composables/useStudentTask';
 
 const props = defineProps<{
   task: EventTask;
@@ -46,14 +46,6 @@ const answerValue = (questionId: string) => {
 
 // 更新單題答案時保留其他題目，讓 submit payload 可以維持結構化。
 const updateAnswer = (question: TaskQuestion, value: TaskAnswerValue) => {
-  const next = props.modelValue.filter((answer) => answer.question_id !== question.id);
-  next.push({
-    question_id: question.id,
-    blank_id: question.blank_id || question.id,
-    type: question.type,
-    prompt: question.prompt,
-    value,
-  });
-  emit('update:modelValue', next);
+  emit('update:modelValue', updateTaskAnswer(props.modelValue, question, { value }));
 };
 </script>

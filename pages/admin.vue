@@ -242,7 +242,7 @@
           <button class="admin-accordion-header" type="button" @click="toggleSection('tasks')">
             <span>
               <span class="admin-kicker">Section 01</span>
-              <span class="admin-accordion-title">管理 task</span>
+              <span class="admin-accordion-title">Error-Elicitation Task</span>
             </span>
             <span class="admin-accordion-meta">
               {{ selectedEvent.latest_task ? `${taskQuestionCount(selectedEvent.latest_task)} 題` : '未建立 task' }}
@@ -252,7 +252,7 @@
 
           <div v-show="openSections.tasks" class="admin-accordion-body">
             <div>
-              <article v-if="selectedEvent.latest_task" class="admin-panel-inner p-5 md:p-6">
+              <article v-if="selectedEvent.latest_task" class="min-w-0">
                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p class="admin-kicker">Task source</p>
@@ -269,6 +269,7 @@
                 </p>
                 <fieldset :disabled="Boolean(selectedEvent.materials_locked_at)" class="min-w-0 disabled:opacity-70">
                   <TaskControlEditor
+                    :key="selectedEvent.latest_task.id"
                     :evaluation-json="taskJson[selectedEvent.latest_task.id] || '{}'"
                     class="mt-5"
                     :dirty="isTaskDirty(selectedEvent.latest_task)"

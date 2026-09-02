@@ -76,7 +76,7 @@ def _material_readiness_issues(repository: RepositoryProtocol, event: Event) -> 
     else:
         issues.extend(
             validate_task_authoring_payload(
-                display_text=task.display_text,
+                error_elicitation_task_full_text=task.error_elicitation_task_full_text,
                 evaluation_payload=task.evaluation_payload,
             )
         )

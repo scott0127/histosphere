@@ -85,7 +85,7 @@ class FakeLLMProvider:
             event_id=event.id,
             title=f"{event.canonical_name}：歷史思考任務",
             story_text=f"{event.canonical_name} 的測試故事包含原因、證據、人物視角與後果。",
-            display_text=f"{event.canonical_name} 的核心問題包含{{{{blank:q01}}}}與不同歷史觀點。",
+            error_elicitation_task_full_text=f"{event.canonical_name} 的核心問題包含{{{{blank:q01}}}}與不同歷史觀點。",
             evaluation_payload={
                 "rubric": "測試 rubric",
                 **self._llm_metadata("generate_task"),

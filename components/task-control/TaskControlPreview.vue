@@ -1,6 +1,6 @@
 <template>
   <!-- 研究者預覽學生端會看到的作答元件。 -->
-  <div class="admin-subpanel p-3">
+  <div class="min-w-0">
     <div class="mb-3 flex items-center justify-between">
       <p class="admin-heading text-sm font-bold">學生端預覽</p>
       <span class="admin-badge">預覽</span>
@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 // TaskControlPreview 使用學生端 renderer，確保編輯端看到的預覽與學生端一致。
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { EventTask, TaskEvaluationPayload, TaskStudentAnswer } from '~/types';
 import { parseTaskEvaluationJson } from '~/composables/useTaskControl';
 import { hasInlineTaskBlanks } from '~/composables/useStudentTask';
@@ -30,5 +30,9 @@ const previewTask = computed(() => {
     ...props.task,
     evaluation_payload: payload as TaskEvaluationPayload,
   };
+});
+
+watch(() => [props.task.id, props.evaluationJson, props.task.error_elicitation_task_full_text], () => {
+  previewAnswers.value = [];
 });
 </script>

@@ -3,6 +3,15 @@
 from __future__ import annotations
 
 from typing import Any
+import re
+import unicodedata
+
+from app.core.error_elicitation_contract import (
+    ERROR_ELICITATION_CONTRACT_VERSION,
+    ErrorElicitationJudgementPayload,
+    ErrorElicitationQuestionResult,
+    validate_task_answers,
+)
 
 
 OBJECTIVE_QUESTION_TYPES = frozenset({"cloze", "multiple_choice", "true_false"})
@@ -10,7 +19,7 @@ QUESTION_CORRECTNESS_VALUES = frozenset({"correct", "partial", "incorrect", "una
 
 
 def _normalized_text(value: Any) -> str:
-    return " ".join(str(value if value is not None else "").strip().lower().split())
+    return " ".join(unicodedata.normalize("NFKC", str(value if value is not None else "")).strip().casefold().split())
 
 
 def _answers_match(answer: Any, expected: Any) -> bool:
@@ -85,6 +94,8 @@ def enrich_task_judgement(
 ) -> dict[str, Any]:
     """建立逐題診斷結果；客觀題用規則，簡答題採用 LLM 判定。"""
     evaluation_payload = getattr(task, "evaluation_payload", {})
+    if evaluation_payload.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
+        return _enrich_error_elicitation(task, response_payload, judgement)
     raw_questions = evaluation_payload.get("questions") if isinstance(evaluation_payload, dict) else []
     questions = [item for item in raw_questions or [] if isinstance(item, dict)]
     all_correct_fallback = (
@@ -194,4 +205,60 @@ def enrich_task_judgement(
     }
     if all_correct_fallback:
         enriched["all_correct_fallback"] = all_correct_fallback
+    return enriched
+
+
+def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dict:
+    """模型只負責理由；漏題或不合法輸出是處理失敗，不是學生答錯。"""
+    evaluation = task.evaluation_payload
+    validate_task_answers(evaluation, response, complete=True)
+    parsed = ErrorElicitationJudgementPayload.model_validate({"question_results": judgement.get("question_results")})
+    reasoning = {result.question_id: result for result in parsed.question_results}
+    questions = evaluation["questions"]
+    if set(reasoning) != {question["id"] for question in questions}:
+        raise ValueError("Judge must return exactly the questions in this task")
+    answers = {answer["question_id"]: answer for answer in response["answers"]}
+    # 只由完整題文抽取顯示片段，不接受前端自填的題目文字或評分標準。
+    text_by_id = {}
+    previous_end = 0
+    for match in re.finditer(r"\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}", task.error_elicitation_task_full_text):
+        text_by_id[match.group(1)] = task.error_elicitation_task_full_text[previous_end:match.start()].strip()
+        previous_end = match.end()
+    results = []
+    for question in questions:
+        qid = question["id"]
+        answer = answers[qid]
+        rationale = reasoning[qid]
+        answer_correct = _answers_match(answer["value"], question["correct_answer"])
+        result = ErrorElicitationQuestionResult(
+            **rationale.model_dump(),
+            answer_correct=answer_correct,
+            correctness="correct" if answer_correct and rationale.reasoning_correct else "incorrect",
+        )
+        results.append({
+            **result.model_dump(),
+            "blank_id": qid,
+            "question_type": question["type"],
+            "question_text": text_by_id.get(qid, ""),
+            "learner_answer": answer["value"],
+            "learner_rationale": answer["rationale"],
+            "expected_answer": question["correct_answer"],
+            "reasoning_criteria": question["reasoning_criteria"],
+            "source_text": question.get("source_text"),
+            "evidence_ids": question.get("accepted_evidence_ids", []),
+            "error_code": None if result.correctness == "correct" else (
+                "answer_incorrect" if not answer_correct else rationale.reasoning_issue
+            ),
+        })
+    enriched = {
+        **{key: value for key, value in judgement.items() if key not in {"score", "question_results"}},
+        "contract_version": ERROR_ELICITATION_CONTRACT_VERSION,
+        "error_elicitation_task_full_text": task.error_elicitation_task_full_text,
+        "materials": evaluation.get("materials", []),
+        "result": "correct" if all(result["correctness"] == "correct" for result in results) else "incorrect",
+        "question_results": results,
+    }
+    fallback = _all_correct_fallback_snapshot(evaluation)
+    if fallback:
+        enriched["all_correct_fallback"] = fallback
     return enriched

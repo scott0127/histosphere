@@ -1,4 +1,5 @@
 import type { AdminSnapshotResponse, EventTask, EventWithPersonas, ExperimentCondition } from '../types';
+import { parseTaskEvaluationJson, syncTaskQuestionOrder, validateTaskControlPayload } from '~/composables/useTaskControl';
 
 export const conditionModeOrder: ExperimentCondition['condition_key'][] = [
   'no_ebl_no_roleplay',
@@ -33,10 +34,21 @@ export const buildAdminEditableJson = (snapshot: AdminSnapshotResponse) => {
 export const taskAuthoringSignature = (task: EventTask, evaluationJson: string) => {
   return JSON.stringify({
     title: task.title || '',
-    story_text: task.story_text || '',
-    display_text: task.display_text || '',
+    error_elicitation_task_full_text: task.error_elicitation_task_full_text || '',
     evaluation_json: evaluationJson || '{}',
   });
+};
+
+export const buildAdminTaskPatch = (task: EventTask, evaluationJson: string) => {
+  const issues = validateTaskControlPayload(task, evaluationJson);
+  if (issues.length) throw new Error(issues.join('\n'));
+  const { payload } = parseTaskEvaluationJson(syncTaskQuestionOrder(evaluationJson, task.error_elicitation_task_full_text));
+  return {
+    title: task.title,
+    error_elicitation_task_full_text: task.error_elicitation_task_full_text,
+    evaluation_payload: payload,
+    revision_state: 'teacher_modified' as const,
+  };
 };
 
 export const sortPromptConditions = (conditions: ExperimentCondition[]) => {

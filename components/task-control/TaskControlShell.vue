@@ -5,9 +5,9 @@
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="admin-kicker">任務編輯</p>
-          <h3 class="admin-heading mt-1 font-serif text-xl font-bold">歷史故事任務</h3>
+          <h3 class="admin-heading mt-1 font-serif text-xl font-bold">Error-Elicitation Task</h3>
         </div>
-        <slot name="actions" />
+        <div class="flex flex-wrap items-center gap-2"><slot name="actions" /></div>
       </div>
       <div class="mt-4">
         <slot />

@@ -48,7 +48,7 @@ class EventService:
         return task.model_copy(
             update={
                 "story_text": "",
-                "display_text": "",
+                "error_elicitation_task_full_text": "",
                 "evaluation_payload": {"question_count": question_count},
             }
         )

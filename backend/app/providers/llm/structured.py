@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.task_payload_validator import validate_task_authoring_payload
+from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
 
 
 class EventProfilePayload(BaseModel):
@@ -46,26 +47,28 @@ class GeneratedTaskPayload(BaseModel):
     Attributes:
         title: Task 標題。
         story_text: 完整正確故事文字。
-        display_text: 含 ``{{blank:qNN}}`` 題目 token 的顯示用文字。
+        error_elicitation_task_full_text: 含 ``{{blank:qNN}}`` 題目 token 的顯示用文字。
         evaluation_payload: 含 ``questions[]`` 的評量結構。
     """
 
     title: str = Field(min_length=1)
-    story_text: str = Field(min_length=1)
-    display_text: str = Field(min_length=1)
+    story_text: str = ""
+    error_elicitation_task_full_text: str = Field(min_length=1)
     evaluation_payload: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_current_task_contract(self) -> "GeneratedTaskPayload":
         """拒絕舊式空格與鬆散 payload，讓 runner 自動要求 LLM 修復。"""
         questions = self.evaluation_payload.get("questions")
+        if self.evaluation_payload.get("contract_version") != ERROR_ELICITATION_CONTRACT_VERSION:
+            raise ValueError("Generated tasks must use error_elicitation_v1")
         if not isinstance(questions, list) or not questions:
             raise ValueError("evaluation_payload.questions must contain at least one question")
-        if "____" in self.display_text:
-            raise ValueError("display_text must use {{blank:qNN}} tokens instead of ____")
+        if "____" in self.error_elicitation_task_full_text:
+            raise ValueError("error_elicitation_task_full_text must use {{blank:qNN}} tokens instead of ____")
 
         issues = validate_task_authoring_payload(
-            display_text=self.display_text,
+            error_elicitation_task_full_text=self.error_elicitation_task_full_text,
             evaluation_payload=self.evaluation_payload,
         )
         if issues:

@@ -85,35 +85,19 @@ BEGIN
     RETURNING id INTO v_persona_id;
   END IF;
 
-  UPDATE event_tasks
-  SET
-    story_text = '1789 年以前，法國舊制度面臨財政危機、特權階級免稅、糧食價格上漲與代表權不平等。第三等級在三級會議中主張以人數而不是等級表決，並逐步形成國民議會。1789 年 7 月 14 日，巴黎群眾攻占巴士底監獄，象徵王權威信受到挑戰。革命後，《人權和公民權宣言》提出自由、平等與公民權利，但戰爭、派系衝突與恐怖統治也顯示革命並非單純走向穩定共和。',
-    display_text = '1789 年以前，法國舊制度面臨{{blank:q01}}、特權階級免稅、糧食價格上漲與代表權不平等。第三等級在三級會議中主張以{{blank:q02}}而不是等級表決，並逐步形成國民議會。1789 年 7 月 14 日，巴黎群眾攻占{{blank:q03}}，象徵王權威信受到挑戰。革命後，《人權和公民權宣言》提出自由、平等與公民權利，但戰爭、派系衝突與恐怖統治也顯示：{{blank:q04}}',
-    evaluation_payload = '{"rubric":"評估學生是否能辨識法國大革命的結構性原因、代表權爭議、關鍵事件象徵，並能避免把革命簡化為單線性的民主勝利故事。","target_misconceptions":["把法國大革命簡化為人民單純推翻國王","忽略財政危機、特權制度與代表權爭議的結構性因素","認為共和理念出現後政治暴力與權力集中問題就自然消失"],"questions":[{"id":"q01","blank_id":"q01","type":"cloze","prompt":"請填入一個舊制度面臨的結構性危機。","placeholder":"例如：財政危機","required":true,"correct_answer":"財政危機","source_text":"財政危機","explanation":"這題用來觀察學生是否能從事件前的制度條件解釋革命爆發。"},{"id":"q02","blank_id":"q02","type":"multiple_choice","prompt":"第三等級主張三級會議應以哪一種方式表決？","required":true,"options":[{"id":"a","label":"人數","value":"人數"},{"id":"b","label":"等級","value":"等級"},{"id":"c","label":"國王任命","value":"國王任命"}],"correct_answer":"人數","source_text":"人數","explanation":"這題檢查學生是否理解代表權衝突，而不只記得革命口號。"},{"id":"q03","blank_id":"q03","type":"cloze","prompt":"1789 年 7 月 14 日巴黎群眾攻占哪一個象徵王權的地點？","placeholder":"請輸入地點","required":true,"correct_answer":"巴士底監獄","source_text":"巴士底監獄","explanation":"這題檢查學生能否把關鍵事件與其象徵意義連結。"},{"id":"q04","blank_id":"q04","type":"true_false","prompt":"法國大革命建立共和理念後，政治衝突與暴力就完全消失。","required":true,"correct_answer":false,"source_text":"革命並非單純走向穩定共和","explanation":"這題用來捕捉學生是否把革命敘事過度簡化為線性進步。"}]}'::jsonb,
-    revision_state = 'teacher_modified',
-    updated_at = now()
-  WHERE event_id = v_event_id AND title = '法國大革命：舊制度危機與革命轉折'
-  RETURNING id INTO v_task_id;
+  -- Draft material: researcher review is required before formal collection.
+  INSERT INTO event_tasks(event_id, title, story_text, error_elicitation_task_full_text, evaluation_payload, revision_state)
+  SELECT v_event_id, '法國大革命初期代表權爭議與三級會議', '',
+    '閱讀1789年法國大革命初期的資料，逐題填寫答案與判斷理由。
 
-  IF v_task_id IS NULL THEN
-    INSERT INTO event_tasks (
-      event_id,
-      title,
-      story_text,
-      display_text,
-      evaluation_payload,
-      revision_state
-    )
-    VALUES (
-      v_event_id,
-      '法國大革命：舊制度危機與革命轉折',
-      '1789 年以前，法國舊制度面臨財政危機、特權階級免稅、糧食價格上漲與代表權不平等。第三等級在三級會議中主張以人數而不是等級表決，並逐步形成國民議會。1789 年 7 月 14 日，巴黎群眾攻占巴士底監獄，象徵王權威信受到挑戰。革命後，《人權和公民權宣言》提出自由、平等與公民權利，但戰爭、派系衝突與恐怖統治也顯示革命並非單純走向穩定共和。',
-      '1789 年以前，法國舊制度面臨{{blank:q01}}、特權階級免稅、糧食價格上漲與代表權不平等。第三等級在三級會議中主張以{{blank:q02}}而不是等級表決，並逐步形成國民議會。1789 年 7 月 14 日，巴黎群眾攻占{{blank:q03}}，象徵王權威信受到挑戰。革命後，《人權和公民權宣言》提出自由、平等與公民權利，但戰爭、派系衝突與恐怖統治也顯示：{{blank:q04}}',
-      '{"rubric":"評估學生是否能辨識法國大革命的結構性原因、代表權爭議、關鍵事件象徵，並能避免把革命簡化為單線性的民主勝利故事。","target_misconceptions":["把法國大革命簡化為人民單純推翻國王","忽略財政危機、特權制度與代表權爭議的結構性因素","認為共和理念出現後政治暴力與權力集中問題就自然消失"],"questions":[{"id":"q01","blank_id":"q01","type":"cloze","prompt":"請填入一個舊制度面臨的結構性危機。","placeholder":"例如：財政危機","required":true,"correct_answer":"財政危機","source_text":"財政危機","explanation":"這題用來觀察學生是否能從事件前的制度條件解釋革命爆發。"},{"id":"q02","blank_id":"q02","type":"multiple_choice","prompt":"第三等級主張三級會議應以哪一種方式表決？","required":true,"options":[{"id":"a","label":"人數","value":"人數"},{"id":"b","label":"等級","value":"等級"},{"id":"c","label":"國王任命","value":"國王任命"}],"correct_answer":"人數","source_text":"人數","explanation":"這題檢查學生是否理解代表權衝突，而不只記得革命口號。"},{"id":"q03","blank_id":"q03","type":"cloze","prompt":"1789 年 7 月 14 日巴黎群眾攻占哪一個象徵王權的地點？","placeholder":"請輸入地點","required":true,"correct_answer":"巴士底監獄","source_text":"巴士底監獄","explanation":"這題檢查學生能否把關鍵事件與其象徵意義連結。"},{"id":"q04","blank_id":"q04","type":"true_false","prompt":"法國大革命建立共和理念後，政治衝突與暴力就完全消失。","required":true,"correct_answer":false,"source_text":"革命並非單純走向穩定共和","explanation":"這題用來捕捉學生是否把革命敘事過度簡化為線性進步。"}]}'::jsonb,
-      'teacher_modified'
-    )
-    RETURNING id INTO v_task_id;
-  END IF;
+Q01：關於1789年三級會議初期對表決方式的爭議，下列何者正確？{{blank:q01}}
+
+Q02：網球場宣誓的核心目標是制定法國憲法，而不僅是要求國王解決短期財政赤字。請判斷是非。{{blank:q02}}
+
+Q03：1789年6月17日，第三等級與部分教士、貴族代表宣告成立哪個議會？請填寫名稱並說明依據。{{blank:q03}}',
+    '{"contract_version": "error_elicitation_v1", "materials": [{"id": "mat_01", "title": "凡爾賽宮博物館：1789年的三級會議與國民議會之整理", "text": "1789年5月，法國在財政與政治危機下召開三級會議，代表包括教士、貴族與第三等級。對表決方式出現爭議：前兩等級要求按等級計票，第三等級要求按人頭計票。6月17日第三等級與部分教士、貴族代表成立國民議會。6月20日代表在網球場宣誓，誓言在制定憲法前不解散。以上依凡爾賽宮博物館說明整理，不是1789年逐字原文。", "source_url": "https://en.chateauversailles.fr/discover/history/key-dates/versailles-heart-french-revolution", "attribution": "凡爾賽宮博物館官方歷史網站摘要（研究者中文編譯摘要）"}], "questions": [{"id": "q01", "type": "multiple_choice", "required": true, "correct_answer": "opt_02", "options": [{"id": "opt_01", "label": "第三等級支持按等級計票，以確保其佔多數的代表名額能發揮影響力。", "value": "opt_01"}, {"id": "opt_02", "label": "前兩等級要求按等級計票，而第三等級則堅持按人頭計票。", "value": "opt_02"}, {"id": "opt_03", "label": "三級會議順利達成共識，全體代表同意不分等級共同投票。", "value": "opt_03"}], "reasoning_criteria": "能根據材料正確區分兩種計票主張，並說明選項如何符合當時代表權爭議。接受其他有依據的合理說明，不要求精確人口比例或特定術語。", "source_text": "對如何投票發生爭議：前兩等級要求按等級計票，第三等級要求按人頭計票。", "accepted_evidence_ids": ["mat_01"]}, {"id": "q02", "type": "true_false", "required": true, "correct_answer": true, "reasoning_criteria": "能把誓言在制定憲法前不解散，連結到建立憲法的政治目標。不能只憑活動名稱或猜測判斷；不必額外列出全部改革背景。", "source_text": "6月20日網球場宣誓與建立憲法有關。", "accepted_evidence_ids": ["mat_01"]}, {"id": "q03", "type": "cloze", "required": true, "correct_answer": ["國民議會", "National Assembly", "國民議會（National Assembly）", "國民議會(National Assembly)"], "reasoning_criteria": "能依6月17日的時間與代表組成，辨認出成立的是國民議會。接受有依據的同義說明，不要求引用固定詞句；不得與之後的國民公會混淆。", "source_text": "6月17日第三等級與部分教士、貴族代表成立國民議會。", "accepted_evidence_ids": ["mat_01"]}], "all_correct_fallback": {"id": "fb_01", "incorrect_claim": "法國大革命初期的權力轉移純粹是一場和平的法律程序，國王與特權階級自願放棄所有政治特權，毫無衝突與爭議。", "correct_interpretation": "雖然初期透過三級會議與國民議會進行了憲政與代表權的爭辯，但這是一個充滿利益衝突、投票爭議與體制對抗的過程，並非毫無阻礙的溫和演變。", "source_text": "法國財政與政治危機促成1789年5月三級會議召開，代表來自教士、貴族與第三等級。對如何投票發生爭議：前兩等級要求按等級計票，第三等級要求按人頭計票。", "evidence_ids": ["mat_01"]}, "draft_review": {"status": "awaiting_researcher_acceptance", "note": "AI生成後經工程驗收修正題意、同義答案與不必要的理由要求；仍待研究者確認難度與內容。"}, "research_material_version": "error-elicitation-draft-20260902"}'::jsonb,
+    'teacher_modified'
+  WHERE NOT EXISTS (SELECT 1 FROM event_tasks WHERE event_id = v_event_id);
 END $$;
 
 -- Local test participants for admin participant dashboard and learner-flow smoke checks.
@@ -214,35 +198,19 @@ BEGIN
     RETURNING id INTO v_persona_id;
   END IF;
 
-  UPDATE event_tasks
-  SET
-    story_text = '1930 年 10 月 27 日清晨，臺灣中部山區的霧社地區正在準備公學校運動會。一名記錄地方新聞的第三方觀察者若站在霧社街道旁，會看見日本警察、學校職員、族人、孩童與外來居民聚集，也會聽見殖民秩序下長期累積的緊張。莫那·魯道與部分賽德克族人發動攻擊，事件迅速從地方衝突變成殖民政府高度重視的軍事與政治危機。後續鎮壓、隔離與記憶書寫，使霧社事件不只是一次武力衝突，而是理解殖民治理、族群尊嚴、證據差異、延續與變遷、歷史同理與倫理判斷的重要案例。',
-    display_text = '1930 年 10 月 27 日清晨，臺灣中部山區的{{blank:w01}}正在準備公學校運動會。一名記錄地方新聞的第三方觀察者若站在霧社街道旁，會看見日本警察、學校職員、族人、孩童與外來居民聚集，也會聽見殖民秩序下長期累積的緊張。{{blank:w02}}與部分賽德克族人發動攻擊，事件迅速從地方衝突變成殖民政府高度重視的軍事與政治危機。研究者不能只讀單一官方材料，也需要比較{{blank:w03}}；追問原因時，不能只說是個人衝突，而要把{{blank:w04}}放進脈絡。若有人主張霧社事件只是單純暴動，完全不需要理解殖民者與被殖民者的處境差異，這個判斷是{{blank:w05}}。',
-    evaluation_payload = '{"rubric":"評估學生是否能從歷史重要性、證據、延續與變遷、原因與後果、歷史觀點取替、倫理維度六個面向理解霧社事件，而不是把事件簡化為單一暴力或單一族群立場。","target_misconceptions":["把霧社事件簡化為單純暴動","忽略殖民治理與警察權力脈絡","只採用官方紀錄而忽略口述與地方記憶","用當代立場直接替所有行動者貼上單一善惡標籤"],"questions":[{"id":"w01","blank_id":"w01","type":"cloze","prompt":"請填入事件發生的主要地點。","placeholder":"請輸入地點","required":true,"correct_answer":"霧社地區","source_text":"霧社地區","explanation":"人事時地物中的地，也讓學生把事件放回具體空間。"},{"id":"w02","blank_id":"w02","type":"cloze","prompt":"請填入事件中最常被提及的賽德克族領袖。","placeholder":"請輸入人物","required":true,"correct_answer":"莫那·魯道","source_text":"莫那·魯道","explanation":"人事時地物中的人，但仍避免把事件完全歸因於單一英雄敘事。"},{"id":"w03","blank_id":"w03","type":"multiple_choice","prompt":"研究者比較事件證據時，最適合同時參考哪一組材料？","required":true,"options":[{"id":"a","label":"官方報告、報紙紀錄與口述記憶","value":"官方報告、報紙紀錄與口述記憶"},{"id":"b","label":"只看殖民政府公告","value":"只看殖民政府公告"},{"id":"c","label":"只看後來的影視作品","value":"只看後來的影視作品"}],"correct_answer":"官方報告、報紙紀錄與口述記憶","source_text":"官方報告、報紙紀錄與口述記憶","explanation":"對應 historical evidence，提醒學生證據來源會影響敘事。"},{"id":"w04","blank_id":"w04","type":"multiple_choice","prompt":"下列哪個脈絡最能說明事件的長期原因？","required":true,"options":[{"id":"a","label":"殖民治理、警察權力與勞役壓力","value":"殖民治理、警察權力與勞役壓力"},{"id":"b","label":"單一偶發口角","value":"單一偶發口角"},{"id":"c","label":"歐洲戰爭直接引發","value":"歐洲戰爭直接引發"}],"correct_answer":"殖民治理、警察權力與勞役壓力","source_text":"殖民治理、警察權力與勞役壓力","explanation":"對應 causes and consequences，要求學生區分近因與結構原因。"},{"id":"w05","blank_id":"w05","type":"true_false","prompt":"霧社事件只是單純暴動，完全不需要理解殖民者與被殖民者的處境差異。","required":true,"correct_answer":false,"source_text":"錯誤","explanation":"對應 historical perspectives 與 ethical dimension，避免扁平化判斷。"}]}'::jsonb,
-    revision_state = 'teacher_modified',
-    updated_at = now()
-  WHERE event_id = v_event_id AND title = '霧社事件：殖民治理、族群尊嚴與歷史判斷'
-  RETURNING id INTO v_task_id;
+  -- Draft material: researcher review is required before formal collection.
+  INSERT INTO event_tasks(event_id, title, story_text, error_elicitation_task_full_text, evaluation_payload, revision_state)
+  SELECT v_event_id, '霧社事件之歷史脈絡與多重觀點檢視', '',
+    '閱讀霧社事件的館藏與出版品介紹，逐題填寫答案與判斷理由。
 
-  IF v_task_id IS NULL THEN
-    INSERT INTO event_tasks (
-      event_id,
-      title,
-      story_text,
-      display_text,
-      evaluation_payload,
-      revision_state
-    )
-    VALUES (
-      v_event_id,
-      '霧社事件：殖民治理、族群尊嚴與歷史判斷',
-      '1930 年 10 月 27 日清晨，臺灣中部山區的霧社地區正在準備公學校運動會。一名記錄地方新聞的第三方觀察者若站在霧社街道旁，會看見日本警察、學校職員、族人、孩童與外來居民聚集，也會聽見殖民秩序下長期累積的緊張。莫那·魯道與部分賽德克族人發動攻擊，事件迅速從地方衝突變成殖民政府高度重視的軍事與政治危機。後續鎮壓、隔離與記憶書寫，使霧社事件不只是一次武力衝突，而是理解殖民治理、族群尊嚴、證據差異、延續與變遷、歷史同理與倫理判斷的重要案例。',
-      '1930 年 10 月 27 日清晨，臺灣中部山區的{{blank:w01}}正在準備公學校運動會。一名記錄地方新聞的第三方觀察者若站在霧社街道旁，會看見日本警察、學校職員、族人、孩童與外來居民聚集，也會聽見殖民秩序下長期累積的緊張。{{blank:w02}}與部分賽德克族人發動攻擊，事件迅速從地方衝突變成殖民政府高度重視的軍事與政治危機。研究者不能只讀單一官方材料，也需要比較{{blank:w03}}；追問原因時，不能只說是個人衝突，而要把{{blank:w04}}放進脈絡。若有人主張霧社事件只是單純暴動，完全不需要理解殖民者與被殖民者的處境差異，這個判斷是{{blank:w05}}。',
-      '{"rubric":"評估學生是否能從歷史重要性、證據、延續與變遷、原因與後果、歷史觀點取替、倫理維度六個面向理解霧社事件，而不是把事件簡化為單一暴力或單一族群立場。","target_misconceptions":["把霧社事件簡化為單純暴動","忽略殖民治理與警察權力脈絡","只採用官方紀錄而忽略口述與地方記憶","用當代立場直接替所有行動者貼上單一善惡標籤"],"questions":[{"id":"w01","blank_id":"w01","type":"cloze","prompt":"請填入事件發生的主要地點。","placeholder":"請輸入地點","required":true,"correct_answer":"霧社地區","source_text":"霧社地區","explanation":"人事時地物中的地，也讓學生把事件放回具體空間。"},{"id":"w02","blank_id":"w02","type":"cloze","prompt":"請填入事件中最常被提及的賽德克族領袖。","placeholder":"請輸入人物","required":true,"correct_answer":"莫那·魯道","source_text":"莫那·魯道","explanation":"人事時地物中的人，但仍避免把事件完全歸因於單一英雄敘事。"},{"id":"w03","blank_id":"w03","type":"multiple_choice","prompt":"研究者比較事件證據時，最適合同時參考哪一組材料？","required":true,"options":[{"id":"a","label":"官方報告、報紙紀錄與口述記憶","value":"官方報告、報紙紀錄與口述記憶"},{"id":"b","label":"只看殖民政府公告","value":"只看殖民政府公告"},{"id":"c","label":"只看後來的影視作品","value":"只看後來的影視作品"}],"correct_answer":"官方報告、報紙紀錄與口述記憶","source_text":"官方報告、報紙紀錄與口述記憶","explanation":"對應 historical evidence，提醒學生證據來源會影響敘事。"},{"id":"w04","blank_id":"w04","type":"multiple_choice","prompt":"下列哪個脈絡最能說明事件的長期原因？","required":true,"options":[{"id":"a","label":"殖民治理、警察權力與勞役壓力","value":"殖民治理、警察權力與勞役壓力"},{"id":"b","label":"單一偶發口角","value":"單一偶發口角"},{"id":"c","label":"歐洲戰爭直接引發","value":"歐洲戰爭直接引發"}],"correct_answer":"殖民治理、警察權力與勞役壓力","source_text":"殖民治理、警察權力與勞役壓力","explanation":"對應 causes and consequences，要求學生區分近因與結構原因。"},{"id":"w05","blank_id":"w05","type":"true_false","prompt":"霧社事件只是單純暴動，完全不需要理解殖民者與被殖民者的處境差異。","required":true,"correct_answer":false,"source_text":"錯誤","explanation":"對應 historical perspectives 與 ethical dimension，避免扁平化判斷。"}]}'::jsonb,
-      'teacher_modified'
-    )
-    RETURNING id INTO v_task_id;
-  END IF;
+Q01：關於這些資料可以支持的判斷，下列哪個說法最適當？{{blank:q01}}
+
+Q02：只要讀完日方軍事記錄，就能完整掌握當時每一位當地族人的生活經驗與立場。請判斷是非。{{blank:q02}}
+
+Q03：館藏介紹指出，霧社事件發生在西元哪一年？請填寫年份，並說明你判斷的依據。{{blank:q03}}',
+    '{"contract_version": "error_elicitation_v1", "materials": [{"id": "source_1", "title": "國立臺灣歷史博物館：霧社事件與館藏說明之整理", "text": "館藏〈霧社事件始末〉為中文書寫的事件敘述。博物館介紹記載：霧社事件發生於1930年10月27日，有賽德克族六社參與，莫那魯道為重要領袖；霧社公學校運動會發生攻擊，日方軍警隨後鎮壓。以上為館藏介紹摘要，不是當事人原話。", "source_url": "https://collections.nmth.gov.tw/CollectionContent.aspx?a=132&rno=2017.025.0196.0039", "attribution": "國立臺灣歷史博物館（研究員摘要整理）"}, {"id": "source_2", "title": "國立臺灣歷史博物館：《霧社事件日文史料翻譯》內容介紹之整理", "text": "《霧社事件日文史料翻譯》於2010年出版，收錄日方軍事相關記錄，內容包含軍事行動與後勤補給。本段為出版品介紹摘要，不是軍事記錄的完整原文。", "source_url": "https://www.nmth.gov.tw/jp/News_Publish_Content.aspx?n=4414&s=139464", "attribution": "國立臺灣歷史博物館（出版品介紹摘要整理）"}], "questions": [{"id": "q01", "type": "multiple_choice", "required": true, "correct_answer": "opt_2", "reasoning_criteria": "支援答案的理由必須指出歷史資料（如館藏說明或日方軍事記錄）具有特定的作者觀點、編纂目的或侷限性，不能直接等同於所有當事人的全面經驗。常見的無效推論包括認為單一史料或博物館藏品已代表所有族人的親身心境，或認為官方與館藏記錄完全客觀而無任何編纂立場。", "options": [{"id": "opt_1", "label": "博物館藏品說明與日方軍事記錄皆能完整還原所有族人的真實心境，且不帶任何作者觀點。", "value": "opt_1"}, {"id": "opt_2", "label": "博物館藏品說明或日方軍事記錄反映了特定作者的觀點與記錄目的，不能將單一記述直接視為全體族人的共同經驗。", "value": "opt_2"}, {"id": "opt_3", "label": "莫那·魯道親自撰寫並留下了完整的事件自傳，因此不需要參考其他日方或館藏記錄。", "value": "opt_3"}], "source_text": "館藏〈霧社事件始末〉是中文書寫的事件敘述；其存在不表示它沒有作者觀點，也不能把單一記述當作所有族人經驗。日方軍事記錄的記錄目的和涵蓋範圍，不能代替所有當地族人的生活經驗與立場。", "accepted_evidence_ids": ["source_1", "source_2"]}, {"id": "q02", "type": "true_false", "required": true, "correct_answer": false, "reasoning_criteria": "支援答案的理由必須指出軍方記錄或官方史料主要反映統治者、軍事行動或特定管理視角，其範圍與目的受限於官方紀錄，無法直接涵蓋與替代在地原住民族群多元的生活經驗與內部立場。常見的無效推論為假設官方軍事檔案能平衡且無遺漏地呈現雙方所有個體的真實經歷。", "source_text": "這部2010年出版的史料翻譯集收錄日方軍事相關記錄，包含軍事行動與後勤補給。資料有助研究軍事處置，但軍方記錄的記錄目的和涵蓋範圍，不能代替所有當地族人的生活經驗與立場。", "accepted_evidence_ids": ["source_1", "source_2"]}, {"id": "q03", "type": "cloze", "required": true, "correct_answer": ["1930", "1930年", "一九三零", "一九三零年", "一九三〇", "一九三〇年"], "reasoning_criteria": "能指出年份來自提供的館藏介紹所記錄的事件日期。接受其他可核對的正確年代依據；不能把2010年出版日期當作事件發生年份。不需要額外分析殖民政策才算通過。", "source_text": "館藏介紹記錄霧社事件發生於1930年10月27日。", "accepted_evidence_ids": ["source_1", "source_2"]}], "all_correct_fallback": {"id": "fb_01", "incorrect_claim": "霧社事件純粹是由單一外來因素偶然引發的衝突，且所有參與者的動機與歷史記錄完全一致，無須透過多重史料與脈絡來檢視。", "correct_interpretation": "霧社事件是在日本殖民政府長期透過警察、學校、道路與勞役深入山地社會的結構下，族人面對尊嚴受損與治理矛盾所發動的複雜抗日事件；相關史料與館藏說明各自具有不同的作者觀點與記錄侷限，必須從多重角度進行歷史判斷。", "source_text": "事件爆發地點在今南投仁愛一帶的霧社地區，當時日本殖民政府已透過警察、學校、道路、勞役與部落管控深入山地社會。賽德克族馬赫坡社領袖莫那·魯道與部分族人，在長期壓力、尊嚴受損、地方衝突與殖民治理矛盾下發動攻擊。", "evidence_ids": ["source_1", "source_2"]}, "draft_review": {"status": "awaiting_researcher_acceptance", "note": "AI生成後經工程驗收修正題意、同義答案與不必要的理由要求；仍待研究者確認難度與內容。"}, "research_material_version": "error-elicitation-draft-20260902"}'::jsonb,
+    'teacher_modified'
+  WHERE NOT EXISTS (SELECT 1 FROM event_tasks WHERE event_id = v_event_id);
 END $$;
 
 DO $$
@@ -327,35 +295,19 @@ BEGIN
     RETURNING id INTO v_persona_id;
   END IF;
 
-  UPDATE event_tasks
-  SET
-    story_text = '1839 年至 1842 年間，清帝國與英國之間的衝突從廣州禁煙、虎門銷煙、海上軍事壓力，逐步擴大為鴉片戰爭。一名停留在廣州十三行附近的第三方觀察者，可能同時看見清朝官員查禁鴉片、英國商人要求貿易保障、地方百姓承受毒品與戰爭壓力、外國軍艦沿海北上。林則徐、道光帝、英國商人、英國政府與沿海居民都位於不同權力位置。戰爭結果以 1842 年《南京條約》作為重要轉折，香港割讓、通商口岸開放、賠款與後續治外法權安排，改變了中國與西方列強的互動方式。',
-    display_text = '1839 年至 1842 年間，清帝國與英國之間的衝突從廣州禁煙、{{blank:o01}}、海上軍事壓力，逐步擴大為鴉片戰爭。一名停留在廣州十三行附近的第三方觀察者，可能同時看見清朝官員查禁鴉片、英國商人要求貿易保障、地方百姓承受毒品與戰爭壓力、外國軍艦沿海北上。{{blank:o02}}、道光帝、英國商人、英國政府與沿海居民都位於不同權力位置。若要判斷事件證據，研究者應比較{{blank:o03}}，而不是只讀勝利者或失敗者的一方說法。分析後果時，1842 年的{{blank:o04}}使香港割讓、通商口岸開放與賠款成為重要轉折。若有人說鴉片戰爭只是一場普通商業糾紛，與主權、毒品與不平等條約無關，這個判斷是{{blank:o05}}。',
-    evaluation_payload = '{"rubric":"評估學生是否能從歷史重要性、證據、延續與變遷、原因與後果、歷史觀點取替、倫理維度六個面向理解鴉片戰爭，避免把事件簡化為清朝落後或英國自由貿易。","target_misconceptions":["把鴉片戰爭簡化為清朝單純落後","忽略鴉片貿易與毒品倫理","只把南京條約視為一般外交協議","忽略英國商人、清朝官員與沿海居民的不同處境"],"questions":[{"id":"o01","blank_id":"o01","type":"cloze","prompt":"請填入 1839 年禁煙行動中最具象徵性的事件。","placeholder":"請輸入事件","required":true,"correct_answer":"虎門銷煙","source_text":"虎門銷煙","explanation":"對應 historical significance，讓學生辨認事件轉折點。"},{"id":"o02","blank_id":"o02","type":"cloze","prompt":"請填入禁煙政策中最重要的清朝官員。","placeholder":"請輸入人物","required":true,"correct_answer":"林則徐","source_text":"林則徐","explanation":"人事時地物中的人，也讓學生思考官員職責與政策限制。"},{"id":"o03","blank_id":"o03","type":"multiple_choice","prompt":"研究者比較鴉片戰爭證據時，哪一組材料最適合互相參照？","required":true,"options":[{"id":"a","label":"清朝奏摺、英方商務紀錄、條約文本與地方記載","value":"清朝奏摺、英方商務紀錄、條約文本與地方記載"},{"id":"b","label":"只看英國議會說法","value":"只看英國議會說法"},{"id":"c","label":"只看後來的民族主義敘事","value":"只看後來的民族主義敘事"}],"correct_answer":"清朝奏摺、英方商務紀錄、條約文本與地方記載","source_text":"清朝奏摺、英方商務紀錄、條約文本與地方記載","explanation":"對應 evidence，提醒學生證據互證與來源位置。"},{"id":"o04","blank_id":"o04","type":"cloze","prompt":"請填入 1842 年結束第一次鴉片戰爭的重要條約。","placeholder":"請輸入條約名稱","required":true,"correct_answer":"南京條約","source_text":"南京條約","explanation":"對應 continuity and change，條約標示中國對外關係制度性變化。"},{"id":"o05","blank_id":"o05","type":"true_false","prompt":"鴉片戰爭只是一場普通商業糾紛，與主權、毒品與不平等條約無關。","required":true,"correct_answer":false,"source_text":"錯誤","explanation":"對應 cause/consequence、historical perspectives 與 ethical dimension。"}]}'::jsonb,
-    revision_state = 'teacher_modified',
-    updated_at = now()
-  WHERE event_id = v_event_id AND title = '鴉片戰爭：貿易、主權與不平等條約'
-  RETURNING id INTO v_task_id;
+  -- Draft material: researcher review is required before formal collection.
+  INSERT INTO event_tasks(event_id, title, story_text, error_elicitation_task_full_text, evaluation_payload, revision_state)
+  SELECT v_event_id, '第一次鴉片戰爭與《南京條約》之歷史脈絡探究', '',
+    '閱讀《南京條約》節錄的整理，逐題填寫答案與判斷理由。
 
-  IF v_task_id IS NULL THEN
-    INSERT INTO event_tasks (
-      event_id,
-      title,
-      story_text,
-      display_text,
-      evaluation_payload,
-      revision_state
-    )
-    VALUES (
-      v_event_id,
-      '鴉片戰爭：貿易、主權與不平等條約',
-      '1839 年至 1842 年間，清帝國與英國之間的衝突從廣州禁煙、虎門銷煙、海上軍事壓力，逐步擴大為鴉片戰爭。一名停留在廣州十三行附近的第三方觀察者，可能同時看見清朝官員查禁鴉片、英國商人要求貿易保障、地方百姓承受毒品與戰爭壓力、外國軍艦沿海北上。林則徐、道光帝、英國商人、英國政府與沿海居民都位於不同權力位置。戰爭結果以 1842 年《南京條約》作為重要轉折，香港割讓、通商口岸開放、賠款與後續治外法權安排，改變了中國與西方列強的互動方式。',
-      '1839 年至 1842 年間，清帝國與英國之間的衝突從廣州禁煙、{{blank:o01}}、海上軍事壓力，逐步擴大為鴉片戰爭。一名停留在廣州十三行附近的第三方觀察者，可能同時看見清朝官員查禁鴉片、英國商人要求貿易保障、地方百姓承受毒品與戰爭壓力、外國軍艦沿海北上。{{blank:o02}}、道光帝、英國商人、英國政府與沿海居民都位於不同權力位置。若要判斷事件證據，研究者應比較{{blank:o03}}，而不是只讀勝利者或失敗者的一方說法。分析後果時，1842 年的{{blank:o04}}使香港割讓、通商口岸開放與賠款成為重要轉折。若有人說鴉片戰爭只是一場普通商業糾紛，與主權、毒品與不平等條約無關，這個判斷是{{blank:o05}}。',
-      '{"rubric":"評估學生是否能從歷史重要性、證據、延續與變遷、原因與後果、歷史觀點取替、倫理維度六個面向理解鴉片戰爭，避免把事件簡化為清朝落後或英國自由貿易。","target_misconceptions":["把鴉片戰爭簡化為清朝單純落後","忽略鴉片貿易與毒品倫理","只把南京條約視為一般外交協議","忽略英國商人、清朝官員與沿海居民的不同處境"],"questions":[{"id":"o01","blank_id":"o01","type":"cloze","prompt":"請填入 1839 年禁煙行動中最具象徵性的事件。","placeholder":"請輸入事件","required":true,"correct_answer":"虎門銷煙","source_text":"虎門銷煙","explanation":"對應 historical significance，讓學生辨認事件轉折點。"},{"id":"o02","blank_id":"o02","type":"cloze","prompt":"請填入禁煙政策中最重要的清朝官員。","placeholder":"請輸入人物","required":true,"correct_answer":"林則徐","source_text":"林則徐","explanation":"人事時地物中的人，也讓學生思考官員職責與政策限制。"},{"id":"o03","blank_id":"o03","type":"multiple_choice","prompt":"研究者比較鴉片戰爭證據時，哪一組材料最適合互相參照？","required":true,"options":[{"id":"a","label":"清朝奏摺、英方商務紀錄、條約文本與地方記載","value":"清朝奏摺、英方商務紀錄、條約文本與地方記載"},{"id":"b","label":"只看英國議會說法","value":"只看英國議會說法"},{"id":"c","label":"只看後來的民族主義敘事","value":"只看後來的民族主義敘事"}],"correct_answer":"清朝奏摺、英方商務紀錄、條約文本與地方記載","source_text":"清朝奏摺、英方商務紀錄、條約文本與地方記載","explanation":"對應 evidence，提醒學生證據互證與來源位置。"},{"id":"o04","blank_id":"o04","type":"cloze","prompt":"請填入 1842 年結束第一次鴉片戰爭的重要條約。","placeholder":"請輸入條約名稱","required":true,"correct_answer":"南京條約","source_text":"南京條約","explanation":"對應 continuity and change，條約標示中國對外關係制度性變化。"},{"id":"o05","blank_id":"o05","type":"true_false","prompt":"鴉片戰爭只是一場普通商業糾紛，與主權、毒品與不平等條約無關。","required":true,"correct_answer":false,"source_text":"錯誤","explanation":"對應 cause/consequence、historical perspectives 與 ethical dimension。"}]}'::jsonb,
-      'teacher_modified'
-    )
-    RETURNING id INTO v_task_id;
-  END IF;
+Q01：關於條約簽訂後的經商安排，下列何者正確？{{blank:q01}}
+
+Q02：條約列出五處准許英國人居住經商的口岸，因此可以斷定當時中國所有城市均已開放英商居住經商。請判斷是非。{{blank:q02}}
+
+Q03：條約第二款列出廣州、廈門、福州、寧波及另一處通商口岸。請填寫第五處城市名稱，並說明依據。{{blank:q03}}',
+    '{"contract_version": "error_elicitation_v1", "materials": [{"id": "mat_01", "title": "哥倫比亞大學 Asia for Educators：《南京條約》節錄之整理", "text": "清朝在第一次鴉片戰爭戰敗後，於1842年簽訂《南京條約》。第二款列出廣州、廈門、福州、寧波、上海五處，准許英國人居住經商；第三款割讓香港島。第五款取消英商只能透過公行交易的限制。以上為條約節錄的中文整理，不是原文引句。", "source_url": "https://afe.easia.columbia.edu/ps/china/nanjing.pdf", "attribution": "Columbia University - Asia for Educators (Researcher Summary)"}], "questions": [{"id": "q01", "type": "multiple_choice", "required": true, "correct_answer": "opt_2", "options": [{"id": "opt_1", "label": "條約簽訂後，雙方在完全平等的國際法地位下協商互惠貿易條件。", "value": "opt_1"}, {"id": "opt_2", "label": "條約取消了原本限制英商只能透過公行進行對外貿易的制度。", "value": "opt_2"}, {"id": "opt_3", "label": "條約內容僅規範香港島全境之行政管轄權，未涉及其他沿海城市。", "value": "opt_3"}], "reasoning_criteria": "能以第五款取消公行交易限制，說明為何第二個選項成立。接受對制度改變的合理同義解釋；不強制再分析所有戰爭背景或國際法。", "source_text": "1842年清朝在第一次鴉片戰爭戰敗後簽訂南京條約...第五款取消英商只能透過公行交易的限制。條文記錄制度安排，不能單憑和平友好等措辭推斷雙方權力完全平等。", "accepted_evidence_ids": ["mat_01"]}, {"id": "q02", "type": "true_false", "required": true, "correct_answer": false, "reasoning_criteria": "能說明資料只列五處口岸，不能由部分城市開放推出所有城市開放。接受其他符合條文範圍的合理說明；不以未提供的全部中國城市資料為必要條件。", "source_text": "第二款列出廣州、廈門、福州、寧波、上海五處，沒有宣布中國所有城市均開放。", "accepted_evidence_ids": ["mat_01"]}, {"id": "q03", "type": "cloze", "required": true, "correct_answer": ["上海"], "reasoning_criteria": "支持的理由應依據《南京條約》第二款所列出的五處經商口岸紀錄來回答，指認出廣州、廈門、福州、寧波之外的第五個城市。常見無效推論為混淆近代其他開埠通商口岸（如天津或漢口），未能對照條約節錄中明列的五處南方與東南沿海據點。", "source_text": "第二款列出廣州、廈門、福州、寧波、上海五處，准許英國人居住經商。", "accepted_evidence_ids": ["mat_01"]}], "all_correct_fallback": {"id": "fb_01", "incorrect_claim": "《南京條約》的簽訂完全是由於單純的文化誤解與偶發衝突所致，與當時英國的全球帝國商業擴張及清朝原有的閉關貿易體制無關。", "correct_interpretation": "鴉片戰爭及《南京條約》是十九世紀全球資本主義擴張、英國對華貿易逆差、清朝傳統朝貢與公行貿易體制衝突，以及軍事武力落差交織而成的結構性歷史事件。", "source_text": "事件需要放在鴉片貿易、清朝禁煙、英國帝國商業利益、海防差距、南京條約與條約體系擴張中理解。", "evidence_ids": ["mat_01"]}, "draft_review": {"status": "awaiting_researcher_acceptance", "note": "AI生成後經工程驗收修正題意、同義答案與不必要的理由要求；仍待研究者確認難度與內容。"}, "research_material_version": "error-elicitation-draft-20260902"}'::jsonb,
+    'teacher_modified'
+  WHERE NOT EXISTS (SELECT 1 FROM event_tasks WHERE event_id = v_event_id);
 END $$;
 
 DO $$
@@ -440,35 +392,19 @@ BEGIN
     RETURNING id INTO v_persona_id;
   END IF;
 
-  UPDATE event_tasks
-  SET
-    story_text = '1853 年，美國海軍准將培里率領黑船進入浦賀附近海域，要求德川幕府開港。一名站在江戶灣岸邊的第三方觀察者，可能看見蒸汽軍艦、砲口、幕府官員、沿岸民眾與各藩武士同時面對陌生的軍事與外交壓力。1854 年《神奈川條約》使日本開港，後續通商條約又激化尊王攘夷、開國、倒幕與改革等爭論。從黑船來航到 1868 年明治維新，歷史變化並不是單純由外國船艦造成，也不是單純由少數英雄推動，而是外部壓力、幕府權威下降、藩政改革、思想動員、內戰與制度重組共同作用。',
-    display_text = '1853 年，美國海軍准將{{blank:b01}}率領黑船進入浦賀附近海域，要求德川幕府開港。一名站在江戶灣岸邊的第三方觀察者，可能看見{{blank:b02}}、砲口、幕府官員、沿岸民眾與各藩武士同時面對陌生的軍事與外交壓力。1854 年{{blank:b03}}使日本開港，後續通商條約又激化尊王攘夷、開國、倒幕與改革等爭論。研究者若要判斷證據，應比較{{blank:b04}}；若要分析延續與變遷，則要注意幕府權威下降、各藩改革、內戰與中央集權如何相互連動。若有人主張明治維新只是日本主動走向現代化，與外部壓力、內部衝突和普通民眾負擔無關，這個判斷是{{blank:b05}}。',
-    evaluation_payload = '{"rubric":"評估學生是否能從歷史重要性、證據、延續與變遷、原因與後果、歷史觀點取替、倫理維度六個面向理解黑船事件到明治維新的轉型，而不是把它簡化為外國逼迫或日本自動現代化。","target_misconceptions":["把明治維新看成單純成功現代化故事","忽略黑船來航與不平等條約的外部壓力","忽略幕末內戰與社會成本","把改革只歸功於少數英雄人物"],"questions":[{"id":"b01","blank_id":"b01","type":"cloze","prompt":"請填入 1853 年率領黑船來航的美國海軍准將。","placeholder":"請輸入人物","required":true,"correct_answer":"培里","source_text":"培里","explanation":"人事時地物中的人，同時標示事件的重要觸發點。"},{"id":"b02","blank_id":"b02","type":"cloze","prompt":"請填入事件中最具象徵性的物件。","placeholder":"請輸入物件","required":true,"correct_answer":"蒸汽軍艦","source_text":"蒸汽軍艦","explanation":"人事時地物中的物，也連到軍事科技與外壓。"},{"id":"b03","blank_id":"b03","type":"cloze","prompt":"請填入 1854 年日本與美國簽訂的開港條約。","placeholder":"請輸入條約","required":true,"correct_answer":"神奈川條約","source_text":"神奈川條約","explanation":"對應 historical significance 與 continuity/change。"},{"id":"b04","blank_id":"b04","type":"multiple_choice","prompt":"研究者比較黑船到明治維新證據時，哪一組材料最合適？","required":true,"options":[{"id":"a","label":"條約文本、幕府文書、藩士日記與外國觀察","value":"條約文本、幕府文書、藩士日記與外國觀察"},{"id":"b","label":"只看明治政府後來的宣傳","value":"只看明治政府後來的宣傳"},{"id":"c","label":"只看外國軍艦紀錄","value":"只看外國軍艦紀錄"}],"correct_answer":"條約文本、幕府文書、藩士日記與外國觀察","source_text":"條約文本、幕府文書、藩士日記與外國觀察","explanation":"對應 evidence，避免單一來源支配敘事。"},{"id":"b05","blank_id":"b05","type":"true_false","prompt":"明治維新只是日本主動走向現代化，與外部壓力、內部衝突和普通民眾負擔無關。","required":true,"correct_answer":false,"source_text":"錯誤","explanation":"對應 cause/consequence、historical perspectives 與 ethical dimension。"}]}'::jsonb,
-    revision_state = 'teacher_modified',
-    updated_at = now()
-  WHERE event_id = v_event_id AND title = '黑船事件到明治維新：外壓、內戰與制度重組'
-  RETURNING id INTO v_task_id;
+  -- Draft material: researcher review is required before formal collection.
+  INSERT INTO event_tasks(event_id, title, story_text, error_elicitation_task_full_text, evaluation_payload, revision_state)
+  SELECT v_event_id, '黑船事件到明治維新：初期政治轉型與制度構想任務', '',
+    '閱讀日本幕末到明治初期的政治構想資料，逐題填寫答案與判斷理由。
 
-  IF v_task_id IS NULL THEN
-    INSERT INTO event_tasks (
-      event_id,
-      title,
-      story_text,
-      display_text,
-      evaluation_payload,
-      revision_state
-    )
-    VALUES (
-      v_event_id,
-      '黑船事件到明治維新：外壓、內戰與制度重組',
-      '1853 年，美國海軍准將培里率領黑船進入浦賀附近海域，要求德川幕府開港。一名站在江戶灣岸邊的第三方觀察者，可能看見蒸汽軍艦、砲口、幕府官員、沿岸民眾與各藩武士同時面對陌生的軍事與外交壓力。1854 年《神奈川條約》使日本開港，後續通商條約又激化尊王攘夷、開國、倒幕與改革等爭論。從黑船來航到 1868 年明治維新，歷史變化並不是單純由外國船艦造成，也不是單純由少數英雄推動，而是外部壓力、幕府權威下降、藩政改革、思想動員、內戰與制度重組共同作用。',
-      '1853 年，美國海軍准將{{blank:b01}}率領黑船進入浦賀附近海域，要求德川幕府開港。一名站在江戶灣岸邊的第三方觀察者，可能看見{{blank:b02}}、砲口、幕府官員、沿岸民眾與各藩武士同時面對陌生的軍事與外交壓力。1854 年{{blank:b03}}使日本開港，後續通商條約又激化尊王攘夷、開國、倒幕與改革等爭論。研究者若要判斷證據，應比較{{blank:b04}}；若要分析延續與變遷，則要注意幕府權威下降、各藩改革、內戰與中央集權如何相互連動。若有人主張明治維新只是日本主動走向現代化，與外部壓力、內部衝突和普通民眾負擔無關，這個判斷是{{blank:b05}}。',
-      '{"rubric":"評估學生是否能從歷史重要性、證據、延續與變遷、原因與後果、歷史觀點取替、倫理維度六個面向理解黑船事件到明治維新的轉型，而不是把它簡化為外國逼迫或日本自動現代化。","target_misconceptions":["把明治維新看成單純成功現代化故事","忽略黑船來航與不平等條約的外部壓力","忽略幕末內戰與社會成本","把改革只歸功於少數英雄人物"],"questions":[{"id":"b01","blank_id":"b01","type":"cloze","prompt":"請填入 1853 年率領黑船來航的美國海軍准將。","placeholder":"請輸入人物","required":true,"correct_answer":"培里","source_text":"培里","explanation":"人事時地物中的人，同時標示事件的重要觸發點。"},{"id":"b02","blank_id":"b02","type":"cloze","prompt":"請填入事件中最具象徵性的物件。","placeholder":"請輸入物件","required":true,"correct_answer":"蒸汽軍艦","source_text":"蒸汽軍艦","explanation":"人事時地物中的物，也連到軍事科技與外壓。"},{"id":"b03","blank_id":"b03","type":"cloze","prompt":"請填入 1854 年日本與美國簽訂的開港條約。","placeholder":"請輸入條約","required":true,"correct_answer":"神奈川條約","source_text":"神奈川條約","explanation":"對應 historical significance 與 continuity/change。"},{"id":"b04","blank_id":"b04","type":"multiple_choice","prompt":"研究者比較黑船到明治維新證據時，哪一組材料最合適？","required":true,"options":[{"id":"a","label":"條約文本、幕府文書、藩士日記與外國觀察","value":"條約文本、幕府文書、藩士日記與外國觀察"},{"id":"b","label":"只看明治政府後來的宣傳","value":"只看明治政府後來的宣傳"},{"id":"c","label":"只看外國軍艦紀錄","value":"只看外國軍艦紀錄"}],"correct_answer":"條約文本、幕府文書、藩士日記與外國觀察","source_text":"條約文本、幕府文書、藩士日記與外國觀察","explanation":"對應 evidence，避免單一來源支配敘事。"},{"id":"b05","blank_id":"b05","type":"true_false","prompt":"明治維新只是日本主動走向現代化，與外部壓力、內部衝突和普通民眾負擔無關。","required":true,"correct_answer":false,"source_text":"錯誤","explanation":"對應 cause/consequence、historical perspectives 與 ethical dimension。"}]}'::jsonb,
-      'teacher_modified'
-    )
-    RETURNING id INTO v_task_id;
-  END IF;
+Q01：黑船來航與開國之後，日本國內對政體的討論呈現何種情況？請選出最適當的敘述。{{blank:q01}}
+
+Q02：1868年《五箇條御誓文》主張設置會議、以公議決定政事，所以僅憑這段主張就能證明日本當時已實施現代普選民主。請判斷是非。{{blank:q02}}
+
+Q03：資料中1867年大政奉還的政權構想，以哪個政治機構為中心？請填寫機構名稱並說明理由。{{blank:q03}}',
+    '{"contract_version": "error_elicitation_v1", "materials": [{"id": "source_1", "title": "日本國立國會圖書館：近代日本的政治制度構想之整理", "text": "1853年培里黑船來航與其後開國，促使日本廣泛討論政體。1867年大政奉還提出以朝廷為中心、以公議為名的政治構想。1868年《五箇條御誓文》主張設置會議、以公議決定政事。幕末到明治初期存在不同的政治方案。本段依日本國立國會圖書館展覽說明整理，不是歷史人物原話。", "source_url": "https://www.ndl.go.jp/modern/e/cha1/", "attribution": "日本國立國會圖書館近代日本展覽說明（中文摘要）"}], "questions": [{"id": "q01", "type": "multiple_choice", "required": true, "correct_answer": "B", "options": [{"id": "opt_a", "label": "當時僅有單一的倒幕派政治主張，並無其他不同方案", "value": "A"}, {"id": "opt_b", "label": "社會各界針對政體與開國引發了廣泛且多樣的政治討論", "value": "B"}, {"id": "opt_c", "label": "幕府順利透過鎖國政策完全封鎖了所有外來政治思潮", "value": "C"}], "reasoning_criteria": "支持B選項的理由必須指出黑船來航與開國壓力促使日本國內出現不同的政治方案與廣泛討論，而非單一聲音或成功鎖國。常見無效推理包括誤以為外力直接決定一切改革，或認為當時已形成現代政黨政治。", "source_text": "1853年培里黑船來航與其後開國，促使日本廣泛討論政體。幕府末期到明治初期有不同政治方案...", "accepted_evidence_ids": ["source_1"]}, {"id": "q02", "type": "true_false", "required": true, "correct_answer": false, "reasoning_criteria": "支持錯誤（False）的理由必須說明《五箇條御誓文》雖提出公議與會議，但不能將其直接等同於現代普選民主的落實。常見無效推理為因看到「設置會議」和「公議」等字眼，便直接將其與20世紀或當代的普選民主劃上等號。", "source_text": "1868年五箇條御誓文主張設置會議、以公議決定政事... 不能把這些主張直接等同現代普選民主已经落實...", "accepted_evidence_ids": ["source_1"]}, {"id": "q03", "type": "cloze", "required": true, "correct_answer": ["朝廷", "日本朝廷", "天皇朝廷", "天皇", "以朝廷為中心"], "reasoning_criteria": "能依材料指出政治權威中心是朝廷或天皇，而不是把公議這種決策原則當成機構名稱。接受其他正確且有依據的說明，不要求固定用語。", "source_text": "1867年大政奉還以朝廷為中心、公議為名提出政權構想...", "accepted_evidence_ids": ["source_1"]}], "all_correct_fallback": {"id": "fb_01", "incorrect_claim": "幕府末期到明治初期的所有政治變革與制度構想，皆是由外國列強直接擬定並強加給日本的結果。", "correct_interpretation": "雖然外國帶來的壓力是促使日本開國與轉型的外部背景，但國內政治轉型與制度構想（如大政奉還與五箇條御誓文）是由日本內部不同政治力量與思想激盪下所發展出來的多元方案，不能將後續所有改革完全歸咎或歸功於外國直接決定。", "source_text": "不能只因外力先到便斷定後續所有改革都由外國決定。", "evidence_ids": ["source_1"]}, "draft_review": {"status": "awaiting_researcher_acceptance", "note": "AI生成後經工程驗收修正題意、同義答案與不必要的理由要求；仍待研究者確認難度與內容。"}, "research_material_version": "error-elicitation-draft-20260902"}'::jsonb,
+    'teacher_modified'
+  WHERE NOT EXISTS (SELECT 1 FROM event_tasks WHERE event_id = v_event_id);
 END $$;
 
 -- 研究介面使用可讀的翻譯語體；保留人物差異，但不捏造名言、方言或現代教師話術。
