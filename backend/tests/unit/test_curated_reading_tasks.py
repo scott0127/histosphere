@@ -39,6 +39,13 @@ def test_four_curated_reading_tasks_follow_the_runtime_contract():
 
         # 正解、判定標準與來源網址只留在後端及 Admin 資料。
         learner_payload = learner_evaluation(evaluation)
+        assert "authoring" not in learner_payload
+        # 編製註記留在 Admin；受測者仍能看到判讀所需的年代與材料名稱。
+        learner_copy = task["error_elicitation_task_full_text"] + "".join(
+            material.get("caption", "") for material in learner_payload["materials"]
+        )
+        assert not any(notice in learner_copy for notice in ("改寫", "原創", "逐字"))
+        assert all(material.get("caption") for material in learner_payload["materials"])
         assert all("correct_answer" not in question for question in learner_payload["questions"])
         assert all("reasoning_criteria" not in question for question in learner_payload["questions"])
         assert all("source_url" not in material for material in learner_payload["materials"])

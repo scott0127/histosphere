@@ -8,14 +8,14 @@
       "title": "黑船事件到明治維新：新政體應由誰作主？",
       "story_text": "",
       "revision_state": "teacher_modified",
-      "error_elicitation_task_full_text": "某展覽要呈現黑船來航後，日本政治秩序如何被重新討論。策展人找到坂本龍馬與西周的兩份政體構想，準備替它們撰寫說明。以下是原創閱讀題組，材料內容依史料介紹改寫，並非當事人的逐字發言。\n\nQ01｜若要替兩份構想寫一句共同的展覽說明，下列哪一項最符合本文？\n{{blank:q01}}\n\nQ02｜有人說：「兩份材料可以顯示當時有人構想設立議事機構，但不能僅憑這些構想，就認定日本人民當時已普遍取得選舉權。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果展覽要介紹「引進新的權力分工，同時維持德川家政治中心地位」的構想，應以誰的方案為主要材料？填入本文中的人名，並在理由中說明你的判斷依據。\n{{blank:q03}}",
+      "error_elicitation_task_full_text": "某展覽要呈現黑船來航後，日本政治秩序如何被重新討論。策展人找到坂本龍馬與西周的兩份政體構想，準備替它們撰寫說明。\n\nQ01｜若要替兩份構想寫一句共同的展覽說明，下列哪一項最符合本文？\n{{blank:q01}}\n\nQ02｜有人說：「兩份材料可以顯示當時有人構想設立議事機構，但不能僅憑這些構想，就認定日本人民當時已普遍取得選舉權。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果展覽要介紹「引進新的權力分工，同時維持德川家政治中心地位」的構想，應以誰的方案為主要材料？填入本文中的人名，並在理由中說明你的判斷依據。\n{{blank:q03}}",
       "evaluation_payload": {
         "contract_version": "error_elicitation_v1",
         "materials": [
           {
             "id": "japan_ryoma_plan",
             "title": "坂本龍馬的政體構想",
-            "caption": "1867 年《新政府綱領八策》；以下為史料介紹的中文改寫。",
+            "caption": "1867 年《新政府綱領八策》",
             "text": "1853 年，培里率領美國艦隊抵達浦賀，要求日本接受有關交往與通商的國書。幕府將國書及相關文件翻譯後，向多位大名徵詢意見。對外關係的壓力，也伴隨著由誰參與國家決策的討論。\n\n到了 1867 年，坂本龍馬與土佐藩的後藤象二郎討論政局，支持將政治權力歸還朝廷，並提出議事機構、官員任用、外交與軍事等方面的改革構想。他留下的《新政府綱領八策》，是向土佐藩高層提出的新政體草案。它所處理的不只是更換掌權者，也包括新政府應如何組織、由哪些人參與議事等問題。",
             "source_url": "https://www.ndl.go.jp/modern/e/cha1/description02.html",
             "attribution": "日本國立國會圖書館 Modern Japan in archives，1-1、1-2；以館方史料解說核對後自行改寫，未使用其現成習題。"
@@ -23,7 +23,7 @@
           {
             "id": "japan_nishi_plan",
             "title": "西周的政體構想",
-            "caption": "1867 年 12 月《議題草案》及《別紙議題草案》；以下為中文改寫。",
+            "caption": "1867 年 12 月《議題草案》及《別紙議題草案》",
             "text": "幕府的西洋學研究者西周也提出另一套方案。他向德川慶喜的顧問提交《議題草案》，並在相關草案中規劃以德川家為中心的政治制度。這套構想參考西方的權力分工：行政由將軍掌握，司法暫由各藩負責，立法則交由大名及各藩武士組成的議事機構；天皇居於象徵性位置。\n\n兩份構想都出現在舊有政治秩序被重新商議的時期，也都涉及議事機構。不過，讀到設立議事機構的主張，與看見一套已經實施的制度，仍是兩種不同的事情。策展人手上目前只有上述草案與相關介紹，沒有當時的選民名冊或實際選舉紀錄。",
             "source_url": "https://www.ndl.go.jp/modern/e/cha1/description03.html",
             "attribution": "日本國立國會圖書館，1-3 NISHI Amane's Conception of a System of Government；末段策展情境為本題組設定，不是史料引文。"
@@ -65,7 +65,7 @@
         "authoring": {
           "method": "researcher_curated_with_ai_assistance", "version": "reading-task-draft-20260902-v1", "review_status": "awaiting_researcher_acceptance",
           "sources": ["https://www.ndl.go.jp/modern/e/cha1/description01.html", "https://www.ndl.go.jp/modern/e/cha1/description02.html", "https://www.ndl.go.jp/modern/e/cha1/description03.html"],
-          "note": "閱讀理解題組，不宣稱與其他事件難度等值。西周的後期草案只能作為提供的材料，不應被龍馬說成自己親眼見過或死後得知的事。"
+          "note": "原創閱讀題組；材料內容依史料介紹中文改寫，並非當事人的逐字發言。編製說明僅供研究者查看。不宣稱與其他事件難度等值。西周的後期草案只能作為提供的材料，不應被龍馬說成自己親眼見過或死後得知的事。"
         }
       }
     },
@@ -73,18 +73,18 @@
       "event_name": "鴉片戰爭",
       "title": "鴉片戰爭：一封禁煙書信與一份戰後條約",
       "story_text": "", "revision_state": "teacher_modified",
-      "error_elicitation_task_full_text": "一個歷史展覽要呈現鴉片戰爭前後，清朝與英國之間的交涉。策展人把林則徐的書信與《南京條約》放在一起，請你協助判斷適合的解說。下列內容依文件改寫，不是逐字翻譯；書信中的主張也不等於收信者已經同意。\n\nQ01｜若要替林則徐書信中的論證方式撰寫說明，下列哪一項最適當？\n{{blank:q01}}\n\nQ02｜有人根據《南京條約》關於交易對象的規定，宣稱：「條約簽訂後，英商已可到中國任何地方自由居住和經商。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果要查核「戰後清朝正式承諾如何改變英商的交易制度」，應優先閱讀本文中的哪一份文件？請填文件名稱，並說明它為何比另一份更適合回答這個問題。\n{{blank:q03}}",
+      "error_elicitation_task_full_text": "一個歷史展覽要呈現鴉片戰爭前後，清朝與英國之間的交涉。策展人把林則徐的書信與《南京條約》放在一起，請你協助判斷適合的解說。書信中的主張不等於收信者已經同意。\n\nQ01｜若要替林則徐書信中的論證方式撰寫說明，下列哪一項最適當？\n{{blank:q01}}\n\nQ02｜有人根據《南京條約》關於交易對象的規定，宣稱：「條約簽訂後，英商已可到中國任何地方自由居住和經商。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果要查核「戰後清朝正式承諾如何改變英商的交易制度」，應優先閱讀本文中的哪一份文件？請填文件名稱，並說明它為何比另一份更適合回答這個問題。\n{{blank:q03}}",
       "evaluation_payload": {
         "contract_version": "error_elicitation_v1",
         "materials": [
           {
-            "id": "opium_lin_letter", "title": "林則徐的禁煙書信", "caption": "1839 年，林則徐致英國君主的書信；以下為內容改寫。",
+            "id": "opium_lin_letter", "title": "林則徐的禁煙書信", "caption": "1839 年，林則徐致英國君主的書信",
             "text": "1839 年，林則徐在廣東處理禁煙事務，並寫了一封面向英國君主的書信。信中指責部分商人為追求利益，將鴉片運入中國，造成危害。他將中國輸出的茶、絲等貨品描述為有益的商品，反問英國商人既能從正常貿易獲利，為何還要販售傷人的鴉片。\n\n信中又提出一個換位的假設：假如有人把鴉片帶到英國，使當地人民購買、吸食，英國君主會如何看待？林則徐藉此要求對方約束商人、阻止鴉片輸入，並主張來華經商者應遵守中國法律。這是他試圖說服對方的論述；現存這封書信本身，並不能證明英國君主已閱讀或接受其中的要求。",
             "source_url": "https://ccnmtl.columbia.edu/services/dropoff/china_civ_temp/week11/pdfs/comiss.pdf",
             "attribution": "Columbia University 收錄林則徐 Letter of Advice to Queen Victoria，原文節譯第 2–4 頁；僅據信件內容改寫，不採用該檔導言中將南京條約誤述為鴉片合法化的敘述。"
           },
           {
-            "id": "opium_nanjing_treaty", "title": "南京條約的通商規定", "caption": "1842 年《南京條約》第二、第五款；以下為內容改寫。",
+            "id": "opium_nanjing_treaty", "title": "南京條約的通商規定", "caption": "1842 年《南京條約》第二、第五款",
             "text": "戰爭後，清朝與英國於 1842 年簽訂《南京條約》。第二款列出廣州、廈門、福州、寧波與上海，允許英國商民及其家屬在這些城市居住、從事商業活動，並安排英國領事駐在。\n\n第五款回顧英商在廣州原先須透過特許的行商交易，約定往後在准許英商居住的口岸，取消只能與這些行商交易的限制，讓英商自行選擇交易對象。策展人發現，這裡同時談到「在哪些地方」與「可以和誰交易」。他打算以這份條約說明戰後的正式約定，但尚未蒐集各地實際執行情況或商人的日常交易帳冊。",
             "source_url": "https://afe.easia.columbia.edu/ps/china/nanjing.pdf",
             "attribution": "Columbia University, Asia for Educators, Excerpts from the Treaty of Nanjing, August 1842，第 1–2 頁，第二及第五款；策展情境為原創。"
@@ -127,7 +127,7 @@
         "authoring": {
           "method": "researcher_curated_with_ai_assistance", "version": "reading-task-draft-20260902-v1", "review_status": "awaiting_researcher_acceptance",
           "sources": ["https://ccnmtl.columbia.edu/services/dropoff/china_civ_temp/week11/pdfs/comiss.pdf", "https://afe.easia.columbia.edu/ps/china/nanjing.pdf"],
-          "note": "只改寫核對過的文件段落，未複製來源教學問題；不將信件對英國的描述當作英國社會實況，也不宣稱南京條約使鴉片合法化。"
+          "note": "原創閱讀題組；內容依文件中文改寫，不是逐字翻譯。編製說明僅供研究者查看。只改寫核對過的文件段落，未複製來源教學問題；不將信件對英國的描述當作英國社會實況，也不宣稱南京條約使鴉片合法化。"
         }
       }
     },
@@ -135,7 +135,7 @@
       "event_name": "霧社事件",
       "title": "霧社事件：檔案記下了誰的經驗？",
       "story_text": "", "revision_state": "teacher_modified",
-      "error_elicitation_task_full_text": "一位展覽編輯整理霧社事件的資料，想分別介紹軍事行動、影像如何呈現事件，以及部落居民的生活經驗。他目前取得以下兩組資料的介紹。閱讀後，協助他判斷可以提出哪些說明。本文為原創題組，依典藏與出版資訊改寫，沒有虛構當事人的口述。\n\nQ01｜只憑本文介紹的兩組資料，哪一項研究最需要補充其他人的紀錄或訪談？\n{{blank:q01}}\n\nQ02｜有人說：「軍事紀錄的中文譯本在 2010 年出版，因此它不能包含日治時期軍方留下的紀錄。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果要先查找軍方如何安排物資供應，而不只是它如何在影像中呈現行動，應優先閱讀「軍事紀錄」或「攝影資料」？請填其中一項，並說明選擇的依據與限制。\n{{blank:q03}}",
+      "error_elicitation_task_full_text": "一位展覽編輯整理霧社事件的資料，想分別介紹軍事行動、影像如何呈現事件，以及部落居民的生活經驗。他目前取得以下兩組資料的介紹。閱讀後，協助他判斷可以提出哪些說明。\n\nQ01｜只憑本文介紹的兩組資料，哪一項研究最需要補充其他人的紀錄或訪談？\n{{blank:q01}}\n\nQ02｜有人說：「軍事紀錄的中文譯本在 2010 年出版，因此它不能包含日治時期軍方留下的紀錄。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果要先查找軍方如何安排物資供應，而不只是它如何在影像中呈現行動，應優先閱讀「軍事紀錄」或「攝影資料」？請填其中一項，並說明選擇的依據與限制。\n{{blank:q03}}",
       "evaluation_payload": {
         "contract_version": "error_elicitation_v1",
         "materials": [
@@ -146,7 +146,7 @@
             "attribution": "國立臺灣歷史博物館《霧社事件日文史料翻譯》出版介紹；事件背景另核對臺史博典藏〈霧社事件始末〉。本文不是軍方日誌的逐字節錄。"
           },
           {
-            "id": "wushe_photographic_records", "title": "攝影資料", "caption": "中研院民族所博物館典藏的霧社事件相關照片；以下依典藏說明改寫。",
+            "id": "wushe_photographic_records", "title": "攝影資料", "caption": "中研院民族所博物館典藏的霧社事件相關照片",
             "text": "另一組材料是霧社事件相關照片，畫面及圖說呈現行軍、飛機偵察、山砲等軍事活動。典藏說明指出，這批影像以呈現日本政府的軍事行動與成果為主，照片旁也有文字說明。這些內容可以讓後來的觀看者知道，當時哪些場景被拍下、選出並加以解說。\n\n編輯希望在展覽中加入另一個段落：事件期間，不同部落居民如何理解衝突，又如何經歷生活變動。目前上述資料介紹沒有提供居民完整的敘述。他尚未訪查其他來源，也不能把未出現在照片或軍方紀錄中的聲音，自行補寫成當事人的想法。",
             "source_url": "https://openmuseum.tw/muse/digi_object/262698b3d35f6e236c964ddef49a0151",
             "attribution": "中研院民族所博物館，開放博物館〈霧社事件寫真帖照片〉，識別碼 9724。只據內容描述改寫，不沿用頁面中與 1930 年事件不一致的蒐藏時間 1920 欄位；末段為原創策展情境。"
@@ -189,7 +189,7 @@
         "authoring": {
           "method": "researcher_curated_with_ai_assistance", "version": "reading-task-draft-20260902-v1", "review_status": "awaiting_researcher_acceptance",
           "sources": ["https://www.nmth.gov.tw/jp/News_Publish_Content.aspx?n=4414&s=139464", "https://collections.nmth.gov.tw/CollectionContent.aspx?a=132&rno=2017.025.0196.0039", "https://openmuseum.tw/muse/digi_object/262698b3d35f6e236c964ddef49a0151"],
-          "note": "不虛構族人口述、圖像細節或精確日誌內容。出版與典藏年代不是人物的親身記憶，Persona 不得把 2010 年出版品說成生前讀物。"
+          "note": "原創閱讀題組；依典藏與出版資訊中文改寫，不是軍方日誌的逐字節錄。編製說明僅供研究者查看。不虛構族人口述、圖像細節或精確日誌內容。出版與典藏年代不是人物的親身記憶，Persona 不得把 2010 年出版品說成生前讀物。"
         }
       }
     },
@@ -197,18 +197,18 @@
       "event_name": "法國大革命",
       "title": "法國大革命：一場宣誓，兩種紀錄",
       "story_text": "", "revision_state": "teacher_modified",
-      "error_elicitation_task_full_text": "某展覽要介紹法國大革命初期的網球場宣誓。策展人取得宣誓紀錄與一幅後來製作的畫稿，準備將它們放在一起展示。閱讀下列材料後，協助他判斷合適的解說。本文為原創題組；宣誓內容與畫作背景均為中文改寫，不是逐字引文。\n\nQ01｜依據宣誓紀錄，代表們為何在原會場關閉後，仍決定繼續集會？\n{{blank:q01}}\n\nQ02｜有人說：「大衛的畫稿描繪網球場宣誓，因此可以直接確認每位代表在 1789 年現場的實際動作與站位。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果要研究「革命初期，人們如何向公眾呈現這場宣誓」，應優先選擇本文中的「宣誓紀錄」或「大衛畫稿」？請填其中一項，並說明它為何適合這個問題。\n{{blank:q03}}",
+      "error_elicitation_task_full_text": "某展覽要介紹法國大革命初期的網球場宣誓。策展人取得宣誓紀錄與一幅後來製作的畫稿，準備將它們放在一起展示。閱讀本文後，協助他判斷合適的解說。\n\nQ01｜依據宣誓紀錄，代表們為何在原會場關閉後，仍決定繼續集會？\n{{blank:q01}}\n\nQ02｜有人說：「大衛的畫稿描繪網球場宣誓，因此可以直接確認每位代表在 1789 年現場的實際動作與站位。」這個判斷是否成立？\n{{blank:q02}}\n\nQ03｜如果要研究「革命初期，人們如何向公眾呈現這場宣誓」，應優先選擇本文中的「宣誓紀錄」或「大衛畫稿」？請填其中一項，並說明它為何適合這個問題。\n{{blank:q03}}",
       "evaluation_payload": {
         "contract_version": "error_elicitation_v1",
         "materials": [
           {
-            "id": "france_oath_record", "title": "宣誓紀錄", "caption": "1789 年 6 月 20 日網球場宣誓；以下為事件背景與宣誓內容的中文改寫。",
+            "id": "france_oath_record", "title": "宣誓紀錄", "caption": "1789 年 6 月 20 日網球場宣誓",
             "text": "1789 年，法國面臨財政危機，路易十六召開三級會議，代表分屬教士、貴族與第三等級。會議中，如何組成能代表國民的議事機構成為爭議。6 月 17 日，第三等級代表與部分教士成立國民議會。\n\n6 月 20 日，代表們發現原先的會場關閉，便到附近的室內網球場集會。他們宣誓，在王國的憲法尚未建立於穩固基礎之前，不會解散；只要情勢需要，就繼續在能集會的地方開會。這份紀錄留下的是代表們在當時所作的集體承諾，將繼續集會與制定憲法連結起來，而不是一份已經完成的憲法文本。",
             "source_url": "https://en.chateauversailles.fr/discover/history/key-dates/jeu-paume-oath-1789",
             "attribution": "凡爾賽宮 Jeu de Paume Oath, 1789；另據法國國民議會 Assemblée nationale constituante 核對 6 月 17 日成立背景。"
           },
           {
-            "id": "france_david_drawing", "title": "大衛畫稿", "caption": "雅克路易大衛，1791 年公開展示的網球場宣誓預備畫稿；本文描述其製作背景，未將後來的複製畫當作此畫稿。",
+            "id": "france_david_drawing", "title": "大衛畫稿", "caption": "雅克路易大衛，1791 年公開展示的網球場宣誓預備畫稿",
             "text": "畫家雅克路易大衛並未親自在場見證 1789 年 6 月 20 日的宣誓。他後來蒐集相關資料，安排畫面的構圖，準備以大型作品呈現這件事。1791 年，他的預備畫稿向公眾展示；為了完成較大的繪畫計畫，他也邀請議員到畫室，或寄送肖像供他參考。那幅大型繪畫最終沒有完成。\n\n策展人注意到，宣誓紀錄與畫稿雖指向同一場事件，留下的內容卻不同：一份是當時作出的承諾，另一份是稍後整理資料、安排人物與構圖，再呈現給觀看者的作品。他希望在不混淆兩者的前提下，讓觀眾理解這場宣誓，也理解它在革命初期如何被描繪。",
             "source_url": "https://en.chateauversailles.fr/sites/default/files/presse/documents/cp_restauration_jeu_de_paume_en.pdf",
             "attribution": "凡爾賽宮 The Royal Tennis Court restored，PDF 第 6 頁，Jacques-Louis David and the Tennis Court Oath: an unfinished story；策展情境為原創。"
@@ -251,7 +251,7 @@
         "authoring": {
           "method": "researcher_curated_with_ai_assistance", "version": "reading-task-draft-20260902-v1", "review_status": "awaiting_researcher_acceptance",
           "sources": ["https://www.assemblee-nationale.fr/dyn/histoire-et-patrimoine/revolution-francaise/assemblee-nationale-constituante", "https://en.chateauversailles.fr/discover/history/key-dates/jeu-paume-oath-1789", "https://en.chateauversailles.fr/sites/default/files/presse/documents/cp_restauration_jeu_de_paume_en.pdf"],
-          "note": "沿用已確認的模擬題組形式；區分 1791 年預備畫稿、未完成的大型繪畫與 1883 年後來的複製作品。未複製學測題目。"
+          "note": "原創閱讀題組；宣誓內容與畫作背景均為中文改寫，不是逐字引文。編製說明僅供研究者查看。沿用已確認的模擬題組形式；區分 1791 年預備畫稿、未完成的大型繪畫與 1883 年後來的複製作品。未複製學測題目。"
         }
       }
     }
