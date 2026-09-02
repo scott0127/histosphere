@@ -11,6 +11,7 @@ from app.services.prompt_service import PromptService
 
 RAW_RATIONALE = "  I guessed.\nI have not linked it to the evidence.  "
 FULL_TEXT = "Shared authored context. Which rule applied? {{blank:q01}}"
+MATERIAL_TEXT = "The assembly proposed a new rule; the passage does not say it was enacted."
 
 
 def _condition(code="02"):
@@ -34,6 +35,11 @@ def _attempt(answer_correct=True, reasoning_correct=False, issue="insufficient_r
             "contract_version": "error_elicitation_v1",
             "result": "incorrect",
             "error_elicitation_task_full_text": FULL_TEXT,
+            "materials": [{
+                "id": "m01", "title": "Assembly proposal", "text": MATERIAL_TEXT,
+                "source_url": "https://example.org/archive/m01", "attribution": "Archive record",
+                "authoring": "PRIVATE authoring note", "correct_answer": "PRIVATE material key",
+            }],
             "question_results": [{
                 "question_id": "q01",
                 "blank_id": "q01",
@@ -116,6 +122,7 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
         "blank_id": "q02",
         "reasoning_feedback": "OTHER TARGET feedback",
     })
+    before = attempt.model_dump()
     service = PromptService()
     args = dict(event=Event(canonical_name="Test event"), persona=None, condition=_condition(code), task_attempt=attempt)
     modules = (
@@ -126,6 +133,15 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
     learner_task = next(module.content for module in modules if module.name == "learner_task")
     context = json.loads(learner_task.split("Task context: ", 1)[1])
     assert rendered.count(FULL_TEXT) == 1
+    assert rendered.count(MATERIAL_TEXT) == 1
+    assert context["materials"] == [{
+        "id": "m01", "title": "Assembly proposal", "text": MATERIAL_TEXT,
+        "source_url": "https://example.org/archive/m01", "attribution": "Archive record",
+    }]
+    assert "PRIVATE authoring note" not in rendered
+    assert "PRIVATE material key" not in rendered
+    assert "does not bypass Disclosure" in rendered
+    assert attempt.model_dump() == before
     assert context["question_results"][0]["learner_rationale"] == RAW_RATIONALE
     assert "prompt" not in context["question_results"][0]
     assert "not evidence of a factual misconception" in learner_task
