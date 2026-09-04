@@ -567,6 +567,50 @@ def test_terminal_feedback_cannot_close_target_without_showing_the_correct_answe
     assert "corrective_answer_missing" in enforced.metadata["fidelity_flags"]
 
 
+@pytest.mark.parametrize(
+    ("expected_answer", "response_text"),
+    [
+        (True, "依據題文，這一題的正確判斷是「真」。"),
+        (True, "你的最後答案應改為「是」。"),
+        (False, "依據題文，這一題的正確判斷是「假」。"),
+        (False, "你的最後答案應改為「否」。"),
+        (False, "這一句應選「否」。"),
+    ],
+)
+def test_terminal_feedback_accepts_natural_true_false_labels(expected_answer, response_text):
+    attempt = _attempt()
+    attempt.judgement_payload["question_results"][0]["expected_answer"] = expected_answer
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="請整理這一題最後的答案與理由。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "SELF_CORRECT",
+            "dialogue_move": "final_answer_prompt",
+            "disclosure_level": "D4",
+            "completion_status": "final_answer_pending",
+        },
+    )
+    runtime = build_interaction_runtime(_condition("02"), attempt, [previous])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "RESOLVED",
+            "dialogue_move": "corrective_feedback",
+            "disclosure_level": "D4",
+        },
+        response_text,
+    )
+
+    assert enforced.retry_required is False
+    assert enforced.metadata["completion_status"] == "feedback_completed"
+    assert "corrective_answer_missing" not in enforced.metadata["fidelity_flags"]
+
+
 @pytest.mark.parametrize("code", ["02", "04"])
 @pytest.mark.parametrize("pending_status", ["final_answer_pending", "corrective_resolution_pending"])
 def test_final_answer_gets_corrective_feedback_before_next_error_even_if_still_wrong(code, pending_status):

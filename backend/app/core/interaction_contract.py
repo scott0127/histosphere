@@ -755,14 +755,41 @@ def _contains_expected_answer(response_text: str, expected_answer: Any, *, termi
         return False
     compact = re.sub(r"\s+", "", response_text)
     if expected_answer is True:
+        # 是非題可用「是／否」或「真／假」表達；辨認明確加引號的答案，
+        # 不把判定綁死在「答案是」等單一句型上。
+        if any(marker in compact for marker in ("「是」", "『是』", "「真」", "『真』")):
+            return True
         return any(
             marker in compact
-            for marker in ("答案是「是」", "正確答案是「是」", "判斷為真", "這個判斷正確")
+            for marker in (
+                "答案是「是」",
+                "正確答案是「是」",
+                "答案是「真」",
+                "正確答案是「真」",
+                "正確判斷是「真」",
+                "應選「真」",
+                "選擇「真」",
+                "判斷為真",
+                "這個判斷正確",
+            )
         )
     if expected_answer is False:
+        if any(marker in compact for marker in ("「否」", "『否』", "「假」", "『假』")):
+            return True
         return any(
             marker in compact
-            for marker in ("答案是「否」", "正確答案是「否」", "判斷為假", "這個判斷不正確", "說法不成立")
+            for marker in (
+                "答案是「否」",
+                "正確答案是「否」",
+                "答案是「假」",
+                "正確答案是「假」",
+                "正確判斷是「假」",
+                "應選「假」",
+                "選擇「假」",
+                "判斷為假",
+                "這個判斷不正確",
+                "說法不成立",
+            )
         )
     # 收尾需明示正解，但短姓名等不應被強迫加引號或套「正確答案是」固定話術。
     if len(answer) >= 4 or (terminal_feedback and len(answer) >= 2):

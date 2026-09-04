@@ -104,4 +104,5 @@ def test_provider_batches_reasons_with_full_context_in_one_call():
     assert "error_elicitation_task_full_text" in calls[0]["user_prompt"]
     assert "reasoning_criteria" in calls[0]["user_prompt"]
     assert response["answers"][1]["rationale"] in calls[0]["user_prompt"]
+    assert "never return 'both' as a value" in calls[0]["user_prompt"]
     assert len(result["question_results"]) == 3
