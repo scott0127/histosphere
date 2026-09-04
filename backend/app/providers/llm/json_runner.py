@@ -12,6 +12,7 @@ Provider 方法只需要描述任務與 schema，避免每個生成函式各自�
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from time import perf_counter
 from typing import Generic, TypeVar
@@ -139,6 +140,7 @@ class LLMJsonRunner:
         system_prompt: str,
         user_prompt: str,
         task_name: str,
+        payload_validator: Callable[[PayloadT], None] | None = None,
     ) -> LLMRunResult[PayloadT]:
         """以單一模型呼叫 LLM、驗證 JSON，並回傳 per-call metadata。
 
@@ -147,6 +149,7 @@ class LLMJsonRunner:
             system_prompt: LLM system prompt。
             user_prompt: LLM user prompt。
             task_name: 任務名稱，用於錯誤訊息與日誌。
+            payload_validator: 來源白名單等執行期條件的額外驗證器。
 
         Returns:
             LLMRunResult[PayloadT]: 結構化 payload 與本次呼叫的研究 metadata。
@@ -238,8 +241,10 @@ class LLMJsonRunner:
             first_text = await complete(user_prompt)
             try:
                 payload = self._parse(schema, first_text)
+                if payload_validator is not None:
+                    payload_validator(payload)
                 return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"))
-            except (json.JSONDecodeError, ValidationError) as first_error:
+            except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
                 record_rejected_generation(
                     stage="schema_validation_initial",
                     provider=candidate.provider,
@@ -262,7 +267,9 @@ class LLMJsonRunner:
                 )
                 try:
                     payload = self._parse(schema, second_text)
-                except (json.JSONDecodeError, ValidationError) as second_error:
+                    if payload_validator is not None:
+                        payload_validator(payload)
+                except (json.JSONDecodeError, ValidationError, ValueError) as second_error:
                     record_rejected_generation(
                         stage="schema_validation_repair",
                         provider=candidate.provider,

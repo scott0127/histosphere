@@ -159,6 +159,40 @@ def test_json_runner_counts_initial_and_schema_repair_usage(monkeypatch) -> None
     assert result.metadata.estimated_cost_usd == pytest.approx(0.0015)
 
 
+def test_json_runner_repairs_payload_that_fails_dynamic_validation(monkeypatch) -> None:
+    runner = LLMJsonRunner(
+        Settings(llm_model="gpt-5.6-luna", openai_api_key="openai-key")
+    )
+    responses = iter(
+        [
+            LLMCompletion(content='{"value":1}'),
+            LLMCompletion(content='{"value":2}'),
+        ]
+    )
+
+    async def fake_complete(_candidate, **_kwargs) -> LLMCompletion:
+        return next(responses)
+
+    def require_even(payload: _Payload) -> None:
+        if payload.value % 2:
+            raise ValueError("value must be even")
+
+    monkeypatch.setattr(runner, "_complete", fake_complete)
+    result = asyncio.run(
+        runner.run_json(
+            schema=_Payload,
+            system_prompt="system",
+            user_prompt="user",
+            task_name="dynamic_validation_test",
+            payload_validator=require_even,
+        )
+    )
+
+    assert result.payload.value == 2
+    assert result.metadata.schema_repair_count == 1
+    assert result.metadata.attempt_count == 2
+
+
 def test_provider_candidates_carry_provider_specific_configuration() -> None:
     settings = Settings(
         gemini_api_key="gemini-key",

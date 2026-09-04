@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from app.models.domain import Event, EventTask, ExperimentCondition, TaskAttempt, WikiSource
 from app.providers.llm.json_runner import LLMCallMetadata, LLMRunResult
-from app.providers.llm.litellm_provider import LiteLLMProvider
+from app.providers.llm.litellm_provider import LiteLLMProvider, _validate_generated_task_sources
 from app.providers.llm.structured import (
     ChatOutputPayload,
     EventProfilePayload,
@@ -233,3 +235,39 @@ def test_generated_persona_rejects_unknown_profile_fields_inside_runner_schema()
     except ValidationError:
         return
     raise AssertionError("Unknown persona profile fields must be rejected")
+
+
+def test_generated_task_sources_must_match_supplied_urls_exactly() -> None:
+    payload = GeneratedTaskPayload.model_validate(
+        {
+            "title": "測試 Task",
+            "story_text": "",
+            "error_elicitation_task_full_text": "題目 {{blank:q01}}",
+            "evaluation_payload": {
+                "contract_version": "error_elicitation_v1",
+                "materials": [
+                    {
+                        "id": "m01",
+                        "title": "來源",
+                        "text": "內容",
+                        "source_url": "https://example.com/broken",
+                    }
+                ],
+                "questions": [
+                    {
+                        "id": "q01",
+                        "type": "true_false",
+                        "required": True,
+                        "correct_answer": True,
+                        "reasoning_criteria": "理由需符合材料。",
+                    }
+                ],
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match=r"materials\[0\]\.source_url"):
+        _validate_generated_task_sources(
+            payload,
+            allowed_source_urls={"https://example.com/source"},
+        )

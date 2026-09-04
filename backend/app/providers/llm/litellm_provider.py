@@ -69,6 +69,42 @@ CHAT_OUTPUT_JSON_CONTRACT = (
 """Structured completion contract shared by opening and later chat turns."""
 
 
+def _validate_generated_task_sources(
+    payload: GeneratedTaskPayload,
+    *,
+    allowed_source_urls: set[str],
+) -> None:
+    """禁止模型改寫、寫壞或自行新增研究者提供的來源網址。"""
+
+    evaluation = payload.evaluation_payload
+    invalid_fields: list[str] = []
+    materials = evaluation.get("materials", [])
+    for index, material in enumerate(materials if isinstance(materials, list) else []):
+        if not isinstance(material, dict):
+            continue
+        source_url = material.get("source_url")
+        if not isinstance(source_url, str) or source_url not in allowed_source_urls:
+            invalid_fields.append(f"materials[{index}].source_url")
+        if material.get("image_url"):
+            # WikiSource 目前不含圖片來源，所以此處的圖片網址一定不是輸入資料。
+            invalid_fields.append(f"materials[{index}].image_url")
+
+    questions = evaluation.get("questions", [])
+    for index, question in enumerate(questions if isinstance(questions, list) else []):
+        if not isinstance(question, dict):
+            continue
+        source_url = question.get("source_url")
+        if source_url is not None and source_url not in allowed_source_urls:
+            invalid_fields.append(f"questions[{index}].source_url")
+
+    if invalid_fields:
+        fields = ", ".join(invalid_fields)
+        raise ValueError(
+            "Generated task must copy only supplied source URLs exactly; invalid fields: "
+            f"{fields}"
+        )
+
+
 class LiteLLMProvider:
     """正式 runtime LLM provider，透過 LiteLLM 統一呼叫各模型。
 
@@ -138,6 +174,11 @@ class LiteLLMProvider:
         Returns:
             EventTask: 生成的 task（revision_state 為 ``"llm_generated"``）。
         """
+        allowed_source_urls = {
+            source.page_url
+            for source in sources
+            if isinstance(source.page_url, str) and source.page_url
+        }
         run = await self.runner.run_json(
             schema=GeneratedTaskPayload,
             task_name="generate_task",
@@ -164,8 +205,12 @@ class LiteLLMProvider:
                 "state what makes a reason support the answer, without keyword matching, required jargon, or counting "
                 "Historical Thinking dimensions. Include common invalid inferences where helpful. Keys and criteria "
                 "must be supported by the supplied sources, not invented historical claims.\n"
+                "Each question must examine a different historical claim or evidence relationship. Never ask the same "
+                "date, name, event, or factual relationship again in another question type. At least one question must "
+                "require comparing or evaluating supplied information rather than simple fact retrieval.\n"
                 "materials is a small list of learner-readable source materials: id,title,text,source_url,attribution; "
-                "optional image_url ONLY if provided in sources (do not invent an image URL). Use supplied source URLs. "
+                "Do not output image_url because this input contains no image source. Copy source_url character-for-character "
+                "from the supplied sources; never translate, re-encode, shorten or invent a URL. "
                 "Clearly label researcher paraphrases as summaries, not verbatim historical documents. Do not include "
                 "answer keys, corrective feedback or fabricated primary quotations in the material or full text. "
                 "Use factual source observations; do not pre-explain the exact reasoning that a question asks the learner "
@@ -177,6 +222,10 @@ class LiteLLMProvider:
                 "Traditional Chinese. These drafts require researcher verification before formal use.\n\n"
                 f"Event:\n{event.model_dump()}\n\n"
                 f"Wikipedia sources:\n{self._format_sources(sources)}"
+            ),
+            payload_validator=lambda payload: _validate_generated_task_sources(
+                payload,
+                allowed_source_urls=allowed_source_urls,
             ),
         )
         payload = run.payload
