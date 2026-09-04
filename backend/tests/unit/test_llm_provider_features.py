@@ -103,12 +103,11 @@ def test_all_six_provider_features_use_their_structured_contract_and_keep_usage(
             ),
             "generate_task": _generated_task_payload(),
             "judge_task_attempt": ErrorElicitationJudgementPayload(
-                judge_contract_version="error_elicitation_judge_v2",
+                judge_contract_version="error_elicitation_judge_v3",
                 question_results=[
                     {
                         "question_id": "q01",
                         "reasoning_correct": False,
-                        "reasoning_issue_types": ["reasoning_error"],
                         "reasoning_feedback": "理由忽略了人口與代表數差異。",
                         "historical_thinking_tags": ["evidence"],
                     }

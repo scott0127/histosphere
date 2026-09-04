@@ -583,7 +583,7 @@ async def _run_judge(provider: Any) -> dict[str, Any]:
     question_results = result.get("question_results") or []
     first = question_results[0] if question_results else {}
     flags: list[str] = []
-    if result.get("judge_contract_version") != "error_elicitation_judge_v2":
+    if result.get("judge_contract_version") != "error_elicitation_judge_v3":
         flags.append("wrong_contract_version")
     if len(question_results) != 1 or first.get("question_id") != "q01":
         flags.append("question_coverage_error")

@@ -312,9 +312,8 @@ class PromptService:
                 for key in (
                     "question_id", "blank_id", "question_type", "question_text", "source_text",
                     "learner_answer", "learner_rationale", "answer_correct", "reasoning_correct",
-                    "reasoning_issue_types", "historical_thinking_tags", "reasoning_issue",
-                    "reasoning_feedback", "reasoning_criteria", "expected_answer",
-                    "error_code", "evidence_ids",
+                    "historical_thinking_tags", "reasoning_feedback", "reasoning_criteria", "expected_answer",
+                    "evidence_ids",
                 )
             })
             results[-1]["correctness"] = question_result_correctness(result)
@@ -352,8 +351,10 @@ class PromptService:
             "image pixels: do not claim visual details beyond the supplied text, caption, or image_alt. "
             f"{mode}"
             "Preserve learner_rationale as submitted. A correct answer with incorrect reasoning remains a learning "
-            "target. reasoning_error is not automatically a factual misconception: do not invent beliefs or call a "
-            "correct answer wrong. Historical Thinking tags are descriptive context, not a learner score or a mandate "
+            "target. Use reasoning_feedback to understand the concrete weakness and choose a relevant response, but do "
+            "not quote it as learner-facing feedback or bypass Disclosure. An inadequate rationale is not automatically "
+            "a factual misconception: do not invent beliefs or call a correct answer wrong. Historical Thinking tags "
+            "are descriptive context, not a learner score or a mandate "
             "to name or teach a dimension. Criteria, source_text, expected_answer, and reasoning_feedback are "
             "private evaluation context, not learner-visible feedback or authorization to bypass Disclosure.\n"
             f"Task context: {json.dumps(context, ensure_ascii=False)}"

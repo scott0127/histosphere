@@ -107,7 +107,6 @@ export interface ErrorElicitationResponsePayload {
 export interface ErrorElicitationReasoningJudgement {
   question_id: string;
   reasoning_correct: boolean;
-  reasoning_issue_types: Array<'factual_error' | 'reasoning_error'>;
   reasoning_feedback: string;
   historical_thinking_tags: Array<
     | 'historical_significance'

@@ -26,8 +26,7 @@ def _condition(code="02"):
     )
 
 
-def _attempt(answer_correct=True, reasoning_correct=False, issue_types=None):
-    issue_types = ["reasoning_error"] if issue_types is None and not reasoning_correct else (issue_types or [])
+def _attempt(answer_correct=True, reasoning_correct=False):
     return TaskAttempt(
         task_id="task-1",
         event_id="event-1",
@@ -52,13 +51,11 @@ def _attempt(answer_correct=True, reasoning_correct=False, issue_types=None):
                 "learner_rationale": RAW_RATIONALE,
                 "answer_correct": answer_correct,
                 "reasoning_correct": reasoning_correct,
-                "reasoning_issue_types": issue_types,
                 "reasoning_feedback": "PRIVATE feedback",
                 "historical_thinking_tags": ["evidence"],
                 "reasoning_criteria": "PRIVATE criteria",
                 "correctness": "correct" if answer_correct and reasoning_correct else "incorrect",
                 "expected_answer": "B",
-                "error_code": issue_types[0] if issue_types else None,
                 "evidence_ids": ["m01"],
             }],
         },
@@ -92,7 +89,7 @@ def test_two_dimensions_override_stale_correctness_for_queue_selection():
     assert runtime.target.correctness == "incorrect"
 
 
-def test_reasoning_error_can_restate_the_already_correct_answer_without_revealing_a_new_one():
+def test_reasoning_gap_can_restate_the_already_correct_answer_without_revealing_a_new_one():
     runtime = build_interaction_runtime(_condition(), _attempt(), [])
     output = {"dialogue_state": "NOTICE_ERROR", "dialogue_move": "error_awareness_prompt", "disclosure_level": "D0"}
     response = "你原先選了「B」，能再看看原本的理由哪裡需要重新想一想？"
@@ -101,17 +98,16 @@ def test_reasoning_error_can_restate_the_already_correct_answer_without_revealin
     assert "early_answer_exposure" in enforce_interaction_response(wrong_answer_runtime, output, response).metadata["fidelity_flags"]
 
 
-@pytest.mark.parametrize("issue_types", [["reasoning_error"], ["factual_error"], ["factual_error", "reasoning_error"]])
-def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue_types):
-    runtime = build_interaction_runtime(_condition(), _attempt(issue_types=issue_types), [])
+def test_reasoning_feedback_reaches_private_prompt_but_not_public_metadata():
+    runtime = build_interaction_runtime(_condition(), _attempt(), [])
     prompt = runtime.prompt_block()
     payload = json.loads(prompt.split("Current target: ", 1)[1].split("\n", 1)[0])
     assert payload["learner_rationale"] == RAW_RATIONALE
-    assert payload["reasoning_issue_types"] == issue_types
+    assert "reasoning_issue_types" not in payload
     assert payload["historical_thinking_tags"] == ["evidence"]
     assert payload["reasoning_feedback"] == "PRIVATE feedback"
     assert payload["reasoning_criteria"] == "PRIVATE criteria"
-    assert "not automatically a factual misconception" in prompt
+    assert "Use reasoning_feedback to locate the concrete factual or inferential deficiency" in prompt
     metadata = resolve_interaction_metadata(runtime, {
         "dialogue_state": "NOTICE_ERROR",
         "dialogue_move": "error_awareness_prompt",
@@ -119,7 +115,7 @@ def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue_type
     }, "What supported your answer?")
     assert metadata["answer_correct"] is True
     assert metadata["reasoning_correct"] is False
-    assert metadata["reasoning_issue_types"] == issue_types
+    assert "reasoning_issue_types" not in metadata
     assert metadata["historical_thinking_tags"] == ["evidence"]
     assert metadata["completion_status"] == "continue"
     assert "reasoning_feedback" not in metadata

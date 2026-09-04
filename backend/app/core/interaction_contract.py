@@ -130,7 +130,6 @@ class InteractionTarget:
     learner_rationale: str | None = None
     answer_correct: bool | None = None
     reasoning_correct: bool | None = None
-    reasoning_issue_types: tuple[str, ...] = ()
     historical_thinking_tags: tuple[str, ...] = ()
     # 僅用於讀取舊 judgement_payload；新版 Judge 不再產生此欄位。
     reasoning_issue: str | None = None
@@ -151,7 +150,6 @@ class InteractionTarget:
             "question_type": self.question_type,
             "answer_correct": self.answer_correct,
             "reasoning_correct": self.reasoning_correct,
-            "reasoning_issue_types": list(self.reasoning_issue_types),
             "historical_thinking_tags": list(self.historical_thinking_tags),
         }
 
@@ -240,7 +238,6 @@ class InteractionRuntime:
             "learner_rationale": target.learner_rationale if target else None,
             "answer_correct": target.answer_correct if target else None,
             "reasoning_correct": target.reasoning_correct if target else None,
-            "reasoning_issue_types": list(target.reasoning_issue_types) if target else [],
             "historical_thinking_tags": list(target.historical_thinking_tags) if target else [],
             "reasoning_feedback": target.reasoning_feedback if target else None,
             "reasoning_criteria": target.reasoning_criteria if target else None,
@@ -263,8 +260,9 @@ class InteractionRuntime:
                 "\nThe submitted learner_rationale is the learner's original wording, not an inferred belief. "
                 "An item is correct only when answer_correct and reasoning_correct are both true. "
                 "When the answer is right but the reasoning is not, focus on the reasoning gap; do not describe "
-                "the answer itself as wrong. reasoning_error can mean an unsupported, irrelevant, inconsistent, "
-                "or insufficient explanation; it is not automatically a factual misconception. Historical Thinking "
+                "the answer itself as wrong. Use reasoning_feedback to locate the concrete factual or inferential "
+                "deficiency, but do not quote it to the learner or disclose more than the current Disclosure level. "
+                "An inadequate rationale is not automatically proof of a factual misconception. Historical Thinking "
                 "tags describe what the rationale engages and are not a score or an instruction to teach that label. "
                 "Do not invent a misconception or attribute an unstated belief to the learner. These distinctions do not change the dialogue "
                 "states, Disclosure progression, or formal RESOLVED criteria."
@@ -500,15 +498,6 @@ def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
         or ("error_correction" if correctness != "correct" else "justification_probe")
     )
     evidence_ids = result.get("evidence_ids")
-    issue_types = result.get("reasoning_issue_types")
-    if not isinstance(issue_types, list):
-        legacy_issue = result.get("reasoning_issue")
-        if legacy_issue == "factual_error":
-            issue_types = ["factual_error"]
-        elif legacy_issue and legacy_issue != "none":
-            issue_types = ["reasoning_error"]
-        else:
-            issue_types = []
     historical_thinking_tags = result.get("historical_thinking_tags")
     if not isinstance(historical_thinking_tags, list):
         historical_thinking_tags = []
@@ -538,7 +527,6 @@ def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
         learner_rationale=result.get("learner_rationale"),
         answer_correct=result.get("answer_correct"),
         reasoning_correct=result.get("reasoning_correct"),
-        reasoning_issue_types=tuple(str(item) for item in issue_types if item),
         historical_thinking_tags=tuple(
             str(item)
             for item in historical_thinking_tags or []

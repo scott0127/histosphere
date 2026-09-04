@@ -250,15 +250,6 @@ def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dic
             "reasoning_criteria": question["reasoning_criteria"],
             "source_text": question.get("source_text"),
             "evidence_ids": question.get("accepted_evidence_ids", []),
-            "error_code": None if result.correctness == "correct" else (
-                "answer_incorrect"
-                if not answer_correct
-                else (
-                    "factual_error"
-                    if "factual_error" in rationale.reasoning_issue_types
-                    else "reasoning_error"
-                )
-            ),
         })
     enriched = {
         **{key: value for key, value in judgement.items() if key not in {"score", "question_results"}},

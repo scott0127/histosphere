@@ -65,10 +65,10 @@ def _seed(client, admin_test=False):
                 "question_text": "Which rule applied? {{blank:q01}}", "source_text": "PRIVATE_SOURCE",
                 "learner_answer": "B", "learner_rationale": RATIONALE,
                 "answer_correct": True, "reasoning_correct": False,
-                "reasoning_issue_types": ["reasoning_error"], "reasoning_feedback": "PRIVATE_FEEDBACK",
+                "reasoning_feedback": "PRIVATE_FEEDBACK",
                 "historical_thinking_tags": ["evidence"],
                 "reasoning_criteria": "PRIVATE_CRITERIA", "correctness": "incorrect",
-                "expected_answer": "PRIVATE_EXPECTED", "error_code": "reasoning_error",
+                "expected_answer": "PRIVATE_EXPECTED",
                 "evidence_ids": ["m01"],
             }],
         },
@@ -83,7 +83,7 @@ def _seed(client, admin_test=False):
             "interaction_policy_version": "2x2-interaction-v7", "target_question_id": "q01",
             "dialogue_state": "ELICIT_REASONING", "disclosure_level": "D0", "completion_status": "continue",
             "target_count": 1, "target_sequence_number": 1,
-            "reasoning_issue_types": ["reasoning_error"], "historical_thinking_tags": ["evidence"],
+            "historical_thinking_tags": ["evidence"],
             "llm_call": {"total_tokens": 18},
             "nested": {"judgement": attempt.judgement_payload, "keep": "runtime"},
         },
@@ -269,7 +269,7 @@ def test_actual_chat_preserves_reasoning_target_and_raw_prompt_in_admin_research
     assert metadata["probe_kind"] == "reasoning_gap"
     assert metadata["answer_correct"] is True
     assert metadata["reasoning_correct"] is False
-    assert metadata["reasoning_issue_types"] == ["reasoning_error"]
+    assert "reasoning_issue_types" not in metadata
     assert metadata["historical_thinking_tags"] == ["evidence"]
     _assert_private_absent(response.json())
 
@@ -282,4 +282,4 @@ def test_actual_chat_preserves_reasoning_target_and_raw_prompt_in_admin_research
     assert task_context["question_results"][0]["learner_rationale"] == RATIONALE
     assert task_context["question_results"][0]["reasoning_criteria"] == "PRIVATE_CRITERIA"
     assert task_context["error_elicitation_task_full_text"] == FULL_TEXT
-    assert research.json()["messages"][-1]["metadata"]["reasoning_issue_types"] == ["reasoning_error"]
+    assert "reasoning_issue_types" not in research.json()["messages"][-1]["metadata"]
