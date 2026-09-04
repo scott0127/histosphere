@@ -30,27 +30,27 @@ HISTORICAL_EBL_MOVES: Final[dict[str, HistoricalEblMove]] = {
         dialogue_move="error_awareness_prompt",
         primary_reasoning_move="recognize_the_current_error",
         learner_action=(
-            "Revisit the submitted answer and rationale and recognize which part may need correction. "
-            "Use the rationale already supplied; do not demand that the learner repeat it verbatim."
+            "Outcome: the learner identifies which part of the submitted answer or rationale may need correction. "
+            "Use the rationale already supplied; do not require it to be repeated verbatim."
         ),
         allowed_support=("neutral_restatement", "focused_prompt", "sentence_stem"),
     ),
     "REFLECT": HistoricalEblMove(
         dialogue_move="reflection_prompt",
         primary_reasoning_move="analyze_and_reflect_on_the_error",
-        learner_action="Explain what went wrong in the original answer or reasoning and why it needs changing.",
+        learner_action="Outcome: the learner explains what went wrong in the original reasoning and why it needs changing.",
         allowed_support=("focused_hint", "reflection_cue", "sentence_stem"),
     ),
     "SELF_CORRECT": HistoricalEblMove(
         dialogue_move="self_correction_prompt",
         primary_reasoning_move="reattempt_and_self_correct",
-        learner_action="Try again by revising the mistaken answer or rationale in the learner's own words.",
+        learner_action="Outcome: the learner states a revised answer or rationale without the AI supplying it.",
         allowed_support=("revision_cue", "partial_structure", "focused_hint"),
     ),
     "RESOLVED": HistoricalEblMove(
         dialogue_move="resolution",
         primary_reasoning_move="confirm_correction_and_transition",
-        learner_action="Consolidate the corrected claim, then move to the next unresolved error if one exists.",
+        learner_action="Outcome: the corrected claim is consolidated before any next unresolved error begins.",
         allowed_support=("concise_feedback", "correct_answer_confirmation", "next_target_bridge"),
     ),
 }

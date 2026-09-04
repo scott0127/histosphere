@@ -321,8 +321,8 @@ class InteractionRuntime:
             terminal_instruction = (
                 "Max-support decision: this learner message follows D4 support. If the learner has already "
                 "recognized, reflected on, and corrected the error, resolve normally and confirm the verified "
-                "answer before transitioning. Otherwise, ask the learner to organize their own final answer and "
-                "reason in their own words. Do NOT give the correct answer yet and do NOT change target. Use "
+                "answer before transitioning. Otherwise, elicit one final answer and rationale from the learner "
+                "without supplying either. Do NOT give the correct answer yet and do NOT change target. Use "
                 "dialogue_state=SELF_CORRECT, dialogue_move=final_answer_prompt, disclosure_level=D4, "
                 "completion_status=final_answer_pending. The next learner reply triggers terminal feedback, "
                 "not another round of assessment or hints."
@@ -779,6 +779,13 @@ def _contains_expected_answer(response_text: str, expected_answer: Any, *, termi
                 "說法不成立",
             )
         )
+    # 最終回饋可自然使用單一選項代號；較早階段仍要求明確作答語句，避免把「資料 A」誤判成洩漏。
+    if terminal_feedback and len(answer) == 1 and answer.upper() in "ABCDEFGH":
+        return re.search(
+            rf"(?<![A-Za-z0-9]){re.escape(answer)}(?![A-Za-z0-9])",
+            response_text,
+            flags=re.IGNORECASE,
+        ) is not None
     # 收尾需明示正解，但短姓名等不應被強迫加引號或套「正確答案是」固定話術。
     if len(answer) >= 4 or (terminal_feedback and len(answer) >= 2):
         return answer in response_text
@@ -789,6 +796,9 @@ def _contains_expected_answer(response_text: str, expected_answer: Any, *, termi
             f"『{answer}』",
             f"答案是{answer}",
             f"正確答案是{answer}",
+            f"應選{answer}",
+            f"改選{answer}",
+            f"選{answer}",
             f"應以{answer}",
             f"按{answer}",
             f"選擇{answer}",

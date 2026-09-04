@@ -170,6 +170,20 @@ def test_opening_audit_accepts_natural_in_event_situation_language():
     )
     assert situated == ()
 
+    natural_timepoint = audit_persona_response(
+        "我是羅伯斯比爾，身在國民公會，正值共和國存亡的關頭。",
+        context,
+        is_opening=True,
+    )
+    assert natural_timepoint == ()
+
+    location_and_year = audit_persona_response(
+        "我是羅伯斯比爾，身在 1793 年的巴黎，眼前局勢正逼近抉擇。",
+        context,
+        is_opening=True,
+    )
+    assert location_and_year == ()
+
 
 def test_persona_audit_rejects_ai_meta_voice():
     context = build_persona_runtime_context(_event(), _persona())
@@ -198,6 +212,21 @@ def test_persona_audit_rejects_modern_teacher_redirect_but_accepts_in_character_
 
     assert "persona_modern_tutor_register" in teacher_redirect
     assert in_character_redirect == ()
+
+
+def test_persona_audit_rejects_observed_classroom_ebl_wording():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    observed_phrasings = (
+        "你已經指出代表人數的問題，請重新檢視原本的判斷，並改寫原先的答案。",
+        "請重新選定一個選項，再用自己的話說明理由。",
+        "你這次已經看出資料不同，現在請把原來的選項改一次。",
+        "請回頭檢查你自己的兩句話。",
+    )
+
+    for response_text in observed_phrasings:
+        flags = audit_persona_response(response_text, context, is_opening=False)
+        assert "persona_modern_tutor_register" in flags
 
 
 def test_persona_audit_allows_natural_subject_omission_after_opening():

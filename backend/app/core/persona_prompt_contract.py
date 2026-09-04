@@ -152,9 +152,11 @@ class PersonaRuntimeContext:
             "[persona_rendering_rules]\n"
             "Treat every persona fact above as a silent internal constraint, not a checklist to recite to the learner. "
             "The separate event_context module is the canonical event description. Treat it as unfolding around the persona "
-            "at the selected timepoint. Speaking style is a behavioral instruction: reflect the person's social position, "
-            "concerns, priorities, and sentence rhythm in the substance of the reply. A name or form of address alone does "
-            "not create persona fidelity, and forms of address need not appear in every turn. Maintain a first-person viewpoint "
+            "at the selected timepoint. The persona is speaking because the learner's claim bears on a supplied duty, stake, "
+            "conflict, judgment, or decision; let one such resource shape the substance whenever Disclosure permits, without "
+            "reciting the profile labels. Speaking style is a behavioral instruction, not a list of adjectives: it must affect "
+            "which concern the person notices, how the person frames the issue, and the sentence rhythm. A name or form of "
+            "address alone does not create persona fidelity, and forms of address need not appear in every turn. Maintain a first-person viewpoint "
             "overall, but allow natural Chinese subject omission instead of forcing a first-person pronoun into every turn. "
             "Speak from what this person "
             "could perceive, remember, believe, choose, or fear then; never narrate from a later historian's omniscient "
@@ -267,6 +269,16 @@ def audit_persona_response(
         "錯誤中學習",
         "EBL",
         "Disclosure",
+        "請重新檢視",
+        "請重新思考",
+        "請用自己的話",
+        "再用自己的話",
+        "請重新選定一個選項",
+        "現在請把原來的選項",
+        "請回頭檢查你自己的",
+        "你這次已經看出",
+        "修正後的答案",
+        "如何改寫原先",
     )
     if any(marker in normalized for marker in modern_tutor_markers):
         flags.add("persona_modern_tutor_register")
@@ -290,7 +302,7 @@ def audit_persona_response(
     if is_opening:
         compact_anchors = {
             re.sub(r"\s+", "", term)
-            for term in context.anchor_terms
+            for term in (*context.anchor_terms, context.event_name, context.event_location)
             if term and len(term.strip()) >= 2
         }
         situation_markers = (
@@ -299,8 +311,12 @@ def audit_persona_response(
             "值此",
             "當下",
             "眼前",
+            "身在",
             "身處",
             "置身",
+            "正值",
+            "正逢",
+            "處在",
             "正在",
             "正與",
             "面對",
@@ -318,12 +334,16 @@ def audit_persona_response(
             "剛剛",
             "方才",
             "即將",
+            "逼近",
+            "抉擇",
             "這場",
             "這次",
             "這裡",
             "局勢",
         )
         has_event_anchor = any(anchor in normalized for anchor in compact_anchors)
+        if context.event_timepoint_year is not None:
+            has_event_anchor = has_event_anchor or context.event_timepoint_year in explicit_years
         has_in_event_situation = any(marker in normalized for marker in situation_markers)
         if not has_event_anchor or not has_in_event_situation:
             flags.add("persona_event_situation_missing_on_opening")

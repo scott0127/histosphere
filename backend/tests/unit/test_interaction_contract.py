@@ -611,6 +611,64 @@ def test_terminal_feedback_accepts_natural_true_false_labels(expected_answer, re
     assert "corrective_answer_missing" not in enforced.metadata["fidelity_flags"]
 
 
+def test_terminal_feedback_accepts_standalone_multiple_choice_code():
+    attempt = _attempt()
+    attempt.judgement_payload["question_results"][0]["expected_answer"] = "A"
+    previous = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="AI Tutor",
+        content="請整理這一題最後的答案與理由。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01",
+            "dialogue_state": "SELF_CORRECT",
+            "dialogue_move": "final_answer_prompt",
+            "disclosure_level": "D4",
+            "completion_status": "final_answer_pending",
+        },
+    )
+    runtime = build_interaction_runtime(_condition("02"), attempt, [previous])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "RESOLVED",
+            "dialogue_move": "corrective_feedback",
+            "disclosure_level": "D4",
+        },
+        "A 才符合材料；兩個方案都有議事機構，但權力歸屬並不相同。",
+    )
+
+    assert enforced.retry_required is False
+    assert "corrective_answer_missing" not in enforced.metadata["fidelity_flags"]
+
+
+def test_nonterminal_choice_code_does_not_confuse_source_label_with_answer_leak():
+    attempt = _attempt()
+    attempt.judgement_payload["question_results"][0]["expected_answer"] = "A"
+    runtime = build_interaction_runtime(_condition("02"), attempt, [])
+    metadata = {
+        "dialogue_state": "NOTICE_ERROR",
+        "dialogue_move": "error_awareness_prompt",
+        "disclosure_level": "D0",
+    }
+
+    source_reference = enforce_interaction_response(
+        runtime,
+        metadata,
+        "資料 A 提供了事件背景，但先說說你原本的推論如何成立。",
+    )
+    explicit_answer = enforce_interaction_response(
+        runtime,
+        metadata,
+        "這題應選 A。",
+    )
+
+    assert "early_answer_exposure" not in source_reference.metadata["fidelity_flags"]
+    assert "early_answer_exposure" in explicit_answer.metadata["fidelity_flags"]
+
+
 @pytest.mark.parametrize("code", ["02", "04"])
 @pytest.mark.parametrize("pending_status", ["final_answer_pending", "corrective_resolution_pending"])
 def test_final_answer_gets_corrective_feedback_before_next_error_even_if_still_wrong(code, pending_status):

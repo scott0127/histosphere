@@ -290,6 +290,45 @@ def test_json_runner_retries_transient_failure_on_same_model_and_records_metadat
     assert result.metadata.correlation_id
 
 
+def test_json_runner_treats_empty_provider_response_as_retryable(monkeypatch) -> None:
+    runner = LLMJsonRunner(
+        Settings(
+            llm_model="gpt-5.6-luna",
+            openai_api_key="openai-key",
+        )
+    )
+    attempts = 0
+
+    async def fake_complete(_candidate, **_kwargs) -> LLMCompletion:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("LLM returned empty content (finish_reason=length)")
+        return LLMCompletion(
+            content='{"value":1}',
+            prompt_tokens=12,
+            completion_tokens=4,
+            total_tokens=16,
+            finish_reason="stop",
+        )
+
+    monkeypatch.setattr(runner, "_complete", fake_complete)
+
+    result = asyncio.run(
+        runner.run_json(
+            schema=_Payload,
+            system_prompt="system",
+            user_prompt="user",
+            task_name="empty_response_test",
+        )
+    )
+
+    assert result.payload.value == 1
+    assert attempts == 2
+    assert result.metadata.transient_retry_count == 1
+    assert result.metadata.retry_reason == "empty_response"
+
+
 def test_chat_provider_passes_the_canonical_learner_message_only_once(monkeypatch) -> None:
     provider = LiteLLMProvider(
         Settings(

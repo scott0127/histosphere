@@ -351,7 +351,10 @@ class LLMJsonRunner:
         response = await acompletion(**kwargs)
         content = response.choices[0].message.content
         if not content:
-            raise RuntimeError("LLM returned empty content")
+            raise RuntimeError(
+                "LLM returned empty content "
+                f"(finish_reason={self._finish_reason(response) or 'unknown'})"
+            )
         usage = getattr(response, "usage", None)
         return LLMCompletion(
             content=str(content),
@@ -553,6 +556,8 @@ class LLMJsonRunner:
             return "connection"
         if isinstance(exc, (json.JSONDecodeError, ValidationError)):
             return "schema_validation"
+        if str(exc).startswith("LLM returned empty content"):
+            return "empty_response"
 
         name = type(exc).__name__.lower()
         if "timeout" in name:
@@ -565,13 +570,14 @@ class LLMJsonRunner:
 
     @classmethod
     def _is_transient_error(cls, exc: Exception) -> bool:
-        """只有逾時、限流、連線與 5xx 才能以原 provider 重試。"""
+        """只有暫時性錯誤與空回應才能以原 provider 重試。"""
 
         return cls._failure_category(exc) in {
             "timeout",
             "rate_limited",
             "connection",
             "provider_transient",
+            "empty_response",
         }
 
     @staticmethod
