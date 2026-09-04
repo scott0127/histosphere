@@ -162,6 +162,8 @@ class Settings(BaseModel):
         llm_timeout_seconds: LLM 請求逾時秒數。
         gemini_api_key: Gemini API key（可選）。
         gemini_reasoning_effort: Gemini thinking 強度；即時對話預設 ``minimal``。
+        openai_api_key: OpenAI API key（可選）。
+        openai_reasoning_effort: GPT reasoning 強度；即時對話預設 ``low``。
         nvidia_api_key: NVIDIA NIM API key（可選）。
         nvidia_api_base: NVIDIA NIM API base URL。
         nvidia_llm_model: NVIDIA 專用的模型名稱。
@@ -193,6 +195,8 @@ class Settings(BaseModel):
     llm_timeout_seconds: float = 60.0
     gemini_api_key: str | None = None
     gemini_reasoning_effort: str = "minimal"
+    openai_api_key: str | None = None
+    openai_reasoning_effort: str = "low"
     nvidia_api_key: str | None = None
     nvidia_api_base: str = "https://integrate.api.nvidia.com/v1"
     nvidia_llm_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
@@ -287,6 +291,8 @@ def get_settings() -> Settings:
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_reasoning_effort=os.getenv("GEMINI_REASONING_EFFORT", "minimal"),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "low"),
         nvidia_api_key=os.getenv("NVIDIA_API_KEY"),
         nvidia_api_base=os.getenv("NVIDIA_API_BASE", "https://integrate.api.nvidia.com/v1"),
         nvidia_llm_model=os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"),

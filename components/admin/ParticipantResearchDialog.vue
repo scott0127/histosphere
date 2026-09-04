@@ -32,14 +32,21 @@
         </header>
 
         <div class="overflow-y-auto px-6 py-5">
-          <div class="grid gap-px overflow-hidden rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-border)] md:grid-cols-4">
+          <div class="grid gap-px overflow-hidden rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-border)] md:grid-cols-3 xl:grid-cols-6">
             <div v-for="item in summaryItems" :key="item.label" class="bg-[var(--admin-surface)] px-4 py-3">
               <p class="admin-caption text-xs font-bold">{{ item.label }}</p>
               <p class="admin-heading mt-1 text-xl font-black">{{ item.value }}</p>
             </div>
           </div>
           <p class="admin-caption mt-2 text-xs font-semibold">
-            Token 覆蓋 {{ formatPercent(research.stats.token_usage_coverage) }}；僅加總 Provider 實際回報的用量，不估算缺漏值。
+            共 {{ research.stats.llm_calls_total }} 次 LLM 呼叫（含 Task judge、開場與聊天）；Token 覆蓋
+            {{ formatPercent(research.stats.token_usage_coverage) }}。快取輸入
+            {{ research.stats.cached_prompt_tokens.toLocaleString() }}；推理 Token
+            {{ research.stats.reasoning_tokens.toLocaleString() }}（已包含於輸出 Token）。
+            <template v-if="research.stats.cost_usage_complete && research.stats.estimated_cost_usd != null">
+              估計成本 {{ formatUsd(research.stats.estimated_cost_usd) }}。
+            </template>
+            <template v-else>成本資料不完整，不顯示部分估計。</template>
           </p>
 
           <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.75fr)]">
@@ -152,7 +159,9 @@ const summaryItems = computed(() => {
     { label: '總訊息數', value: stats.total_messages },
     { label: '受測者 / AI', value: `${stats.learner_messages} / ${stats.assistant_messages}` },
     { label: '完成來回', value: stats.completed_exchanges },
-    { label: '總 Token', value: stats.total_tokens.toLocaleString() },
+    { label: '輸入 Token', value: stats.prompt_tokens.toLocaleString() },
+    { label: '輸出 Token', value: stats.completion_tokens.toLocaleString() },
+    { label: 'Session 總 Token', value: stats.total_tokens.toLocaleString() },
   ];
 });
 
@@ -163,6 +172,7 @@ const taskPayload = computed(() => JSON.stringify({
 
 const shortId = (id: string) => `${id.slice(0, 8)}...${id.slice(-4)}`;
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
+const formatUsd = (value: number) => `US$${value.toFixed(6)}`;
 const formatDate = (value?: string | null) => value
   ? new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
   : '未記錄';
@@ -173,6 +183,9 @@ const promptStageLabel = (stage: string) => stage === 'conversation_opening' ? '
 const llmLabel = (llmCall?: Record<string, unknown> | null) => {
   if (!llmCall) return '未記錄模型用量';
   const total = llmCall.total_tokens == null ? 'Token 未回報' : `${llmCall.total_tokens} tokens`;
-  return `${llmCall.provider || 'unknown'} / ${llmCall.model || 'unknown'} · ${total}`;
+  const cost = typeof llmCall.estimated_cost_usd === 'number'
+    ? ` · ${formatUsd(llmCall.estimated_cost_usd)}`
+    : '';
+  return `${llmCall.provider || 'unknown'} / ${llmCall.model || 'unknown'} · ${total}${cost}`;
 };
 </script>

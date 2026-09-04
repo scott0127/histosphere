@@ -17,7 +17,7 @@ from time import perf_counter
 from typing import Generic, TypeVar
 from uuid import uuid4
 
-from litellm import acompletion
+from litellm import acompletion, completion_cost
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
@@ -59,8 +59,11 @@ class LLMCompletion:
 
     content: str
     prompt_tokens: int | None = None
+    cached_prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
     total_tokens: int | None = None
+    estimated_cost_usd: float | None = None
     finish_reason: str | None = None
 
 
@@ -82,8 +85,11 @@ class LLMCallMetadata:
     retry_reason: str | None = None
     failure_category: str | None = None
     prompt_tokens: int | None = None
+    cached_prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
     total_tokens: int | None = None
+    estimated_cost_usd: float | None = None
     finish_reason: str | None = None
 
     def as_dict(self) -> dict:
@@ -158,10 +164,14 @@ class LLMJsonRunner:
         finish_reason: str | None = None
         token_totals = {
             "prompt_tokens": 0,
+            "cached_prompt_tokens": 0,
             "completion_tokens": 0,
+            "reasoning_tokens": 0,
             "total_tokens": 0,
         }
         token_usage_seen = False
+        estimated_cost_usd = 0.0
+        cost_seen = False
 
         def build_metadata(
             *,
@@ -183,14 +193,20 @@ class LLMJsonRunner:
                 retry_reason=retry_reason,
                 failure_category=failure_category,
                 prompt_tokens=token_totals["prompt_tokens"] if token_usage_seen else None,
+                cached_prompt_tokens=(
+                    token_totals["cached_prompt_tokens"] if token_usage_seen else None
+                ),
                 completion_tokens=token_totals["completion_tokens"] if token_usage_seen else None,
+                reasoning_tokens=token_totals["reasoning_tokens"] if token_usage_seen else None,
                 total_tokens=token_totals["total_tokens"] if token_usage_seen else None,
+                estimated_cost_usd=estimated_cost_usd if cost_seen else None,
                 finish_reason=finish_reason,
             )
 
         async def complete(current_user_prompt: str) -> str:
             nonlocal attempt_count, finish_reason, retry_reason
             nonlocal token_usage_seen, transient_retry_count
+            nonlocal estimated_cost_usd, cost_seen
 
             for retry_index in range(MAX_TRANSIENT_RETRIES + 1):
                 attempt_count += 1
@@ -205,6 +221,9 @@ class LLMJsonRunner:
                         if value is not None:
                             token_totals[field_name] += value
                             token_usage_seen = True
+                    if completion.estimated_cost_usd is not None:
+                        estimated_cost_usd += completion.estimated_cost_usd
+                        cost_seen = True
                     finish_reason = completion.finish_reason
                     return completion.content
                 except Exception as exc:
@@ -319,7 +338,7 @@ class LLMJsonRunner:
             kwargs["extra_body"] = candidate.extra_body
         if candidate.reasoning_effort:
             kwargs["reasoning_effort"] = candidate.reasoning_effort
-        if candidate.provider in {"gemini", "cohere"}:
+        if candidate.provider in {"gemini", "cohere", "openai"}:
             kwargs["response_format"] = {"type": "json_object"}
 
         response = await acompletion(**kwargs)
@@ -330,24 +349,31 @@ class LLMJsonRunner:
         return LLMCompletion(
             content=str(content),
             prompt_tokens=self._usage_value(usage, "prompt_tokens"),
+            cached_prompt_tokens=self._usage_detail_value(
+                usage,
+                "prompt_tokens_details",
+                "cached_tokens",
+            ),
             completion_tokens=self._usage_value(usage, "completion_tokens"),
+            reasoning_tokens=self._usage_detail_value(
+                usage,
+                "completion_tokens_details",
+                "reasoning_tokens",
+            ),
             total_tokens=self._usage_value(usage, "total_tokens"),
+            estimated_cost_usd=self._estimated_response_cost(response),
             finish_reason=self._finish_reason(response),
         )
 
     @staticmethod
     def _supports_sampling_temperature(model: str) -> bool:
-        """Return whether the target still accepts sampling parameters.
-
-        Gemini 3.5 and 3.6 deprecated ``temperature`` and may reject it in a
-        future API revision. Keeping this decision beside request assembly
-        prevents a model upgrade from breaking every structured completion.
-        """
+        """判斷模型是否接受 temperature；reasoning 模型不傳衝突參數。"""
 
         normalized = model.lower()
         return not (
             "gemini-3.5-" in normalized
             or "gemini-3.6-" in normalized
+            or "gpt-5.6-" in normalized
         )
 
     def _candidates(self) -> list[LLMCallCandidate]:
@@ -391,6 +417,15 @@ class LLMJsonRunner:
                 display_model=model,
                 api_base=self.settings.llm_api_base,
                 api_key=self.settings.cohere_api_key or self.settings.llm_api_key,
+            )
+        if normalized.startswith("gpt-"):
+            return LLMCallCandidate(
+                provider="openai",
+                model=normalized,
+                display_model=normalized,
+                api_base=self.settings.llm_api_base,
+                api_key=self.settings.openai_api_key or self.settings.llm_api_key,
+                reasoning_effort=self.settings.openai_reasoning_effort,
             )
         return LLMCallCandidate(
             provider="litellm",
@@ -440,6 +475,7 @@ class LLMJsonRunner:
         for secret in (
             self.settings.llm_api_key,
             self.settings.gemini_api_key,
+            self.settings.openai_api_key,
             self.settings.nvidia_api_key,
             self.settings.cohere_api_key,
         ):
@@ -457,6 +493,28 @@ class LLMJsonRunner:
         try:
             return int(value) if value is not None else None
         except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _usage_detail_value(cls, usage, details_field: str, field_name: str) -> int | None:
+        """讀取 Provider 回報的快取輸入或隱藏推理 token。"""
+
+        if usage is None:
+            return None
+        details = (
+            usage.get(details_field)
+            if isinstance(usage, dict)
+            else getattr(usage, details_field, None)
+        )
+        return cls._usage_value(details, field_name)
+
+    @staticmethod
+    def _estimated_response_cost(response) -> float | None:
+        """依 LiteLLM 當前價格表估算本次回覆費用；無法核算時明確留空。"""
+
+        try:
+            return float(completion_cost(completion_response=response))
+        except Exception:
             return None
 
     @staticmethod

@@ -3,7 +3,7 @@
 import json
 
 from app.core.experiment_conditions import condition_code_for_key
-from app.models.domain import Participant
+from app.models.domain import ChatMessage, Participant, ResearchLog
 
 
 ADMIN_HEADERS = {"x-admin-key": "test-admin"}
@@ -100,13 +100,19 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
         "learner_messages": 1,
         "assistant_messages": 2,
         "completed_exchanges": 1,
-        "prompt_tokens": 22,
-        "completion_tokens": 14,
-        "total_tokens": 36,
+        "prompt_tokens": 33,
+        "cached_prompt_tokens": 12,
+        "completion_tokens": 21,
+        "reasoning_tokens": 6,
+        "total_tokens": 54,
+        "llm_calls_total": 3,
+        "llm_calls_with_usage": 3,
         "llm_messages_total": 2,
         "llm_messages_with_usage": 2,
         "token_usage_coverage": 1.0,
         "token_usage_complete": True,
+        "estimated_cost_usd": 0.0003,
+        "cost_usage_complete": True,
     }
     assert payload["material_snapshot"]["status"] == "captured"
     assert payload["material_snapshot"]["hash_verified"] is True
@@ -116,6 +122,58 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
         "conversation_opening",
         "chat_response",
     }
+
+
+def test_session_usage_includes_failed_calls_without_counting_audit_duplicates(client):
+    initialized, result = _prepare_conversation(client)
+    repository = client.app.state.repository
+    failed_chat_call = {
+        **client.app.state.llm_provider._llm_metadata("failed_chat")["llm_call"],
+        "correlation_id": "failed-chat-call",
+    }
+    repository.add_message(
+        ChatMessage(
+            conversation_id=result["conversation_id"],
+            speaker_type="learner",
+            speaker_name="learner",
+            sequence_index=repository.next_message_sequence(result["conversation_id"]),
+            content="這次模型回覆失敗。",
+            operation_status="failed",
+            metadata={"response_status": "failed", "llm_call": failed_chat_call},
+        )
+    )
+    # 同一失敗呼叫也會寫入 audit log，correlation id 應避免重複計費。
+    repository.log_research(
+        ResearchLog(
+            session_id=initialized["session_id"],
+            action_type="response_generation_failed",
+            payload={"llm_call": failed_chat_call},
+        )
+    )
+    failed_opening_call = {
+        **client.app.state.llm_provider._llm_metadata("failed_opening")["llm_call"],
+        "correlation_id": "failed-opening-call",
+    }
+    repository.log_research(
+        ResearchLog(
+            session_id=initialized["session_id"],
+            action_type="task_submission_failed",
+            payload={"llm_call": failed_opening_call},
+        )
+    )
+
+    response = client.get(
+        f"/api/admin/sessions/{initialized['session_id']}/research",
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    stats = response.json()["stats"]
+    assert stats["llm_calls_total"] == 5
+    assert stats["llm_calls_with_usage"] == 5
+    assert stats["total_tokens"] == 90
+    assert stats["estimated_cost_usd"] == 0.0005
+    assert stats["cost_usage_complete"] is True
 
 
 def test_session_export_keeps_the_participant_bound_when_auth_mapping_changes(client):
@@ -154,7 +212,7 @@ def test_admin_research_export_is_anonymized_and_supports_json_and_csv(client):
     records = json.loads(raw_json)
     target = next(record for record in records if record["session"]["id"] == initialized["session_id"])
     assert target["participant_code"] == "PTEST"
-    assert target["stats"]["total_tokens"] == 36
+    assert target["stats"]["total_tokens"] == 54
     assert target["messages"][1]["content"] == "請說明這個事件的背景。"
 
     exported_csv = client.get("/api/admin/research-export?format=csv", headers=ADMIN_HEADERS)
@@ -162,6 +220,7 @@ def test_admin_research_export_is_anonymized_and_supports_json_and_csv(client):
     assert "text/csv" in exported_csv.headers["content-type"]
     assert "PTEST" in exported_csv.text
     assert "請說明這個事件的背景。" in exported_csv.text
+    assert "0.0003" in exported_csv.text
     assert "participant-001" not in exported_csv.text
 
 

@@ -29,6 +29,7 @@ from app.core.interaction_contract import build_interaction_runtime  # noqa: E40
 from app.models.domain import (  # noqa: E402
     ChatMessage,
     Event,
+    EventTask,
     ExperimentCondition,
     Persona,
     TaskAttempt,
@@ -133,6 +134,7 @@ def _fixture() -> tuple[Event, Persona, TaskAttempt]:
         },
     )
     attempt = TaskAttempt(
+        session_id="benchmark-session",
         task_id="benchmark-task",
         event_id=event.id,
         status="submitted",
@@ -155,6 +157,55 @@ def _fixture() -> tuple[Event, Persona, TaskAttempt]:
         },
     )
     return event, persona, attempt
+
+
+def _judge_fixture(event: Event) -> tuple[EventTask, dict[str, Any]]:
+    """建立一題可人工核對的真實 Error-Elicitation judge 案例。"""
+
+    task = EventTask(
+        event_id=event.id,
+        title="三級會議的代表權爭議",
+        error_elicitation_task_full_text=(
+            "1789 年，三級會議沿用每個等級各一票的方式；第三等級雖代表多數人口，"
+            "仍可能被另外兩個等級以二比一否決。"
+            "\n\n依據本文，按等級投票能公平反映各等級所代表的人口比例。 {{blank:q01}}"
+        ),
+        evaluation_payload={
+            "contract_version": "error_elicitation_v1",
+            "materials": [
+                {
+                    "id": "m01",
+                    "title": "三級會議表決方式摘要",
+                    "text": "每個等級各有一票；第三等級要求改採按人數表決。",
+                    "source_url": "https://www.britannica.com/event/French-Revolution",
+                    "attribution": "研究測試用史實摘要",
+                }
+            ],
+            "questions": [
+                {
+                    "id": "q01",
+                    "type": "true_false",
+                    "required": True,
+                    "correct_answer": False,
+                    "reasoning_criteria": (
+                        "理由需辨認每個等級各一票會忽略人口與代表數差異；"
+                        "可接受其他能由本文支持的等價說明。"
+                    ),
+                    "source_text": "第三等級雖代表多數人口，仍可能被二比一否決。",
+                }
+            ],
+        },
+    )
+    response = {
+        "answers": [
+            {
+                "question_id": "q01",
+                "value": True,
+                "rationale": "三個等級都只有一票，所以每一方的權利完全相同，這就是公平。",
+            }
+        ]
+    }
+    return task, response
 
 
 def _available_specs(settings: Settings) -> tuple[list[ModelSpec], list[dict[str, str]]]:
@@ -212,6 +263,15 @@ def _available_specs(settings: Settings) -> tuple[list[ModelSpec], list[dict[str
         )
     else:
         skipped.append({"provider": "nvidia", "reason": "NVIDIA_API_KEY is not configured"})
+    if settings.openai_api_key:
+        specs.extend(
+            [
+                ModelSpec("openai_gpt_5_6_luna", "gpt-5.6-luna", "low", "openai", 0.3),
+                ModelSpec("openai_gpt_5_6_terra", "gpt-5.6-terra", "low", "openai", 0.3),
+            ]
+        )
+    else:
+        skipped.append({"provider": "openai", "reason": "OPENAI_API_KEY is not configured"})
     return specs, skipped
 
 
@@ -225,7 +285,9 @@ def _isolated_settings(base: Settings, spec: ModelSpec) -> Settings:
             "llm_max_output_tokens": 4096,
             "llm_timeout_seconds": 60.0,
             "gemini_reasoning_effort": spec.reasoning_effort or base.gemini_reasoning_effort,
+            "openai_reasoning_effort": spec.reasoning_effort or base.openai_reasoning_effort,
             "gemini_api_key": base.gemini_api_key if spec.provider == "gemini" else None,
+            "openai_api_key": base.openai_api_key if spec.provider == "openai" else None,
             "cohere_api_key": base.cohere_api_key if spec.provider == "cohere" else None,
             "nvidia_api_key": base.nvidia_api_key if spec.provider == "nvidia" else None,
             "nvidia_enable_thinking": False,
@@ -235,6 +297,11 @@ def _isolated_settings(base: Settings, spec: ModelSpec) -> Settings:
 
 def _metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     return {key: metadata.get(key) for key in POLICY_METADATA_KEYS}
+
+
+def _llm_call(metadata: dict[str, Any]) -> dict[str, Any]:
+    value = metadata.get("llm_call", {})
+    return value if isinstance(value, dict) else {}
 
 
 def _module_hashes(modules: tuple[PromptModule, ...] | list[PromptModule]) -> dict[str, str]:
@@ -307,7 +374,7 @@ async def _run_condition(
             speaker_name=opening.persona.name if opening.persona else "AI Assistant",
             sequence_index=0,
             content=opening.generation.response,
-            metadata=opening.metadata,
+            metadata={**opening.metadata, **opening.generation.llm_metadata},
         )
     ]
     # Free-tier model quotas are commonly enforced per minute. Pace the
@@ -328,7 +395,7 @@ async def _run_condition(
     chat_service = ChatService(None, provider, prompt_service, None)  # type: ignore[arg-type]
     follow_up_started = time.perf_counter()
     try:
-        generation, metadata = await chat_service.generate_validated_response(
+        generation, metadata, _effective_prompt = await chat_service.generate_validated_response(
             event=event,
             selected=opening.persona,
             condition=condition,
@@ -348,6 +415,7 @@ async def _run_condition(
                 "elapsed_seconds": opening_elapsed,
                 "response": opening.generation.response,
                 "metadata": _metadata(opening.metadata),
+                "llm_call": _llm_call(opening.generation.llm_metadata),
                 "module_hashes": _module_hashes(opening.modules),
             },
             "error_type": type(exc).__name__,
@@ -363,6 +431,7 @@ async def _run_condition(
             "elapsed_seconds": opening_elapsed,
             "response": opening.generation.response,
             "metadata": _metadata(opening.metadata),
+            "llm_call": _llm_call(opening.generation.llm_metadata),
             "quality_flags": _quality_flags(opening.generation.response, condition, opening=True),
             "module_hashes": _module_hashes(opening.modules),
         },
@@ -371,9 +440,78 @@ async def _run_condition(
             "learner_message": FOLLOW_UP_MESSAGE,
             "response": generation.response,
             "metadata": _metadata(metadata),
+            "llm_call": _llm_call(generation.llm_metadata),
             "quality_flags": _quality_flags(generation.response, condition, opening=False),
             "module_hashes": _module_hashes(modules),
         },
+    }
+
+
+async def _run_judge(provider: Any) -> dict[str, Any]:
+    event, _persona, _attempt = _fixture()
+    task, response = _judge_fixture(event)
+    started = time.perf_counter()
+    try:
+        result = await provider.judge_task_attempt(event, task, response)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "error_type": type(exc).__name__,
+            "error": _safe_error(provider, exc),
+        }
+    question_results = result.get("question_results") or []
+    first = question_results[0] if question_results else {}
+    flags: list[str] = []
+    if result.get("judge_contract_version") != "error_elicitation_judge_v2":
+        flags.append("wrong_contract_version")
+    if len(question_results) != 1 or first.get("question_id") != "q01":
+        flags.append("question_coverage_error")
+    if first.get("reasoning_correct") is not False:
+        flags.append("incorrect_reasoning_not_detected")
+    if not str(first.get("reasoning_feedback") or "").strip():
+        flags.append("missing_reasoning_feedback")
+    return {
+        "ok": True,
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
+        "quality_flags": flags,
+        "result": result,
+        "llm_call": _llm_call(result),
+    }
+
+
+def _usage_summary(judge: dict[str, Any], conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    calls = [judge.get("llm_call", {})]
+    for condition in conditions.values():
+        if not condition.get("ok"):
+            continue
+        calls.extend(
+            [
+                condition["opening"].get("llm_call", {}),
+                condition["follow_up"].get("llm_call", {}),
+            ]
+        )
+    calls = [call for call in calls if isinstance(call, dict) and call]
+    with_tokens = [call for call in calls if call.get("total_tokens") is not None]
+    with_cost = [call for call in calls if call.get("estimated_cost_usd") is not None]
+
+    def total(field: str) -> int:
+        return sum(int(call.get(field) or 0) for call in with_tokens)
+
+    return {
+        "llm_calls": len(calls),
+        "llm_calls_with_usage": len(with_tokens),
+        "prompt_tokens": total("prompt_tokens"),
+        "cached_prompt_tokens": total("cached_prompt_tokens"),
+        "completion_tokens": total("completion_tokens"),
+        "reasoning_tokens": total("reasoning_tokens"),
+        "total_tokens": total("total_tokens"),
+        "estimated_cost_usd": (
+            round(sum(float(call["estimated_cost_usd"]) for call in with_cost), 8)
+            if calls and len(with_cost) == len(calls)
+            else None
+        ),
+        "cost_complete": bool(calls) and len(with_cost) == len(calls),
     }
 
 
@@ -413,6 +551,8 @@ async def _run_spec(base: Settings, spec: ModelSpec, condition_codes: tuple[str,
     prompt_service = PromptService()
     conditions: dict[str, dict[str, Any]] = {}
     started = time.perf_counter()
+    judge = await _run_judge(provider)
+    await asyncio.sleep(spec.cooldown_seconds)
     for index, code in enumerate(condition_codes):
         conditions[code] = await _run_condition(
             provider,
@@ -429,8 +569,10 @@ async def _run_spec(base: Settings, spec: ModelSpec, condition_codes: tuple[str,
         "reasoning_effort": spec.reasoning_effort,
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "successful_conditions": sum(1 for result in conditions.values() if result.get("ok")),
+        "judge": judge,
         "conditions": conditions,
         "matrix_invariants": _matrix_invariants(conditions),
+        "usage": _usage_summary(judge, conditions),
     }
 
 
@@ -468,6 +610,8 @@ async def main() -> None:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "fixture_scope": "public_synthetic_french_revolution",
         "database_writes": False,
+        "pricing_source": "https://developers.openai.com/api/docs/models",
+        "pricing_note": "Per-call estimated cost is calculated by LiteLLM from provider usage metadata.",
         "requested_conditions": list(condition_codes),
         "skipped_providers": skipped,
         "results": results,
@@ -486,6 +630,8 @@ async def main() -> None:
                         "key": result["key"],
                         "elapsed_seconds": result["elapsed_seconds"],
                         "successful_conditions": result["successful_conditions"],
+                        "judge_ok": result["judge"].get("ok"),
+                        "usage": result["usage"],
                     }
                     for result in results
                 ],

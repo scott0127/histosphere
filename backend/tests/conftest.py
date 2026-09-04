@@ -60,8 +60,11 @@ class FakeLLMProvider:
                 "provider_switching_enabled": False,
                 "fallback_reason": None,
                 "prompt_tokens": 11,
+                "cached_prompt_tokens": 4,
                 "completion_tokens": 7,
+                "reasoning_tokens": 2,
                 "total_tokens": 18,
+                "estimated_cost_usd": 0.0001,
                 "finish_reason": "stop",
             },
         }

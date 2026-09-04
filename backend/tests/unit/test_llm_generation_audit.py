@@ -110,16 +110,68 @@ def test_json_runner_audits_initial_and_repair_schema_failures(monkeypatch, tmp_
     assert records[1]["raw_output"] == '{"value":"still invalid"}'
 
 
+def test_json_runner_counts_initial_and_schema_repair_usage(monkeypatch) -> None:
+    runner = LLMJsonRunner(
+        Settings(llm_model="gpt-5.6-luna", openai_api_key="openai-key")
+    )
+    responses = iter(
+        [
+            LLMCompletion(
+                content="not json",
+                prompt_tokens=100,
+                cached_prompt_tokens=40,
+                completion_tokens=20,
+                reasoning_tokens=8,
+                total_tokens=120,
+                estimated_cost_usd=0.001,
+            ),
+            LLMCompletion(
+                content='{"value":1}',
+                prompt_tokens=60,
+                cached_prompt_tokens=20,
+                completion_tokens=10,
+                reasoning_tokens=3,
+                total_tokens=70,
+                estimated_cost_usd=0.0005,
+            ),
+        ]
+    )
+
+    async def fake_complete(_candidate, **_kwargs) -> LLMCompletion:
+        return next(responses)
+
+    monkeypatch.setattr(runner, "_complete", fake_complete)
+    result = asyncio.run(
+        runner.run_json(
+            schema=_Payload,
+            system_prompt="system",
+            user_prompt="user",
+            task_name="usage_repair_test",
+        )
+    )
+
+    assert result.metadata.schema_repair_count == 1
+    assert result.metadata.prompt_tokens == 160
+    assert result.metadata.cached_prompt_tokens == 60
+    assert result.metadata.completion_tokens == 30
+    assert result.metadata.reasoning_tokens == 11
+    assert result.metadata.total_tokens == 190
+    assert result.metadata.estimated_cost_usd == pytest.approx(0.0015)
+
+
 def test_provider_candidates_carry_provider_specific_configuration() -> None:
     settings = Settings(
         gemini_api_key="gemini-key",
         gemini_reasoning_effort="low",
+        openai_api_key="openai-key",
+        openai_reasoning_effort="low",
         cohere_api_key="cohere-key",
     )
     runner = LLMJsonRunner(settings)
 
     gemini = runner._candidate_from_model("gemini/gemini-3.6-flash")
     cohere = runner._candidate_from_model("cohere/command-a-plus-05-2026")
+    openai = runner._candidate_from_model("gpt-5.6-luna")
 
     assert (gemini.provider, gemini.reasoning_effort, gemini.api_key) == (
         "gemini",
@@ -127,6 +179,12 @@ def test_provider_candidates_carry_provider_specific_configuration() -> None:
         "gemini-key",
     )
     assert (cohere.provider, cohere.api_key) == ("cohere", "cohere-key")
+    assert (openai.provider, openai.reasoning_effort, openai.api_key) == (
+        "openai",
+        "low",
+        "openai-key",
+    )
+    assert openai.model == "gpt-5.6-luna"
 
 
 def test_runtime_locks_the_configured_model_without_provider_fallback() -> None:
@@ -248,6 +306,8 @@ def test_latest_gemini_models_omit_deprecated_sampling_temperature() -> None:
     assert LLMJsonRunner._supports_sampling_temperature("gemini/gemini-2.5-flash") is True
     assert LLMJsonRunner._supports_sampling_temperature("gemini/gemini-3.5-flash-lite") is False
     assert LLMJsonRunner._supports_sampling_temperature("gemini/gemini-3.6-flash") is False
+    assert LLMJsonRunner._supports_sampling_temperature("gpt-5.6-luna") is False
+    assert LLMJsonRunner._supports_sampling_temperature("gpt-5.6-terra") is False
     assert LLMJsonRunner._supports_sampling_temperature("cohere/command-a-plus-05-2026") is True
 
 
@@ -256,6 +316,7 @@ def test_latest_gemini_models_omit_deprecated_sampling_temperature() -> None:
     [
         ("gemini/gemini-3.5-flash-lite", "gemini"),
         ("cohere/command-a-plus-05-2026", "cohere"),
+        ("gpt-5.6-luna", "openai"),
     ],
 )
 def test_structured_providers_request_json_mode(monkeypatch, model, provider) -> None:
@@ -273,6 +334,7 @@ def test_structured_providers_request_json_mode(monkeypatch, model, provider) ->
             llm_model=model,
             gemini_api_key="gemini-key",
             cohere_api_key="cohere-key",
+            openai_api_key="openai-key",
         )
     )
     candidate = runner._candidate_from_model(model)
@@ -284,3 +346,38 @@ def test_structured_providers_request_json_mode(monkeypatch, model, provider) ->
     assert result.content == '{"value":1}'
     assert candidate.provider == provider
     assert captured["response_format"] == {"type": "json_object"}
+
+
+def test_openai_usage_preserves_cache_reasoning_and_estimated_cost(monkeypatch) -> None:
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"value":1}'), finish_reason="stop")],
+        usage=SimpleNamespace(
+            prompt_tokens=120,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=80),
+            completion_tokens=30,
+            completion_tokens_details=SimpleNamespace(reasoning_tokens=12),
+            total_tokens=150,
+        ),
+    )
+
+    async def fake_completion(**_kwargs):
+        return response
+
+    monkeypatch.setattr("app.providers.llm.json_runner.acompletion", fake_completion)
+    monkeypatch.setattr("app.providers.llm.json_runner.completion_cost", lambda **_kwargs: 0.000123)
+    runner = LLMJsonRunner(Settings(llm_model="gpt-5.6-luna", openai_api_key="openai-key"))
+
+    result = asyncio.run(
+        runner._complete(
+            runner._candidate_from_model("gpt-5.6-luna"),
+            system_prompt="system",
+            user_prompt="user",
+        )
+    )
+
+    assert result.prompt_tokens == 120
+    assert result.cached_prompt_tokens == 80
+    assert result.completion_tokens == 30
+    assert result.reasoning_tokens == 12
+    assert result.total_tokens == 150
+    assert result.estimated_cost_usd == 0.000123

@@ -455,12 +455,18 @@ export interface AdminConversationStats {
   assistant_messages: number;
   completed_exchanges: number;
   prompt_tokens: number;
+  cached_prompt_tokens: number;
   completion_tokens: number;
+  reasoning_tokens: number;
   total_tokens: number;
+  llm_calls_total: number;
+  llm_calls_with_usage: number;
   llm_messages_total: number;
   llm_messages_with_usage: number;
   token_usage_coverage: number;
   token_usage_complete: boolean;
+  estimated_cost_usd?: number | null;
+  cost_usage_complete: boolean;
   first_message_at?: string | null;
   last_message_at?: string | null;
   duration_seconds?: number | null;

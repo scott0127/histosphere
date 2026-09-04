@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 
 from app.core.research_reproducibility import prompt_text_hash, stable_hash
 from app.crud.protocols import RepositoryProtocol
-from app.models.domain import ChatMessage
+from app.models.domain import ChatMessage, ResearchLog, TaskAttempt
 from app.schemas.responses import (
     AdminConversationStats,
     AdminMaterialSnapshot,
@@ -77,7 +77,7 @@ class ResearchExportService:
                 else None
             ),
             messages=messages,
-            stats=self._conversation_stats(messages),
+            stats=self._session_stats(messages, attempt, logs),
             material_snapshot=self._material_snapshot(logs),
             prompt_records=self._prompt_records(logs),
             research_logs=[log.model_copy(update={"user_id": None}) for log in logs],
@@ -106,11 +106,56 @@ class ResearchExportService:
         value = message.metadata.get("llm_call", {})
         return value if isinstance(value, dict) else {}
 
-    def _conversation_stats(self, messages: list[ChatMessage]) -> AdminConversationStats:
+    @staticmethod
+    def _judgement_llm_call(attempt: TaskAttempt | None) -> dict[str, Any]:
+        if not attempt or not isinstance(attempt.judgement_payload, dict):
+            return {}
+        value = attempt.judgement_payload.get("llm_call", {})
+        return value if isinstance(value, dict) else {}
+
+    def _session_stats(
+        self,
+        messages: list[ChatMessage],
+        attempt: TaskAttempt | None,
+        logs: list[ResearchLog],
+    ) -> AdminConversationStats:
+        """統計 Task judge、開場、聊天及失敗生成的完整 Session 用量。"""
+
         learner = [message for message in messages if message.speaker_type == "learner"]
         assistant = [message for message in messages if message.speaker_type in {"assistant", "persona"}]
-        calls = [self._llm_call(message) for message in assistant]
+        message_calls = [self._llm_call(message) for message in assistant]
+        calls: list[dict[str, Any]] = []
+        seen_correlation_ids: set[str] = set()
+
+        def append_call(call: dict[str, Any], *, expected: bool = False) -> None:
+            """以 correlation id 去重；預期呼叫缺資料時仍保留以顯示覆蓋率。"""
+
+            if not call and not expected:
+                return
+            correlation_id = str(call.get("correlation_id") or "").strip()
+            if correlation_id and correlation_id in seen_correlation_ids:
+                return
+            if correlation_id:
+                seen_correlation_ids.add(correlation_id)
+            calls.append(call)
+
+        if attempt:
+            append_call(self._judgement_llm_call(attempt), expected=True)
+        for call in message_calls:
+            append_call(call, expected=True)
+        # 失敗聊天沒有 AI 訊息，呼叫資料會保存在 learner operation。
+        for message in learner:
+            if message.operation_status == "failed":
+                append_call(self._llm_call(message))
+        # 開場失敗時沒有可附掛 metadata 的 AI 訊息，因此從失敗紀錄補回。
+        for log in logs:
+            if log.action_type not in {"task_submission_failed", "response_generation_failed"}:
+                continue
+            value = log.payload.get("llm_call")
+            append_call(value if isinstance(value, dict) else {})
+
         calls_with_usage = [call for call in calls if call.get("total_tokens") is not None]
+        calls_with_cost = [call for call in calls if call.get("estimated_cost_usd") is not None]
 
         def token_sum(field: str) -> int:
             return sum(int(call.get(field) or 0) for call in calls_with_usage)
@@ -125,18 +170,31 @@ class ResearchExportService:
         last = messages[-1].created_at if messages else None
         duration = int((last - first).total_seconds()) if first and last else None
         coverage = len(calls_with_usage) / len(calls) if calls else 0.0
+        cost_complete = bool(calls) and len(calls_with_cost) == len(calls)
         return AdminConversationStats(
             total_messages=len(messages),
             learner_messages=len(learner),
             assistant_messages=len(assistant),
             completed_exchanges=completed_exchanges,
             prompt_tokens=token_sum("prompt_tokens"),
+            cached_prompt_tokens=token_sum("cached_prompt_tokens"),
             completion_tokens=token_sum("completion_tokens"),
+            reasoning_tokens=token_sum("reasoning_tokens"),
             total_tokens=token_sum("total_tokens"),
-            llm_messages_total=len(calls),
-            llm_messages_with_usage=len(calls_with_usage),
+            llm_calls_total=len(calls),
+            llm_calls_with_usage=len(calls_with_usage),
+            llm_messages_total=len(message_calls),
+            llm_messages_with_usage=sum(
+                1 for call in message_calls if call.get("total_tokens") is not None
+            ),
             token_usage_coverage=round(coverage, 4),
             token_usage_complete=bool(calls) and len(calls_with_usage) == len(calls),
+            estimated_cost_usd=(
+                round(sum(float(call["estimated_cost_usd"]) for call in calls_with_cost), 8)
+                if cost_complete
+                else None
+            ),
+            cost_usage_complete=cost_complete,
             first_message_at=first.isoformat() if first else None,
             last_message_at=last.isoformat() if last else None,
             duration_seconds=duration,
@@ -190,9 +248,12 @@ class ResearchExportService:
             "participant_code", "session_id", "event_name", "condition_key", "session_status",
             "timer_started_at", "timer_ends_at", "message_index", "speaker_type", "speaker_name",
             "message", "message_created_at", "provider", "model", "prompt_tokens",
-            "completion_tokens", "total_tokens", "prompt_hash", "material_hash",
+            "cached_prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens",
+            "prompt_hash", "material_hash",
             "conversation_total_messages", "learner_messages", "assistant_messages",
-            "completed_exchanges", "conversation_total_tokens", "token_usage_coverage",
+            "completed_exchanges", "llm_calls_total", "session_prompt_tokens",
+            "session_completion_tokens", "session_total_tokens", "estimated_cost_usd",
+            "token_usage_coverage",
             "task_response_json", "task_judgement_json",
         ]
         writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n")
@@ -217,7 +278,9 @@ class ResearchExportService:
                     "provider": call.get("provider", ""),
                     "model": call.get("model", ""),
                     "prompt_tokens": call.get("prompt_tokens", ""),
+                    "cached_prompt_tokens": call.get("cached_prompt_tokens", ""),
                     "completion_tokens": call.get("completion_tokens", ""),
+                    "reasoning_tokens": call.get("reasoning_tokens", ""),
                     "total_tokens": call.get("total_tokens", ""),
                     "prompt_hash": message.metadata.get("prompt_hash", "") if message else "",
                     "material_hash": record.material_snapshot.material_hash or "",
@@ -225,7 +288,15 @@ class ResearchExportService:
                     "learner_messages": record.stats.learner_messages,
                     "assistant_messages": record.stats.assistant_messages,
                     "completed_exchanges": record.stats.completed_exchanges,
-                    "conversation_total_tokens": record.stats.total_tokens,
+                    "llm_calls_total": record.stats.llm_calls_total,
+                    "session_prompt_tokens": record.stats.prompt_tokens,
+                    "session_completion_tokens": record.stats.completion_tokens,
+                    "session_total_tokens": record.stats.total_tokens,
+                    "estimated_cost_usd": (
+                        record.stats.estimated_cost_usd
+                        if record.stats.estimated_cost_usd is not None
+                        else ""
+                    ),
                     "token_usage_coverage": record.stats.token_usage_coverage,
                     "task_response_json": json.dumps(record.attempt.response_payload if record.attempt else {}, ensure_ascii=False),
                     "task_judgement_json": json.dumps(record.attempt.judgement_payload if record.attempt else {}, ensure_ascii=False),
