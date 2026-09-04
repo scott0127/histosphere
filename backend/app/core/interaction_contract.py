@@ -92,10 +92,10 @@ DISCLOSURE_POLICY = {
     },
 }
 LEGACY_DISCLOSURE_LEVELS = {f"L{index}": level for index, level in enumerate(DISCLOSURE_LEVELS)}
+# dialogue_move 由已驗證的 dialogue_state 唯一決定；供應商填錯時留旗標並由後端正規化，不浪費一次生成。
 INTERACTION_RETRY_FLAGS = frozenset(
     {
         "invalid_state_transition",
-        "invalid_dialogue_move",
         "invalid_disclosure_transition",
         "excessive_scaffold_questions",
         "overlong_scaffold_response",

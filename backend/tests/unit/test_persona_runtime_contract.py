@@ -163,6 +163,13 @@ def test_opening_audit_accepts_natural_in_event_situation_language():
     )
     assert facing_crisis == ()
 
+    situated = audit_persona_response(
+        "我是羅伯斯比爾，正置身國民公會的政治爭論之中。",
+        context,
+        is_opening=True,
+    )
+    assert situated == ()
+
 
 def test_persona_audit_rejects_ai_meta_voice():
     context = build_persona_runtime_context(_event(), _persona())

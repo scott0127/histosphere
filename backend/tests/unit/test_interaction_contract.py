@@ -962,6 +962,24 @@ def test_ebl_answer_leak_requires_regeneration_before_delivery():
     assert len(enforced.metadata["rejected_response_sha256"]) == 64
 
 
+def test_redundant_dialogue_move_is_recorded_but_canonicalized_without_retry():
+    runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
+
+    enforced = enforce_interaction_response(
+        runtime,
+        {
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "reflection_prompt",
+            "disclosure_level": "D0",
+        },
+        "你原先認為形式相同就是公平；這個推論有哪一部分值得再想一次？",
+    )
+
+    assert enforced.retry_required is False
+    assert enforced.metadata["dialogue_move"] == "error_awareness_prompt"
+    assert "invalid_dialogue_move" in enforced.metadata["fidelity_flags"]
+
+
 def test_ebl_accepts_an_implicit_scaffold_without_a_question():
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
 
