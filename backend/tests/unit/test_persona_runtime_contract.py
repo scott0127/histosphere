@@ -108,6 +108,18 @@ def test_persona_prompt_requires_unknown_future_people_to_stay_unknown():
     assert "do not explain it with modern knowledge" in prompt
 
 
+def test_persona_prompt_establishes_scene_once_and_keeps_facts_silent_afterward():
+    context = build_persona_runtime_context(_event(), _persona())
+    opening = context.prompt_block(turn_kind="opening")
+    continuation = context.prompt_block(turn_kind="conversation")
+
+    assert "only turn required to establish the identity and scene" in opening
+    assert "silent internal constraint, not a checklist to recite" in continuation
+    assert "Do not reintroduce the persona" in continuation
+    assert "Repeat a scene anchor only" in continuation
+    assert "allow natural Chinese subject omission" in continuation
+
+
 def test_opening_audit_requires_identity_event_anchor_and_in_event_situation():
     context = build_persona_runtime_context(_event(), _persona())
 
@@ -181,6 +193,30 @@ def test_persona_audit_rejects_modern_teacher_redirect_but_accepts_in_character_
     assert in_character_redirect == ()
 
 
+def test_persona_audit_allows_natural_subject_omission_after_opening():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    flags = audit_persona_response(
+        "若只歸因於糧價，便忽略了國民公會內外同時逼近的壓力。",
+        context,
+        is_opening=False,
+    )
+
+    assert flags == ()
+
+
+def test_persona_audit_still_requires_first_person_viewpoint_on_opening():
+    context = build_persona_runtime_context(_event(), _persona())
+
+    flags = audit_persona_response(
+        "羅伯斯比爾此刻正在國民公會面對共和國的危機。",
+        context,
+        is_opening=True,
+    )
+
+    assert "persona_first_person_missing" in flags
+
+
 def test_persona_audit_rejects_explicit_knowledge_after_the_scene_cutoff():
     context = build_persona_runtime_context(_event(), _persona())
 
@@ -241,7 +277,8 @@ def test_opening_service_regenerates_a_generic_persona_candidate():
 
     assert len(provider.prompts) == 2
     assert "[validation_retry]" in provider.prompts[1]
-    assert "explicit first-person marker" in provider.prompts[1]
+    assert "opening turn" in provider.prompts[1]
+    assert "explicit first-person viewpoint" in provider.prompts[1]
     assert "selected in-event moment" in provider.prompts[1]
     assert opening.metadata["generation_retry_count"] == 1
     assert len(opening.metadata["rejected_candidates"]) == 1
@@ -309,5 +346,6 @@ def test_opening_retry_keeps_prior_remediation_requirements():
     )
 
     assert opening.metadata["generation_retry_count"] == 2
-    assert "explicit first-person marker" in provider.prompts[2]
+    assert "opening turn" in provider.prompts[2]
+    assert "explicit first-person viewpoint" in provider.prompts[2]
     assert "selected in-event moment" in provider.prompts[2]

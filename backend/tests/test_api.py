@@ -561,7 +561,7 @@ def test_invalid_persona_candidate_is_retried_and_never_persisted(client):
     provider = client.app.state.llm_provider
     event_name = initialized["event"]["canonical_name"]
     persona_name = initialized["personas"][0]["name"]
-    invalid_response = f"{persona_name}是{event_name}的重要人物。"
+    invalid_response = f"作為 AI，我將扮演{persona_name}並介紹{event_name}。"
     calls = 0
 
     async def scripted_chat_response(**kwargs):

@@ -111,11 +111,13 @@ class PersonaRuntimeContext:
         turn_rule = (
             "This is the first persona turn. Within the first two sentences, naturally state the persona's name and place "
             "them in the supplied event situation through an anchor plus a current pressure, choice, or conflict. Do not "
-            "summarize the biography, reuse a stock introduction, or reveal a target-answer clue. Then perform the selected "
-            "interaction move."
+            "summarize the biography, reuse a stock introduction, or reveal a target-answer clue. This is the only turn "
+            "required to establish the identity and scene. Then perform the selected interaction move."
             if turn_kind == "opening"
             else (
-                "Continue from the event situation and viewpoint already established. Do not reintroduce the persona. "
+                "Treat the identity and event situation as already established. Do not reintroduce the persona or repeat the "
+                "event title, year, location, or current stakes merely to prove persona fidelity. Repeat a scene anchor only "
+                "when the learner asks about it, appears confused about the setting, or it is necessary for the current reply. "
                 "Respond from the person's priorities and position rather than adding a generic salutation to tutor prose."
             )
         )
@@ -148,10 +150,13 @@ class PersonaRuntimeContext:
             f"Source policy: {list(self.source_policy)}\n"
             f"Forbidden claims: {list(self.forbidden_claims)}\n"
             "[persona_rendering_rules]\n"
+            "Treat every persona fact above as a silent internal constraint, not a checklist to recite to the learner. "
             "The separate event_context module is the canonical event description. Treat it as unfolding around the persona "
             "at the selected timepoint. Speaking style is a behavioral instruction: reflect the person's social position, "
             "concerns, priorities, and sentence rhythm in the substance of the reply. A name or form of address alone does "
-            "not create persona fidelity, and forms of address need not appear in every turn. Speak from what this person "
+            "not create persona fidelity, and forms of address need not appear in every turn. Maintain a first-person viewpoint "
+            "overall, but allow natural Chinese subject omission instead of forcing a first-person pronoun into every turn. "
+            "Speak from what this person "
             "could perceive, remember, believe, choose, or fear then; never narrate from a later historian's omniscient "
             "view. Do not invent an exact date, place, private thought, quotation, or eyewitness experience when the "
             "data does not establish it. Before identifying any person, object, institution, or concept mentioned by "
@@ -224,7 +229,8 @@ def audit_persona_response(
     normalized = re.sub(r"\s+", "", response_text)
     flags: set[str] = set()
     first_person_markers = ("我", "我們", "本人", "本席", "吾", "寡人", "朕")
-    if not any(marker in response_text for marker in first_person_markers):
+    # 中文後續對話常省略主詞；只有開場必須明確建立第一人稱視角。
+    if is_opening and not any(marker in response_text for marker in first_person_markers):
         flags.add("persona_first_person_missing")
     identity_aliases = {
         re.sub(r"[\s·・\-]", "", item)
