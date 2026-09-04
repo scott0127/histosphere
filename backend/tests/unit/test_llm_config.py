@@ -19,23 +19,18 @@ def test_nvidia_is_primary_when_gemini_is_unavailable(monkeypatch) -> None:
     assert _default_llm_model() == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
 
-def test_gemini_primary_falls_back_to_nvidia(monkeypatch) -> None:
+def test_formal_runtime_does_not_build_implicit_fallbacks(monkeypatch) -> None:
     monkeypatch.delenv("LLM_FALLBACK_MODELS", raising=False)
     monkeypatch.setenv("NVIDIA_API_KEY", "nvidia-test-key")
     monkeypatch.delenv("NVIDIA_LLM_MODEL", raising=False)
 
-    assert _default_fallback_models("gemini/gemini-3.5-flash-lite") == [
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
-    ]
+    assert _default_fallback_models("gemini/gemini-3.5-flash-lite") == []
 
 
-def test_explicit_fallback_order_has_priority(monkeypatch) -> None:
+def test_legacy_fallback_environment_is_ignored(monkeypatch) -> None:
     monkeypatch.setenv(
         "LLM_FALLBACK_MODELS",
         "gemini/gemini-3.5-flash-lite,nvidia/custom-model",
     )
 
-    assert _default_fallback_models("gemini/gemini-3.5-flash-lite") == [
-        "gemini/gemini-3.5-flash-lite",
-        "nvidia/custom-model",
-    ]
+    assert _default_fallback_models("gemini/gemini-3.5-flash-lite") == []

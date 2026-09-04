@@ -55,20 +55,6 @@ def load_local_env() -> None:
     _load_env_file(project_root / ".env.local.supabase", override=True)
 
 
-def _split_csv(value: str | None) -> list[str]:
-    """將逗號分隔的字串拆為清單，自動去除空白與空項目。
-
-    Args:
-        value: 逗號分隔字串，可為 None。
-
-    Returns:
-        list[str]: 拆分後的非空字串清單；若 value 為 None 則回傳空清單。
-    """
-    if not value:
-        return []
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
 def _env_bool(name: str, default: bool = False) -> bool:
     """從環境變數讀取布林值。
 
@@ -107,27 +93,8 @@ def _default_llm_model() -> str:
     return "gemini/gemini-3.5-flash-lite"
 
 
-def _default_fallback_models(primary_model: str) -> list[str]:
-    """根據主模型與環境設定決定 LLM fallback 模型清單。
-
-    解析邏輯:
-        1. 若已設定 ``LLM_FALLBACK_MODELS`` 環境變數，直接拆分使用。
-        2. 若主模型為 NVIDIA 系列且 Gemini key 可用，fallback 到 Gemini Flash。
-        3. 若有 ``NVIDIA_API_KEY`` 但主模型非 NVIDIA，fallback 到 NVIDIA 模型。
-        4. 以上皆不符合則回傳空清單（無 fallback）。
-
-    Args:
-        primary_model: 當前主要 LLM 模型名稱。
-
-    Returns:
-        list[str]: Fallback 模型名稱清單，依優先順序排列。
-    """
-    if os.getenv("LLM_FALLBACK_MODELS"):
-        return _split_csv(os.getenv("LLM_FALLBACK_MODELS"))
-    if primary_model.startswith("nvidia/") and os.getenv("GEMINI_API_KEY"):
-        return [os.getenv("GEMINI_LLM_MODEL", "gemini/gemini-3.5-flash-lite")]
-    if os.getenv("NVIDIA_API_KEY"):
-        return [os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")]
+def _default_fallback_models(_primary_model: str) -> list[str]:
+    """正式實驗固定單一模型；保留欄位相容性但永遠不建立 fallback。"""
     return []
 
 
@@ -154,7 +121,7 @@ class Settings(BaseModel):
         admin_key: Admin API 的 x-admin-key 驗證金鑰。
         llm_provider: LLM 呼叫層提供者（預設 ``"litellm"``）。
         llm_model: 主要 LLM 模型名稱（LiteLLM 格式）。
-        llm_fallback_models: LLM fallback 模型清單。
+        llm_fallback_models: 舊設定相容欄位；正式 runtime 永遠為空。
         llm_api_base: 自訂 LLM API base URL（可選）。
         llm_api_key: 自訂 LLM API key（可選）。
         llm_temperature: LLM 生成溫度。

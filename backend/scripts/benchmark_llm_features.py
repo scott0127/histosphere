@@ -1,4 +1,4 @@
-"""Benchmark the production persona/interaction prompt pipeline without database writes.
+"""Test one explicitly selected production LLM feature without database writes.
 
 The fixture contains only public, synthetic French Revolution material. Every
 accepted response is retained in the benchmark report; rejected responses are
@@ -26,6 +26,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from app.core.config import Settings, get_settings  # noqa: E402
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS  # noqa: E402
 from app.core.interaction_contract import build_interaction_runtime  # noqa: E402
+from app.core.task_payload_validator import validate_task_authoring_payload  # noqa: E402
 from app.models.domain import (  # noqa: E402
     ChatMessage,
     Event,
@@ -33,6 +34,7 @@ from app.models.domain import (  # noqa: E402
     ExperimentCondition,
     Persona,
     TaskAttempt,
+    WikiSource,
 )
 from app.providers.llm.factory import build_llm_provider  # noqa: E402
 from app.services.chat_service import ChatService  # noqa: E402
@@ -55,15 +57,7 @@ POLICY_METADATA_KEYS = (
     "fidelity_flags",
     "generation_retry_count",
 )
-POLICY_MODULES = (
-    "general_prompt",
-    "independent_2_prompt",
-    "event_context",
-    "learner_task",
-    "interaction_runtime",
-    "source_context",
-    "runtime_policy",
-)
+FEATURES = ("event_profile", "task", "persona", "judge", "opening", "chat")
 
 
 @dataclass(frozen=True)
@@ -74,7 +68,6 @@ class ModelSpec:
     model: str
     reasoning_effort: str | None
     provider: str
-    cooldown_seconds: float = 3.0
 
 
 def _condition(code: str) -> ExperimentCondition:
@@ -159,6 +152,41 @@ def _fixture() -> tuple[Event, Persona, TaskAttempt]:
     return event, persona, attempt
 
 
+def _source_fixture(event_id: str) -> list[WikiSource]:
+    """提供所有建材功能共用且可人工核對的公開來源摘要。"""
+
+    return [
+        WikiSource(
+            event_id=event_id,
+            language="zh",
+            title="法國大革命",
+            page_url="https://zh.wikipedia.org/wiki/%E6%B3%95%E5%9C%8B%E5%A4%A7%E9%9D%A9%E5%91%BD",
+            summary=(
+                "法國大革命始於 1789 年。三級會議的代表與表決爭議、財政危機及特權制度，"
+                "共同構成革命初期的重要背景。"
+            ),
+            fetch_mode="full",
+            sections=[
+                {
+                    "title": "三級會議",
+                    "content": "第三等級反對每個等級各一票，主張按代表人數表決。",
+                }
+            ],
+        ),
+        WikiSource(
+            event_id=event_id,
+            language="en",
+            title="French Revolution",
+            page_url="https://en.wikipedia.org/wiki/French_Revolution",
+            summary=(
+                "The French Revolution began in 1789 amid fiscal crisis, disputes over privilege, "
+                "and conflict about representation in the Estates-General."
+            ),
+            fetch_mode="full",
+        ),
+    ]
+
+
 def _judge_fixture(event: Event) -> tuple[EventTask, dict[str, Any]]:
     """建立一題可人工核對的真實 Error-Elicitation judge 案例。"""
 
@@ -219,21 +247,18 @@ def _available_specs(settings: Settings) -> tuple[list[ModelSpec], list[dict[str
                     "gemini/gemini-2.5-flash",
                     "none",
                     "gemini",
-                    13.0,
                 ),
                 ModelSpec(
                     "gemini_3_5_flash_lite_minimal",
                     "gemini/gemini-3.5-flash-lite",
                     "minimal",
                     "gemini",
-                    4.2,
                 ),
                 ModelSpec(
                     "gemini_3_6_flash_low",
                     "gemini/gemini-3.6-flash",
                     "low",
                     "gemini",
-                    13.0,
                 ),
             ]
         )
@@ -246,7 +271,6 @@ def _available_specs(settings: Settings) -> tuple[list[ModelSpec], list[dict[str
                 settings.cohere_llm_model,
                 None,
                 "cohere",
-                6.0,
             )
         )
     else:
@@ -258,7 +282,6 @@ def _available_specs(settings: Settings) -> tuple[list[ModelSpec], list[dict[str
                 settings.nvidia_llm_model,
                 None,
                 "nvidia",
-                1.0,
             )
         )
     else:
@@ -266,8 +289,8 @@ def _available_specs(settings: Settings) -> tuple[list[ModelSpec], list[dict[str
     if settings.openai_api_key:
         specs.extend(
             [
-                ModelSpec("openai_gpt_5_6_luna", "gpt-5.6-luna", "low", "openai", 0.3),
-                ModelSpec("openai_gpt_5_6_terra", "gpt-5.6-terra", "low", "openai", 0.3),
+                ModelSpec("openai_gpt_5_6_luna", "gpt-5.6-luna", "low", "openai"),
+                ModelSpec("openai_gpt_5_6_terra", "gpt-5.6-terra", "low", "openai"),
             ]
         )
     else:
@@ -338,15 +361,36 @@ def _safe_error(provider: Any, exc: Exception) -> str:
     return redactor(exc) if callable(redactor) else f"{type(exc).__name__}: {exc}"
 
 
-async def _run_condition(
+def _error_llm_call(exc: Exception) -> dict[str, Any]:
+    metadata = getattr(exc, "metadata", None)
+    return metadata.as_dict() if hasattr(metadata, "as_dict") else {}
+
+
+async def _run_opening(
     provider: Any,
     prompt_service: PromptService,
     condition: ExperimentCondition,
-    cooldown_seconds: float,
 ) -> dict[str, Any]:
     event, persona, attempt = _fixture()
     personas = [persona] if condition.roleplay_enabled else []
     opening_service = ConversationOpeningService(provider, prompt_service)
+    llm_calls: list[dict[str, Any]] = []
+    original_generate = provider.generate_greeting
+
+    async def tracked_generate(**kwargs):
+        try:
+            generation = await original_generate(**kwargs)
+        except Exception as exc:
+            failed_call = _error_llm_call(exc)
+            if failed_call:
+                llm_calls.append(failed_call)
+            raise
+        call = _llm_call(generation.llm_metadata)
+        if call:
+            llm_calls.append(call)
+        return generation
+
+    provider.generate_greeting = tracked_generate
     started = time.perf_counter()
     try:
         opening = await opening_service.generate(
@@ -355,35 +399,58 @@ async def _run_condition(
             condition=condition,
             attempt=attempt,
         )
-        opening_elapsed = round(time.perf_counter() - started, 3)
     except Exception as exc:
         return {
             "ok": False,
-            "failed_stage": "opening",
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "error_type": type(exc).__name__,
             "error": _safe_error(provider, exc),
+            "llm_call": _error_llm_call(exc),
+            "llm_calls": llm_calls,
             "rejected_candidates": getattr(exc, "rejected_candidates", []),
         }
 
+    return {
+        "ok": True,
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
+        "response": opening.generation.response,
+        "metadata": _metadata(opening.metadata),
+        "llm_call": _llm_call(opening.generation.llm_metadata),
+        "llm_calls": llm_calls,
+        "quality_flags": _quality_flags(opening.generation.response, condition, opening=True),
+        "module_hashes": _module_hashes(opening.modules),
+    }
+
+
+async def _run_chat(
+    provider: Any,
+    prompt_service: PromptService,
+    condition: ExperimentCondition,
+) -> dict[str, Any]:
+    """只測一輪 chat；使用本地固定開場，避免偷偷多付一次 opening 費用。"""
+
+    event, persona, attempt = _fixture()
+    selected = persona if condition.roleplay_enabled else None
+    opening_text = (
+        "我是羅伯斯庇爾。巴黎的政治爭論正在加劇，你想先談三級會議的哪項爭議？"
+        if selected
+        else "我們來談法國大革命。你想先從三級會議的哪項爭議開始？"
+    )
     history = [
         ChatMessage(
             conversation_id="benchmark-conversation",
-            persona_id=opening.persona.id if opening.persona else None,
-            speaker_type="persona" if opening.persona else "assistant",
-            speaker_name=opening.persona.name if opening.persona else "AI Assistant",
+            persona_id=selected.id if selected else None,
+            speaker_type="persona" if selected else "assistant",
+            speaker_name=selected.name if selected else "AI Assistant",
             sequence_index=0,
-            content=opening.generation.response,
-            metadata={**opening.metadata, **opening.generation.llm_metadata},
+            content=opening_text,
+            metadata={"dialogue_state": "NOTICE_ERROR" if condition.ebl_enabled else "STANDARD_CHAT"},
         )
     ]
-    # Free-tier model quotas are commonly enforced per minute. Pace the
-    # benchmark so quota errors are not misclassified as model failures.
-    await asyncio.sleep(cooldown_seconds)
     runtime = build_interaction_runtime(condition, attempt, history)
     modules = prompt_service.assemble_chat_modules(
         event=event,
-        persona=opening.persona,
+        persona=selected,
         condition=condition,
         task_attempt=attempt,
         user_message=FOLLOW_UP_MESSAGE,
@@ -393,11 +460,28 @@ async def _run_condition(
     )
     prompt = prompt_service.render_modules(modules)
     chat_service = ChatService(None, provider, prompt_service, None)  # type: ignore[arg-type]
-    follow_up_started = time.perf_counter()
+    llm_calls: list[dict[str, Any]] = []
+    original_generate = provider.generate_chat_response
+
+    async def tracked_generate(**kwargs):
+        try:
+            generation = await original_generate(**kwargs)
+        except Exception as exc:
+            failed_call = _error_llm_call(exc)
+            if failed_call:
+                llm_calls.append(failed_call)
+            raise
+        call = _llm_call(generation.llm_metadata)
+        if call:
+            llm_calls.append(call)
+        return generation
+
+    provider.generate_chat_response = tracked_generate
+    started = time.perf_counter()
     try:
         generation, metadata, _effective_prompt = await chat_service.generate_validated_response(
             event=event,
-            selected=opening.persona,
+            selected=selected,
             condition=condition,
             task_attempt=attempt,
             user_message=FOLLOW_UP_MESSAGE,
@@ -405,21 +489,14 @@ async def _run_condition(
             rag_sources=[],
             interaction_runtime=runtime,
         )
-        follow_up_elapsed = round(time.perf_counter() - follow_up_started, 3)
     except Exception as exc:
         return {
             "ok": False,
-            "failed_stage": "follow_up",
             "elapsed_seconds": round(time.perf_counter() - started, 3),
-            "opening": {
-                "elapsed_seconds": opening_elapsed,
-                "response": opening.generation.response,
-                "metadata": _metadata(opening.metadata),
-                "llm_call": _llm_call(opening.generation.llm_metadata),
-                "module_hashes": _module_hashes(opening.modules),
-            },
             "error_type": type(exc).__name__,
             "error": _safe_error(provider, exc),
+            "llm_call": _error_llm_call(exc),
+            "llm_calls": llm_calls,
         }
 
     return {
@@ -427,23 +504,65 @@ async def _run_condition(
         "provider": str(generation.llm_metadata.get("provider", "unknown")),
         "model": str(generation.llm_metadata.get("model", "unknown")),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
-        "opening": {
-            "elapsed_seconds": opening_elapsed,
-            "response": opening.generation.response,
-            "metadata": _metadata(opening.metadata),
-            "llm_call": _llm_call(opening.generation.llm_metadata),
-            "quality_flags": _quality_flags(opening.generation.response, condition, opening=True),
-            "module_hashes": _module_hashes(opening.modules),
-        },
-        "follow_up": {
-            "elapsed_seconds": follow_up_elapsed,
-            "learner_message": FOLLOW_UP_MESSAGE,
-            "response": generation.response,
-            "metadata": _metadata(metadata),
-            "llm_call": _llm_call(generation.llm_metadata),
-            "quality_flags": _quality_flags(generation.response, condition, opening=False),
-            "module_hashes": _module_hashes(modules),
-        },
+        "learner_message": FOLLOW_UP_MESSAGE,
+        "response": generation.response,
+        "metadata": _metadata(metadata),
+        "llm_call": _llm_call(generation.llm_metadata),
+        "llm_calls": llm_calls,
+        "quality_flags": _quality_flags(generation.response, condition, opening=False),
+        "module_hashes": _module_hashes(modules),
+    }
+
+
+async def _run_material_feature(provider: Any, feature: str) -> dict[str, Any]:
+    event, _persona, _attempt = _fixture()
+    sources = _source_fixture(event.id)
+    started = time.perf_counter()
+    try:
+        if feature == "event_profile":
+            result = await provider.generate_event_profile(event.canonical_name, sources)
+            source_summary = result.get("source_summary", {})
+            flags = [
+                name
+                for name in ("canonical_name", "description", "context")
+                if not str(result.get(name) or "").strip()
+            ]
+            llm_call = _llm_call(source_summary)
+            payload: Any = result
+        elif feature == "task":
+            task = await provider.generate_task(event, sources)
+            flags = [
+                f"task_contract:{issue['code']}"
+                for issue in validate_task_authoring_payload(
+                    task.error_elicitation_task_full_text,
+                    task.evaluation_payload,
+                )
+            ]
+            llm_call = _llm_call(task.evaluation_payload)
+            payload = task.model_dump()
+        elif feature == "persona":
+            personas = await provider.generate_personas(event, sources)
+            flags = [] if len(personas) == 1 else ["persona_count_must_equal_one"]
+            if personas and personas[0].prompt_profile.get("deliberate_error_enabled") is not False:
+                flags.append("deliberate_error_must_be_disabled")
+            llm_call = _llm_call(personas[0].prompt_profile) if personas else {}
+            payload = [persona.model_dump() for persona in personas]
+        else:
+            raise ValueError(f"Unsupported material feature: {feature}")
+    except Exception as exc:
+        return {
+            "ok": False,
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "error_type": type(exc).__name__,
+            "error": _safe_error(provider, exc),
+            "llm_call": _error_llm_call(exc),
+        }
+    return {
+        "ok": True,
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
+        "quality_flags": flags,
+        "payload": payload,
+        "llm_call": llm_call,
     }
 
 
@@ -459,6 +578,7 @@ async def _run_judge(provider: Any) -> dict[str, Any]:
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "error_type": type(exc).__name__,
             "error": _safe_error(provider, exc),
+            "llm_call": _error_llm_call(exc),
         }
     question_results = result.get("question_results") or []
     first = question_results[0] if question_results else {}
@@ -480,17 +600,8 @@ async def _run_judge(provider: Any) -> dict[str, Any]:
     }
 
 
-def _usage_summary(judge: dict[str, Any], conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    calls = [judge.get("llm_call", {})]
-    for condition in conditions.values():
-        if not condition.get("ok"):
-            continue
-        calls.extend(
-            [
-                condition["opening"].get("llm_call", {}),
-                condition["follow_up"].get("llm_call", {}),
-            ]
-        )
+def _usage_summary(result: dict[str, Any]) -> dict[str, Any]:
+    calls = result.get("llm_calls") or [result.get("llm_call", {})]
     calls = [call for call in calls if isinstance(call, dict) and call]
     with_tokens = [call for call in calls if call.get("total_tokens") is not None]
     with_cost = [call for call in calls if call.get("estimated_cost_usd") is not None]
@@ -499,7 +610,7 @@ def _usage_summary(judge: dict[str, Any], conditions: dict[str, dict[str, Any]])
         return sum(int(call.get(field) or 0) for call in with_tokens)
 
     return {
-        "llm_calls": len(calls),
+        "logical_generation_attempts": len(calls),
         "llm_calls_with_usage": len(with_tokens),
         "prompt_tokens": total("prompt_tokens"),
         "cached_prompt_tokens": total("cached_prompt_tokens"),
@@ -515,106 +626,109 @@ def _usage_summary(judge: dict[str, Any], conditions: dict[str, dict[str, Any]])
     }
 
 
-def _matrix_invariants(conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    two = conditions.get("02", {})
-    four = conditions.get("04", {})
-    if not two.get("ok") or not four.get("ok"):
-        return {"checked": False, "reason": "condition 02 or 04 did not complete"}
-
-    opening_hashes_02 = two["opening"]["module_hashes"]
-    opening_hashes_04 = four["opening"]["module_hashes"]
-    follow_hashes_02 = two["follow_up"]["module_hashes"]
-    follow_hashes_04 = four["follow_up"]["module_hashes"]
-    return {
-        "checked": True,
-        "shared_opening_policy_modules": {
-            name: opening_hashes_02.get(name) == opening_hashes_04.get(name)
-            for name in POLICY_MODULES
-        },
-        "shared_follow_up_policy_modules": {
-            name: follow_hashes_02.get(name) == follow_hashes_04.get(name)
-            for name in POLICY_MODULES
-        },
-        "opening_pedagogical_metadata_equal": (
-            two["opening"]["metadata"] | {"generation_retry_count": None}
-        ) == (four["opening"]["metadata"] | {"generation_retry_count": None}),
-        "follow_up_pedagogical_metadata": {
-            "02": two["follow_up"]["metadata"],
-            "04": four["follow_up"]["metadata"],
-        },
-    }
-
-
-async def _run_spec(base: Settings, spec: ModelSpec, condition_codes: tuple[str, ...]) -> dict[str, Any]:
+async def _run_feature(
+    base: Settings,
+    spec: ModelSpec,
+    feature: str,
+    condition_code: str | None,
+) -> dict[str, Any]:
     settings = _isolated_settings(base, spec)
     provider = build_llm_provider(settings)
     prompt_service = PromptService()
-    conditions: dict[str, dict[str, Any]] = {}
     started = time.perf_counter()
-    judge = await _run_judge(provider)
-    await asyncio.sleep(spec.cooldown_seconds)
-    for index, code in enumerate(condition_codes):
-        conditions[code] = await _run_condition(
-            provider,
-            prompt_service,
-            _condition(code),
-            spec.cooldown_seconds,
-        )
-        if index < len(condition_codes) - 1:
-            await asyncio.sleep(spec.cooldown_seconds)
+    if feature in {"event_profile", "task", "persona"}:
+        result = await _run_material_feature(provider, feature)
+    elif feature == "judge":
+        result = await _run_judge(provider)
+    elif feature == "opening" and condition_code:
+        result = await _run_opening(provider, prompt_service, _condition(condition_code))
+    elif feature == "chat" and condition_code:
+        result = await _run_chat(provider, prompt_service, _condition(condition_code))
+    else:
+        raise ValueError(f"Feature {feature} requires a condition code")
     return {
         "key": spec.key,
         "configured_provider": spec.provider,
         "configured_model": spec.model,
         "reasoning_effort": spec.reasoning_effort,
+        "feature": feature,
+        "condition": condition_code,
         "elapsed_seconds": round(time.perf_counter() - started, 3),
-        "successful_conditions": sum(1 for result in conditions.values() if result.get("ok")),
-        "judge": judge,
-        "conditions": conditions,
-        "matrix_invariants": _matrix_invariants(conditions),
-        "usage": _usage_summary(judge, conditions),
+        "result": result,
+        "usage": _usage_summary(result),
     }
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--models",
-        nargs="*",
-        help="Optional model keys to run; omitted runs every configured provider candidate.",
+    parser = argparse.ArgumentParser(
+        description="Run exactly one paid LLM feature and retain its output, usage, and cost.",
     )
     parser.add_argument(
-        "--conditions",
-        nargs="*",
+        "--model",
+        required=True,
+        help="One explicit model key, for example openai_gpt_5_6_luna.",
+    )
+    parser.add_argument(
+        "--feature",
+        required=True,
+        choices=FEATURES,
+        help="Exactly one production LLM function to test.",
+    )
+    parser.add_argument(
+        "--condition",
         choices=("01", "02", "03", "04"),
-        default=("01", "02", "03", "04"),
-        help="Condition codes to run; defaults to the complete matrix.",
+        help="Required only for opening or chat.",
+    )
+    parser.add_argument(
+        "--execute-paid",
+        action="store_true",
+        help="Actually call the provider. Without this flag the command only prints the call plan.",
     )
     args = parser.parse_args()
+    if args.feature in {"opening", "chat"} and not args.condition:
+        parser.error("--condition is required for opening and chat")
+    if args.feature not in {"opening", "chat"} and args.condition:
+        parser.error("--condition is only valid for opening and chat")
+
     base = get_settings()
     specs, skipped = _available_specs(base)
-    if args.models:
-        requested = set(args.models)
-        specs = [spec for spec in specs if spec.key in requested]
-    results = []
-    condition_codes = tuple(dict.fromkeys(args.conditions))
-    for spec in specs:
-        print(f"[benchmark] {spec.key}", flush=True)
-        results.append(await _run_spec(base, spec, condition_codes))
+    spec = next((item for item in specs if item.key == args.model), None)
+    if spec is None:
+        available = ", ".join(item.key for item in specs) or "none"
+        parser.error(f"Model key is unavailable. Configured choices: {available}")
+
+    max_http_calls = 12 if args.feature in {"opening", "chat"} else 4
+    plan = {
+        "model": spec.key,
+        "feature": args.feature,
+        "condition": args.condition,
+        "database_writes": False,
+        "planned_logical_features": 1,
+        "maximum_provider_http_calls_if_all_repairs_and_retries_are_used": max_http_calls,
+        "will_execute_paid_call": args.execute_paid,
+    }
+    print(json.dumps({"call_plan": plan}, ensure_ascii=False, indent=2), flush=True)
+    if not args.execute_paid:
+        print("No provider call was made. Add --execute-paid only after local tests pass.")
+        return
+
+    print(f"[benchmark] {spec.key}:{args.feature}", flush=True)
+    result = await _run_feature(base, spec, args.feature, args.condition)
 
     output_dir = PROJECT_ROOT / ".dev-logs" / "llm-benchmarks"
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output_path = output_dir / f"persona-matrix-{timestamp}.json"
+    condition_suffix = f"-{args.condition}" if args.condition else ""
+    output_path = output_dir / f"llm-{args.feature}{condition_suffix}-{timestamp}.json"
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "fixture_scope": "public_synthetic_french_revolution",
         "database_writes": False,
         "pricing_source": "https://developers.openai.com/api/docs/models",
         "pricing_note": "Per-call estimated cost is calculated by LiteLLM from provider usage metadata.",
-        "requested_conditions": list(condition_codes),
+        "call_plan": plan,
         "skipped_providers": skipped,
-        "results": results,
+        "result": result,
     }
     output_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, default=str),
@@ -624,17 +738,12 @@ async def main() -> None:
         json.dumps(
             {
                 "output_path": str(output_path),
-                "skipped_providers": skipped,
-                "models": [
-                    {
-                        "key": result["key"],
-                        "elapsed_seconds": result["elapsed_seconds"],
-                        "successful_conditions": result["successful_conditions"],
-                        "judge_ok": result["judge"].get("ok"),
-                        "usage": result["usage"],
-                    }
-                    for result in results
-                ],
+                "model": result["key"],
+                "feature": result["feature"],
+                "condition": result["condition"],
+                "ok": result["result"].get("ok"),
+                "quality_flags": result["result"].get("quality_flags", []),
+                "usage": result["usage"],
             },
             ensure_ascii=False,
             indent=2,

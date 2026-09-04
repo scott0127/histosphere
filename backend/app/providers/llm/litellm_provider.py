@@ -313,6 +313,7 @@ class LiteLLMProvider:
         provider_metadata = self._provider_metadata(run.metadata)
         personas: list[Persona] = []
         for index, item in enumerate(payload.personas[:1]):
+            prompt_profile = item.prompt_profile.model_dump()
             personas.append(
                 Persona(
                     event_id=event.id,
@@ -326,9 +327,9 @@ class LiteLLMProvider:
                         for source in sources
                     ],
                     prompt_profile={
-                        **item.prompt_profile,
+                        **prompt_profile,
                         **provider_metadata,
-                        "deliberate_error_enabled": item.prompt_profile.get("deliberate_error_enabled", False),
+                        "deliberate_error_enabled": prompt_profile.get("deliberate_error_enabled", False),
                     },
                     sort_order=index,
                     revision_state="llm_generated",

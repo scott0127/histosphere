@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.persona_prompt_contract import PersonaPromptProfile
 from app.core.task_payload_validator import validate_task_authoring_payload
 from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
 
@@ -96,7 +97,9 @@ class GeneratedPersonaPayload(BaseModel):
     biography: str | None = None
     expertise_areas: list[str] = Field(default_factory=list)
     sources: list[dict] = Field(default_factory=list)
-    prompt_profile: dict = Field(default_factory=dict)
+    # 在 runner 內驗證，格式錯誤才能進入同一次 structured repair，而不是
+    # 等到建立 Persona 時才無法追蹤地失敗。
+    prompt_profile: PersonaPromptProfile
 
 
 class PersonaListPayload(BaseModel):
@@ -108,7 +111,7 @@ class PersonaListPayload(BaseModel):
         personas: Persona 清單（至少一位）。
     """
 
-    personas: list[GeneratedPersonaPayload] = Field(default_factory=list, min_length=1)
+    personas: list[GeneratedPersonaPayload] = Field(min_length=1, max_length=1)
 
 
 class QuestionJudgementPayload(BaseModel):
