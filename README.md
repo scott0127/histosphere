@@ -111,6 +111,7 @@ pnpm test:runtime:smoke
 
 ### 支援文件
 
+- [後端與資料庫工程交接手冊](docs/backend-database-handbook.html)：新接手者的統一入口，說明架構、流程、資料表、權限、維運與安全修改方式。
 - [architecture.md](docs/architecture.md)：Backend、API、runtime 與測試 contract。
 - [system-design.md](docs/system-design.md)：整體流程與 frontend/backend 責任。
 - [ebl-historical-roleplay-intervention-design.md](docs/ebl-historical-roleplay-intervention-design.md)：現行研究介入規格。

@@ -1,0 +1,1173 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Histosphere Backend &amp; Database Engineering Handbook</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f5f0;
+      --surface: #fffdfa;
+      --surface-quiet: #efebe4;
+      --ink: #26231f;
+      --muted: #6f685f;
+      --line: #d8d1c6;
+      --accent: #765844;
+      --accent-soft: #e9ded3;
+      --good: #2f6b55;
+      --good-soft: #e2eee8;
+      --warn: #8a5d24;
+      --warn-soft: #f4ead8;
+      --danger: #8d3c3c;
+      --danger-soft: #f4e3e1;
+      --code: #282724;
+      --code-ink: #f6f1e8;
+      --sidebar: 284px;
+      --content: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 24px;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Segoe UI", "Noto Sans TC", sans-serif;
+      line-height: 1.7;
+    }
+
+    a { color: var(--accent); }
+    a:hover { color: var(--ink); }
+
+    code, pre, .mono {
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    code {
+      padding: 0.1em 0.35em;
+      border: 1px solid #ded6ca;
+      border-radius: 4px;
+      background: #f3eee7;
+      font-size: 0.9em;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 16px 0;
+      padding: 18px 20px;
+      border-radius: 6px;
+      background: var(--code);
+      color: var(--code-ink);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    pre code {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: var(--sidebar) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: #f0ede7;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--accent);
+      font: 700 13px/1 "Cascadia Code", monospace;
+    }
+
+    .brand strong {
+      display: block;
+      font-family: Georgia, "Noto Serif TC", serif;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    .brand small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .search {
+      width: 100%;
+      height: 42px;
+      margin: 0 0 20px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .search:focus {
+      outline: 2px solid var(--accent-soft);
+      border-color: var(--accent);
+    }
+
+    .nav-label {
+      margin: 20px 8px 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    nav a {
+      display: block;
+      padding: 7px 9px;
+      border-radius: 4px;
+      color: var(--muted);
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    nav a:hover,
+    nav a.active {
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .sidebar-foot {
+      margin-top: 26px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    main {
+      width: min(100%, var(--content));
+      margin: 0 auto;
+      padding: 54px 54px 90px;
+    }
+
+    .hero {
+      padding-bottom: 42px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4 {
+      margin: 0;
+      font-family: Georgia, "Noto Serif TC", serif;
+      font-weight: 700;
+      letter-spacing: 0;
+      line-height: 1.3;
+    }
+
+    h1 {
+      max-width: 860px;
+      margin-top: 10px;
+      font-size: 56px;
+    }
+
+    h2 { font-size: 30px; }
+    h3 { font-size: 20px; }
+    h4 { font-size: 16px; }
+
+    .hero-copy {
+      max-width: 820px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .meta-row,
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .tag {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      padding: 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tag.good { border-color: #a9c8b9; background: var(--good-soft); color: var(--good); }
+    .tag.warn { border-color: #d9bd92; background: var(--warn-soft); color: var(--warn); }
+
+    section {
+      padding: 48px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.65fr);
+      gap: 36px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .lead {
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .callout {
+      margin: 22px 0;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .callout strong { display: block; margin-bottom: 4px; }
+    .callout p { margin: 0; }
+    .callout.danger { border-color: #d8aaa5; background: var(--danger-soft); }
+    .callout.warn { border-color: #dbc49e; background: var(--warn-soft); }
+    .callout.good { border-color: #aac7b9; background: var(--good-soft); }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .card p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+    .card ul { margin-bottom: 0; }
+
+    .number {
+      display: inline-grid;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 14px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font: 700 12px/1 "Cascadia Code", monospace;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 24px;
+      margin: 28px 0;
+      overflow-x: auto;
+      padding: 2px 2px 12px;
+    }
+
+    .flow-step {
+      position: relative;
+      min-width: 150px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -18px;
+      width: 12px;
+      border-top: 1px solid var(--accent);
+    }
+
+    .flow-step:not(:last-child)::before {
+      content: "";
+      position: absolute;
+      top: calc(50% - 3px);
+      right: -19px;
+      width: 6px;
+      height: 6px;
+      border-top: 1px solid var(--accent);
+      border-right: 1px solid var(--accent);
+      transform: rotate(45deg);
+    }
+
+    .flow-step b { display: block; font-size: 14px; }
+    .flow-step span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+
+    .layer-stack {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      max-width: 780px;
+      margin: 24px auto;
+    }
+
+    .layer {
+      display: grid;
+      grid-template-columns: 165px 1fr;
+      gap: 18px;
+      align-items: center;
+      padding: 15px 18px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .layer b { color: var(--accent); font-size: 13px; }
+    .layer span { color: var(--muted); font-size: 14px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      background: var(--surface);
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface-quiet);
+      color: var(--ink);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    td p { margin: 0; }
+    td small { color: var(--muted); }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--good);
+    }
+
+    .status.paused::before { background: var(--warn); }
+    .status.legacy::before { background: #8c8880; }
+
+    .timeline {
+      margin: 26px 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .timeline li {
+      position: relative;
+      min-height: 70px;
+      padding: 0 0 22px 52px;
+      counter-increment: step;
+    }
+
+    .timeline li::before {
+      content: counter(step, decimal-leading-zero);
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid var(--accent);
+      border-radius: 50%;
+      color: var(--accent);
+      font: 700 11px/1 "Cascadia Code", monospace;
+    }
+
+    .timeline li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 36px;
+      bottom: 2px;
+      border-left: 1px solid var(--line);
+    }
+
+    .timeline b { display: block; }
+    .timeline p { margin: 5px 0 0; color: var(--muted); }
+
+    details {
+      border-top: 1px solid var(--line);
+      background: transparent;
+    }
+
+    details:last-child { border-bottom: 1px solid var(--line); }
+
+    summary {
+      display: flex;
+      min-height: 54px;
+      cursor: pointer;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      list-style: none;
+      font-weight: 700;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; color: var(--accent); font-size: 20px; }
+    details[open] summary::after { content: "−"; }
+    details > div { padding: 0 0 18px; color: var(--muted); }
+
+    .relationship-map {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 14px;
+      margin: 24px 0;
+    }
+
+    .entity {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .entity b { display: block; font-family: "Cascadia Code", monospace; font-size: 13px; }
+    .entity span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .entity.core { border-color: var(--accent); background: var(--accent-soft); }
+
+    .relation-lines {
+      padding: 14px 18px;
+      border: 1px dashed var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      font: 13px/1.8 "Cascadia Code", monospace;
+    }
+
+    .checklist {
+      display: grid;
+      gap: 8px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      position: relative;
+      padding-left: 28px;
+    }
+
+    .checklist li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.55em;
+      width: 13px;
+      height: 13px;
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      background: var(--surface);
+    }
+
+    .search-hidden { display: none !important; }
+
+    footer {
+      padding-top: 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: relative; width: 100%; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      nav { columns: 2; }
+      main { padding: 40px 28px 72px; }
+      .section-head { grid-template-columns: 1fr; gap: 10px; }
+      .grid-3, .relationship-map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      nav { columns: 1; }
+      main { padding: 32px 18px 60px; }
+      h1 { font-size: 36px; }
+      .grid-2, .grid-3, .relationship-map { grid-template-columns: 1fr; }
+      .layer { grid-template-columns: 1fr; gap: 4px; }
+      table { display: block; overflow-x: auto; }
+    }
+
+    @media print {
+      .shell { display: block; }
+      .sidebar { display: none; }
+      main { width: 100%; padding: 0; }
+      section { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">HS</div>
+        <div>
+          <strong>Histosphere</strong>
+          <small>Engineering handoff</small>
+        </div>
+      </div>
+      <label for="doc-search" class="nav-label">快速搜尋</label>
+      <input id="doc-search" class="search" type="search" placeholder="輸入 session、JWT、migration...">
+      <nav aria-label="文件導覽">
+        <div class="nav-label">Start</div>
+        <a href="#start">接手者先看這裡</a>
+        <a href="#invariants">不可破壞的規則</a>
+        <a href="#architecture">整體架構</a>
+        <a href="#directories">目錄與修改位置</a>
+        <div class="nav-label">Runtime</div>
+        <a href="#learner-flow">Learner 完整流程</a>
+        <a href="#session">Session 與恢復</a>
+        <a href="#task">Task 與 LLM Judge</a>
+        <a href="#llm">Prompt 與 LLM</a>
+        <a href="#auth">身分與權限</a>
+        <div class="nav-label">Data</div>
+        <a href="#database">Database 地圖</a>
+        <a href="#tables">資料表目錄</a>
+        <a href="#constraints">約束與資料完整性</a>
+        <a href="#research">研究紀錄與匯出</a>
+        <div class="nav-label">Operate</div>
+        <a href="#api">API 入口</a>
+        <a href="#config">設定與密鑰</a>
+        <a href="#development">啟動與測試</a>
+        <a href="#change">安全修改流程</a>
+        <a href="#troubleshooting">故障排查</a>
+        <a href="#references">延伸文件</a>
+      </nav>
+      <div class="sidebar-foot">
+        現況核對：2026-09-04<br>
+        Schema source：<span class="mono">supabase/migrations/</span>
+      </div>
+    </aside>
+
+    <main>
+      <header class="hero" id="top">
+        <div class="eyebrow">Backend &amp; Database Handbook</div>
+        <h1>後端與資料庫工程交接手冊</h1>
+        <p class="hero-copy">
+          這份文件是新接手工程師的第一個入口：先理解研究資料不可被破壞的規則，再沿著一位受測者的請求，找到 FastAPI、Service、Repository 與 Supabase 的責任邊界。
+        </p>
+        <div class="meta-row">
+          <span class="tag good">FastAPI</span>
+          <span class="tag good">Supabase PostgreSQL + Auth</span>
+          <span class="tag good">LiteLLM structured output</span>
+          <span class="tag warn">研究原型，不是公開 SaaS</span>
+        </div>
+      </header>
+
+      <section id="start" data-searchable>
+        <div class="section-head">
+          <h2>接手者先看這裡</h2>
+          <p>先跑起來、看懂一次完整流程，再改任何資料結構。</p>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <span class="number">1</span>
+            <h3>建立本機設定</h3>
+            <p>由 <code>.env.example</code> 建立自己的 <code>.env</code>。不要向 Git 提交真實 API key、Admin key 或 service-role key。</p>
+          </article>
+          <article class="card">
+            <span class="number">2</span>
+            <h3>啟動完整環境</h3>
+            <p>執行 <code>pnpm dev:full</code>。它會檢查 Docker、處理開發 ports、啟動 Supabase、FastAPI 與 Nuxt。</p>
+          </article>
+          <article class="card">
+            <span class="number">3</span>
+            <h3>走一次正式流程</h3>
+            <p>登入 Learner → 開始已分派事件 → Task → 等待判題 → Chat → 五分鐘結束，再到 Admin 查 Session 紀錄。</p>
+          </article>
+        </div>
+        <pre><code>pnpm install
+backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+pnpm dev:full</code></pre>
+        <table>
+          <thead><tr><th>入口</th><th>網址</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td>Frontend</td><td><code>http://127.0.0.1:3000</code></td><td>Learner 正式介面</td></tr>
+            <tr><td>Admin</td><td><code>http://127.0.0.1:3000/admin</code></td><td>素材、Participant、Session 與研究資料管理</td></tr>
+            <tr><td>Backend</td><td><code>http://127.0.0.1:8000/health</code></td><td>FastAPI 健康檢查</td></tr>
+            <tr><td>Supabase API</td><td><code>http://127.0.0.1:54321</code></td><td>Auth 與 PostgREST</td></tr>
+            <tr><td>Supabase Studio</td><td><code>http://127.0.0.1:54323</code></td><td>本機資料檢視；不要手動刪除正式研究資料</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="invariants" data-searchable>
+        <div class="section-head">
+          <h2>不可破壞的規則</h2>
+          <p>這些不是實作偏好，而是資料可信度與實驗條件的邊界。</p>
+        </div>
+        <div class="callout danger">
+          <strong>禁止用 hard delete 清理研究資料</strong>
+          <p>Event、Persona、Participant、Session 與 Conversation 以封存或狀態轉換處理。任何資料刪除需求都必須先確認研究資料是否仍需追溯。</p>
+        </div>
+        <div class="grid-2">
+          <article class="card">
+            <h3>身分由後端決定</h3>
+            <p>Learner 的 <code>user_id</code> 一律取自已驗證 JWT，不能信任前端 localStorage、query string 或 request body 傳來的身分。</p>
+          </article>
+          <article class="card">
+            <h3>Condition 必須 fail closed</h3>
+            <p>找不到 participant、未分派該 Condition、順序不符或 participant 非 active 時，拒絕建立 Session，不能偷偷套用預設 Condition。</p>
+          </article>
+          <article class="card">
+            <h3>Session 是研究資料主軸</h3>
+            <p>一個 Session 最多一份 <code>task_attempt</code> 與一段 <code>conversation</code>。重整只恢復，不建立第二份。</p>
+          </article>
+          <article class="card">
+            <h3>素材先鎖定再收案</h3>
+            <p>Learner 只能開始已鎖定的 Event。鎖定前會驗證 Task 格式與唯一啟用 Persona；鎖定後禁止修改素材。</p>
+          </article>
+          <article class="card">
+            <h3>正式模型不可自動切換</h3>
+            <p>一次實驗固定使用 <code>LLM_MODEL</code>。暫時性錯誤可重試同一 provider/model，但不得切換 provider 造成處遇不一致。</p>
+          </article>
+          <article class="card">
+            <h3>Admin test 不進正式匯出</h3>
+            <p>管理員測試 Session 以 <code>is_admin_test</code> 分類，排除於 Learner 進度與正式研究匯出。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="architecture" data-searchable>
+        <div class="section-head">
+          <h2>整體架構</h2>
+          <p>HTTP endpoint 保持薄，規則集中在 Service；所有持久化經 Repository。</p>
+        </div>
+        <div class="flow" aria-label="系統架構流程">
+          <div class="flow-step"><b>Nuxt / Vue</b><span>畫面、登入狀態、輪詢與串流顯示</span></div>
+          <div class="flow-step"><b>FastAPI Endpoint</b><span>驗證 request、JWT/Admin key 與 ownership</span></div>
+          <div class="flow-step"><b>Domain Service</b><span>Session、Task、Chat、Persona、Export 規則</span></div>
+          <div class="flow-step"><b>Repository</b><span>統一資料存取與 domain model 轉換</span></div>
+          <div class="flow-step"><b>Supabase</b><span>PostgreSQL、Auth、約束與研究紀錄</span></div>
+        </div>
+        <div class="layer-stack">
+          <div class="layer"><b>外部內容</b><span>Wikipedia 只在 Admin 建立新事件素材時使用；Learner 不會即時生成新 Event。</span></div>
+          <div class="layer"><b>LLM runtime</b><span>LiteLLM 依 <code>LLM_MODEL</code> 呼叫已設定的 provider；輸出需通過 Pydantic schema 與內容驗證。目前程式對 Gemini、Cohere、NVIDIA 有明確的 provider-specific 設定。</span></div>
+          <div class="layer"><b>研究稽核</b><span><code>research_logs</code> 保存素材快照、Prompt hash、LLM metadata、狀態變更與失敗紀錄。</span></div>
+        </div>
+        <div class="callout">
+          <strong>Dependency composition 在哪裡？</strong>
+          <p><code>backend/app/main.py</code> 建立 Repository、providers 與各 Service，放進 <code>app.state</code>；<code>backend/app/api/deps.py</code> 供 endpoint 注入與驗證。</p>
+        </div>
+      </section>
+
+      <section id="directories" data-searchable>
+        <div class="section-head">
+          <h2>目錄與修改位置</h2>
+          <p>先找到責任邊界，避免把研究規則散落到 route 或前端。</p>
+        </div>
+        <table>
+          <thead><tr><th>路徑</th><th>責任</th><th>常見修改</th></tr></thead>
+          <tbody>
+            <tr><td><code>backend/app/api/v1/endpoints/</code></td><td>HTTP routes 與 dependency wiring</td><td>新增 API、解析 request、套用權限；不要在此寫長流程</td></tr>
+            <tr><td><code>backend/app/services/</code></td><td>核心 use cases</td><td>Task 提交、Session 恢復、Chat、素材鎖定、匯出</td></tr>
+            <tr><td><code>backend/app/core/</code></td><td>跨服務 contract 與純規則</td><td>Auth、Condition、EBL、Persona、Task payload validation</td></tr>
+            <tr><td><code>backend/app/models/domain.py</code></td><td>持久化 domain models</td><td>DB 欄位映射與狀態欄位</td></tr>
+            <tr><td><code>backend/app/schemas/</code></td><td>API request/response models</td><td>外部 API contract 與 Learner/Admin view</td></tr>
+            <tr><td><code>backend/app/crud/protocols.py</code></td><td>Repository interface</td><td>新增資料操作時先定義一致介面</td></tr>
+            <tr><td><code>backend/app/db/supabase_repository.py</code></td><td>正式 Supabase adapter</td><td>PostgREST 查詢、upsert、資料轉換</td></tr>
+            <tr><td><code>backend/app/db/in_memory.py</code></td><td>測試 adapter</td><td>需與 protocol 同步；正式 runtime 禁止 fallback 到此</td></tr>
+            <tr><td><code>backend/app/providers/llm/</code></td><td>LLM provider 與 structured output</td><td>模型接法、同 provider retry、schema repair、metadata</td></tr>
+            <tr><td><code>supabase/migrations/</code></td><td>唯一 schema 來源</td><td>所有 table、column、FK、index、constraint 變更</td></tr>
+            <tr><td><code>supabase/seed.sql</code></td><td>可重現本機資料</td><td>固定 Condition 與開發素材；執行前先閱讀內容</td></tr>
+            <tr><td><code>backend/tests/</code></td><td>後端 contract 與整合測試</td><td>新增風險對應測試，不重複堆同義案例</td></tr>
+          </tbody>
+        </table>
+        <details>
+          <summary>我要改某個功能，從哪裡開始？</summary>
+          <div>
+            <p><b>Auth/ownership：</b><code>api/deps.py</code>、<code>core/auth.py</code>。</p>
+            <p><b>Session/倒數：</b><code>services/session_service.py</code>、<code>services/session_runtime.py</code>。</p>
+            <p><b>Task/Judge：</b><code>services/task_service.py</code>、<code>services/task_judgement.py</code>、<code>core/error_elicitation_contract.py</code>。</p>
+            <p><b>Prompt/EBL/Persona：</b><code>services/prompt_service.py</code>、<code>core/interaction_contract.py</code>、<code>core/persona_prompt_contract.py</code>。</p>
+            <p><b>研究匯出：</b><code>services/research_export_service.py</code>、<code>core/research_reproducibility.py</code>。</p>
+          </div>
+        </details>
+      </section>
+
+      <section id="learner-flow" data-searchable>
+        <div class="section-head">
+          <h2>Learner 完整流程</h2>
+          <p>每一步都持久化；頁面重整後由後端狀態決定返回哪一階段。</p>
+        </div>
+        <ol class="timeline">
+          <li><b>Supabase Auth 登入</b><p>Frontend 取得 access token；後端向 Supabase Auth 驗證 token，使用 JWT subject 作為唯一 Auth user id。</p></li>
+          <li><b>讀取 participant 與進度</b><p><code>GET /api/participants/me</code> 與 <code>GET /api/sessions/progress</code> 回傳後端認定的 participant、Condition 順序與既有 Session。</p></li>
+          <li><b>初始化或恢復 Event</b><p><code>POST /api/event/initialize</code> 檢查 participant assignment、執行順序、Event 封存與素材鎖定。已有未完成 Session 時直接恢復。</p></li>
+          <li><b>作答 Error-Elicitation Task</b><p>草稿寫進唯一的 <code>task_attempts</code> row。送出後立即回傳 <code>202 + attempt_id</code>，前端輪詢處理狀態。</p></li>
+          <li><b>Judge 與開場持久化</b><p>後端以規則判客觀答案、LLM 判理由，建立逐題錯誤資料，再生成開場並建立唯一 Conversation。</p></li>
+          <li><b>五分鐘 Chat</b><p>倒數只在 Conversation 與開場都可用時開始。每輪先保存 Learner 訊息，再呼叫 LLM，完成後保存 AI 訊息與 metadata。</p></li>
+          <li><b>時間到</b><p>Session 轉為 <code>completed</code>，Learner 看到「本階段已結束」並進入下一階段；沒有 Learner 手動提前完成按鈕。</p></li>
+        </ol>
+      </section>
+
+      <section id="session" data-searchable>
+        <div class="section-head">
+          <h2>Session 與中斷恢復</h2>
+          <p>Session 將 participant、Condition、Event、Task、Conversation 與計時器串成一條研究資料鏈。</p>
+        </div>
+        <div class="flow" aria-label="Session 狀態流程">
+          <div class="flow-step"><b>initialized</b><span>已建立 Session，進行 Task</span></div>
+          <div class="flow-step"><b>attempt processing</b><span>Task 已持久化，背景判題與開場生成中</span></div>
+          <div class="flow-step"><b>conversation_started</b><span>Chat 可用，五分鐘計時中</span></div>
+          <div class="flow-step"><b>completed</b><span>時間到或後端完成條件成立</span></div>
+          <div class="flow-step"><b>archived</b><span>Admin 重開時保留舊 Session</span></div>
+        </div>
+        <table>
+          <thead><tr><th>情境</th><th>後端行為</th><th>不應發生</th></tr></thead>
+          <tbody>
+            <tr><td>Task 中重新整理</td><td>讀取同一 Session 與同一 Attempt 草稿</td><td>建立第二份 Attempt</td></tr>
+            <tr><td>判題中重整</td><td>輪詢同一 <code>attempt_id</code>；必要時重新排程 processing job</td><td>重新產生另一份 Session</td></tr>
+            <tr><td>Chat 中重開</td><td>載入 DB 對話與原本 <code>timer_ends_at</code>，倒數不重置</td><td>回到完整五分鐘</td></tr>
+            <tr><td>時間已到後重開</td><td>後端懶惰檢查或 timer worker 將 Session 完成</td><td>繼續送出 Chat</td></tr>
+            <tr><td>同 Event 已完成</td><td>Learner 永久禁止再開；Admin 可 archive 舊 Session 並建立新 Session</td><td>Learner 自行重做</td></tr>
+          </tbody>
+        </table>
+        <div class="callout good">
+          <strong>資料庫層保證 cardinality</strong>
+          <p><code>task_attempts.session_id</code> 與 <code>conversations.session_id</code> 都有唯一 index 且不得為 NULL；Application 層的「先查再建」不是唯一防線。</p>
+        </div>
+      </section>
+
+      <section id="task" data-searchable>
+        <div class="section-head">
+          <h2>Error-Elicitation Task 與 Judge</h2>
+          <p>Task 是產生後續學習機會的媒介，不是前測、後測或 Historical Thinking outcome score。</p>
+        </div>
+        <div class="grid-2">
+          <article class="card">
+            <h3>Authoring contract</h3>
+            <p><code>error_elicitation_task_full_text</code> 保存完整閱讀材料與 <code>{{blank:qNN}}</code> 位置；<code>evaluation_payload.questions[]</code> 保存題型、正解與理由通過標準。</p>
+          </article>
+          <article class="card">
+            <h3>Learner response</h3>
+            <p>目前正式題型是選擇、是非與填空。每題都必須提交 <code>value</code> 與 <code>rationale</code>，漏題或格式錯誤視為處理失敗，而非自動判學生答錯。</p>
+          </article>
+        </div>
+        <div class="flow" aria-label="Task 判題流程">
+          <div class="flow-step"><b>Validate</b><span>題號、題數、答案與理由格式完整</span></div>
+          <div class="flow-step"><b>Rule judge</b><span>客觀答案與 correct_answer 正規化比對</span></div>
+          <div class="flow-step"><b>LLM judge</b><span>一次 structured call 判斷每題理由</span></div>
+          <div class="flow-step"><b>Merge</b><span>答案正確且理由正確才是 correct</span></div>
+          <div class="flow-step"><b>Persist</b><span>逐題錯誤、issue types、HT tags 與 input hash</span></div>
+        </div>
+        <div class="callout warn">
+          <strong>LLM 不負責改寫客觀答案</strong>
+          <p>客觀答案由規則決定；LLM 只判斷理由是否符合研究者為該題寫下的 <code>reasoning_criteria</code>，並回傳史實錯誤、推理錯誤與可選 Historical Thinking 標籤。標籤不是計分本身。</p>
+        </div>
+        <p class="lead">送出後的 Attempt 狀態為 <code>processing → submitted</code>，失敗則為 <code>failed</code> 並可重試。若判題已成功、只在開場生成失敗，<code>judgement_input_hash</code> 會讓重試沿用原判題，避免同一份答案被第二次模型判成不同結果。</p>
+      </section>
+
+      <section id="llm" data-searchable>
+        <div class="section-head">
+          <h2>Prompt 與 LLM Runtime</h2>
+          <p>一次使用者回覆走一條 canonical prompt pipeline；邏輯上單次生成，技術上可有同模型 retry 或一次 schema repair。</p>
+        </div>
+        <div class="layer-stack">
+          <div class="layer"><b>general_prompt</b><span>所有 Condition 共用的安全、範圍、史實與輸出規則。</span></div>
+          <div class="layer"><b>independent_2_prompt</b><span>互動方式：Standard Chat 或 EBL scaffold。</span></div>
+          <div class="layer"><b>event + task</b><span>事件情境與已凍結的逐題作答／錯誤資料。</span></div>
+          <div class="layer"><b>interaction_runtime</b><span>目前錯誤、EBL 階段、Disclosure level、允許證據與 forbidden aliases。</span></div>
+          <div class="layer"><b>conversation_history</b><span>由資料庫取回，依字元預算裁切；不是只保留固定 12 則。</span></div>
+          <div class="layer"><b>independent_1_prompt</b><span>呈現身分：中性 AI 或固定歷史人物第一人稱。</span></div>
+          <div class="layer"><b>runtime_policy</b><span>structured output、off-topic、答案洩漏與回覆邊界。</span></div>
+          <div class="layer"><b>user_message</b><span>只放入 canonical module 一次，不在 provider 外層重複傳遞。</span></div>
+        </div>
+        <table>
+          <thead><tr><th>Condition</th><th>Interaction</th><th>Renderer</th><th>研究控制</th></tr></thead>
+          <tbody>
+            <tr><td><code>01</code></td><td>Standard Chat</td><td>中性 AI 歷史助教</td><td>不主動要求反思、自我修正</td></tr>
+            <tr><td><code>02</code></td><td>EBL scaffold</td><td>中性 AI 歷史助教</td><td>與 04 共用 EBL/Disclosure policy</td></tr>
+            <tr><td><code>03</code></td><td>Standard Chat</td><td>歷史人物第一人稱</td><td>不主動要求反思、自我修正</td></tr>
+            <tr><td><code>04</code></td><td>EBL scaffold</td><td>歷史人物第一人稱</td><td>只在 02 的 pedagogical act 上增加 persona 呈現</td></tr>
+          </tbody>
+        </table>
+        <p class="lead">Historical Thinking 是四組共用的歷史回應品質基礎，不是額外操弄。EBL 才是 02/04 的互動教學鷹架：發現／認知錯誤 → 分析與反思 → 自我修正 → corrective feedback/resolution。</p>
+        <div class="grid-3">
+          <article class="card"><h3>模型鎖定</h3><p><code>LLM_MODEL</code> 是唯一正式 candidate；<code>provider_switching_enabled=false</code>。</p></article>
+          <article class="card"><h3>輸出驗證</h3><p>Pydantic schema 驗證；格式失敗可再要求同模型修復一次，未通過不得入庫成正式回覆。</p></article>
+          <article class="card"><h3>失敗稽核</h3><p>拒絕輸出與 provider failure 寫入 <code>LLM_REJECTION_LOG_PATH</code>，研究 metadata 另存 DB。</p></article>
+        </div>
+        <div class="callout">
+          <strong>目前刻意暫緩</strong>
+          <p>RAG／向量檢索尚未進正式介入；<code>source_context</code> 模組可以存在，但 runtime 目前不依賴動態檢索。不要在未完成研究設計前偷偷啟用。</p>
+        </div>
+      </section>
+
+      <section id="auth" data-searchable>
+        <div class="section-head">
+          <h2>身分與權限</h2>
+          <p>兩條入口：Learner JWT 與 Admin shared key。兩者用途不同，不要混成同一種帳號角色。</p>
+        </div>
+        <div class="grid-2">
+          <article class="card">
+            <h3>Learner</h3>
+            <p>以 <code>Authorization: Bearer &lt;Supabase access token&gt;</code> 呼叫。後端驗證 token 後，以 Auth user id 找 participant，並檢查 active、ownership、Condition assignment 與順序。</p>
+          </article>
+          <article class="card">
+            <h3>Admin</h3>
+            <p>以 <code>x-admin-key</code> 呼叫。值只從 <code>HISTOSPHERE_ADMIN_KEY</code> 讀取，缺少時後端拒絕啟動；Frontend 只保存在目前分頁，退出模式即清除。</p>
+          </article>
+        </div>
+        <table>
+          <thead><tr><th>邊界</th><th>規則</th></tr></thead>
+          <tbody>
+            <tr><td>JWT cache</td><td>後端只以 token hash 暫存驗證結果 30 秒，不保存原 token。</td></tr>
+            <tr><td>Ownership</td><td>Session、Attempt、Conversation 與 Chat 都比對 JWT owner；另一帳號讀取或寫入應回 403。</td></tr>
+            <tr><td>Participant archive</td><td>停止該帳號進入正式 Learner API，但不解除 Auth 綁定，也不刪除既有資料。</td></tr>
+            <tr><td>RLS</td><td>目前 public schema RLS 未啟用；安全邊界是 FastAPI + service-role repository。資料庫不得直接暴露給 Learner client。</td></tr>
+            <tr><td>Public catalog</td><td>Event/Condition/Persona 的讀取入口供首頁顯示；Learner view 不回傳 Task 正解與完整評分 payload。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="database" data-searchable>
+        <div class="section-head">
+          <h2>Database 地圖</h2>
+          <p>先看研究資料鏈，再看每張表；灰色表是暫緩或相容用途。</p>
+        </div>
+        <div class="relationship-map" aria-label="資料表群組">
+          <div class="entity"><b>participants</b><span>受測代號、Auth 綁定、Condition 順序</span></div>
+          <div class="entity"><b>experiment_conditions</b><span>2×2 因子與對應 key</span></div>
+          <div class="entity"><b>events</b><span>事件主資料、封存與素材鎖</span></div>
+          <div class="entity core"><b>experiment_sessions</b><span>一輪實驗的主軸與凍結快照</span></div>
+          <div class="entity"><b>event_tasks</b><span>完整閱讀材料與評分 contract</span></div>
+          <div class="entity core"><b>task_attempts</b><span>唯一作答、理由與判題結果</span></div>
+          <div class="entity"><b>personas</b><span>事件唯一啟用人物與 prompt profile</span></div>
+          <div class="entity core"><b>conversations</b><span>每個 Session 唯一對話容器</span></div>
+          <div class="entity"><b>messages</b><span>逐輪訊息、operation 與 LLM metadata</span></div>
+          <div class="entity core"><b>research_logs</b><span>不可替代的稽核與重播紀錄</span></div>
+          <div class="entity"><b>wiki_sources</b><span>Admin 建立素材時的來源快照</span></div>
+          <div class="entity"><b>knowledge_chunks</b><span>RAG 預留；目前未啟用</span></div>
+        </div>
+        <div class="relation-lines">
+          participants 1 ── N experiment_sessions N ── 1 experiment_conditions<br>
+          events 1 ── N event_tasks / personas / wiki_sources / experiment_sessions<br>
+          experiment_sessions 1 ── 0..1 task_attempts 1 ── 0..1 conversations<br>
+          conversations 1 ── N messages<br>
+          research_logs ── references session / task / attempt / conversation / message
+        </div>
+        <p class="lead"><b>Source of truth：</b>已套用的 PostgreSQL schema 與 <code>supabase/migrations/</code>。本頁與 <code>supabase-schema.md</code> 是人類可讀說明；兩者若衝突，以 migration 與實際 schema 為準，並立即修正文檔。</p>
+      </section>
+
+      <section id="tables" data-searchable>
+        <div class="section-head">
+          <h2>資料表目錄</h2>
+          <p>列出接手時最常用欄位；完整欄位、型別與 index 請看 schema 文件。</p>
+        </div>
+        <table>
+          <thead><tr><th>Table</th><th>關鍵欄位</th><th>責任與注意事項</th><th>狀態</th></tr></thead>
+          <tbody>
+            <tr><td><code>events</code></td><td><code>canonical_name</code>, <code>archived_at</code>, <code>materials_locked_at</code></td><td>事件主資料；用封存，不 hard delete。鎖定後禁止素材修改。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>wiki_sources</code></td><td><code>event_id</code>, <code>url</code>, <code>content</code></td><td>Admin 產生事件時取得的來源，不是目前的正式 RAG runtime。</td><td><span class="status">素材來源</span></td></tr>
+            <tr><td><code>event_tasks</code></td><td><code>error_elicitation_task_full_text</code>, <code>evaluation_payload</code></td><td>Task 題文與 judge contract；既有 Session 透過 Attempt/快照保持原版本語意。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>personas</code></td><td><code>event_id</code>, <code>active</code>, <code>archived_at</code>, <code>prompt_profile</code></td><td>每個 Event 最多一位 active、未封存人物。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>participants</code></td><td><code>code</code>, <code>auth_user_id</code>, <code>condition_list</code>, <code>status</code></td><td>顯示代號與 Auth 綁定；<code>condition_list</code> 的順序就是執行順序。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>experiment_conditions</code></td><td><code>condition_key</code>, <code>ebl_enabled</code>, <code>roleplay_enabled</code></td><td>2×2 因子資料；實際 prompt policy 仍由 backend code 管理。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>experiment_sessions</code></td><td><code>participant_id</code>, <code>condition_key_snapshot</code>, <code>status</code>, timer fields, <code>is_admin_test</code></td><td>研究主軸；保存當次 Condition 與 participant 歸屬。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>task_attempts</code></td><td><code>session_id</code>, <code>response_payload</code>, <code>judgement_payload</code>, <code>status</code></td><td>每個 Session 唯一作答；processing/failed 可恢復。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>conversations</code></td><td><code>session_id</code>, <code>task_attempt_id</code>, <code>status</code></td><td>每個 Session 唯一對話；Admin restart 時封存舊對話。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>messages</code></td><td><code>sequence_index</code>, <code>client_request_id</code>, <code>operation_status</code>, <code>metadata</code></td><td>逐輪持久化、冪等鍵、Prompt/LLM metadata 與 EBL 狀態。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>research_logs</code></td><td>各 entity id, <code>action_type</code>, <code>payload</code></td><td>素材快照、Prompt snapshot、狀態轉換與失敗稽核。</td><td><span class="status">正式</span></td></tr>
+            <tr><td><code>knowledge_chunks</code></td><td><code>event_id</code>, source references, embedding/text</td><td>RAG 預留，現行正式介入未使用。</td><td><span class="status paused">暫緩</span></td></tr>
+            <tr><td><code>task_blanks</code></td><td><code>task_id</code>, blank metadata</td><td>舊版正規化結構；目前正式 Task 以 JSONB questions 為準。</td><td><span class="status legacy">相容</span></td></tr>
+            <tr><td><code>task_answers</code></td><td><code>attempt_id</code>, answer metadata</td><td>舊版結構；目前正式作答存在 <code>task_attempts.response_payload</code>。</td><td><span class="status legacy">相容</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="constraints" data-searchable>
+        <div class="section-head">
+          <h2>約束與資料完整性</h2>
+          <p>應用程式檢查改善錯誤訊息；Database constraint 才是競態條件下的最後防線。</p>
+        </div>
+        <table>
+          <thead><tr><th>Constraint / Index</th><th>保護的風險</th><th>期待行為</th></tr></thead>
+          <tbody>
+            <tr><td><code>events.canonical_name UNIQUE</code></td><td>同一事件被建立兩次</td><td>名稱正規化後只能有一筆主事件</td></tr>
+            <tr><td><code>participants.code UNIQUE</code></td><td>受測代號碰撞</td><td>每個 P-code 唯一</td></tr>
+            <tr><td><code>participants.auth_user_id UNIQUE</code></td><td>同一 Auth 帳號綁兩位 participant</td><td>一對一綁定</td></tr>
+            <tr><td><code>task_attempts.session_id UNIQUE NOT NULL</code></td><td>同一 Session 兩份作答</td><td>重整與重送都更新／讀取原 Attempt</td></tr>
+            <tr><td><code>conversations.session_id UNIQUE NOT NULL</code></td><td>同一 Session 兩段對話</td><td>第二次建立請求回到原 Conversation</td></tr>
+            <tr><td><code>messages(conversation_id, sequence_index) UNIQUE</code></td><td>訊息排序碰撞</td><td>逐段對話有穩定順序</td></tr>
+            <tr><td>active chat operation partial unique</td><td>雙擊送出造成同時兩個 LLM call</td><td>每段 Conversation 同時最多一個 processing operation</td></tr>
+            <tr><td>one active persona per event</td><td>Role-play 不知道該用哪位人物</td><td>每個 Event 最多一位 active、未封存 Persona</td></tr>
+            <tr><td>研究鏈 FK + NOT NULL / RESTRICT</td><td>Attempt、Conversation、Message 無法歸屬</td><td>不得刪除仍被研究紀錄引用的上游資料</td></tr>
+          </tbody>
+        </table>
+        <div class="callout danger">
+          <strong>Migration 原則</strong>
+          <p>不要改寫已套用 migration，也不要用重設資料庫來代替 migration。新增 timestamped SQL，先處理舊資料相容性，再加入 NOT NULL、FK 或 UNIQUE；任何可能刪除資料的 SQL 都必須先停下來確認。</p>
+        </div>
+      </section>
+
+      <section id="research" data-searchable>
+        <div class="section-head">
+          <h2>研究紀錄與可重現性</h2>
+          <p>正式結果不是只看 messages；需要 Session、素材、Prompt、模型與判題一起重播。</p>
+        </div>
+        <div class="grid-3">
+          <article class="card"><h3>Material snapshot</h3><p>Session 建立時保存 Event、Task、Persona 與 Condition 的內容及穩定 hash，後續素材修改不應改變已發生實驗的解讀。</p></article>
+          <article class="card"><h3>Prompt snapshot</h3><p>每次重要 LLM call 保存組裝後 Prompt、modules、hash、provider/model、latency、tokens 與 retry/repair metadata。</p></article>
+          <article class="card"><h3>Full replay</h3><p>Admin 可看某 Session 的完整逐字稿、Task 作答與 Judge、訊息數、雙方回合、token 合計與涵蓋率。</p></article>
+        </div>
+        <table>
+          <thead><tr><th>Export 規則</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr><td>只輸出正式 Session</td><td><code>is_admin_test=true</code> 與無法綁定 participant 的孤兒資料不進正式 JSON/CSV。</td></tr>
+            <tr><td>去識別</td><td>匯出使用 <code>participant_code</code>，Session/Attempt/Conversation 中的 Auth <code>user_id</code> 清空。</td></tr>
+            <tr><td>Token 誠實呈現</td><td>若 provider 未回傳 usage，涵蓋率會低於 100%；不得把缺值當成 0 並宣稱完整。</td></tr>
+            <tr><td>Hash 可驗證</td><td>Admin replay 會重算 material/prompt hash，標示是否一致或 legacy missing。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="api" data-searchable>
+        <div class="section-head">
+          <h2>API 入口</h2>
+          <p>以下依權限與用途分組；精確 request/response 以 FastAPI OpenAPI 與 Pydantic schema 為準。</p>
+        </div>
+        <details open>
+          <summary>Public / catalog</summary>
+          <div>
+            <p><code>GET /health</code>、<code>GET /api/events</code>、<code>GET /api/conditions</code>、<code>GET /api/personas</code>、<code>POST /api/event/check</code>。</p>
+            <p>只用於健康檢查與首頁 catalog。公開 Event 回應不可包含 Task 正解或完整 evaluation payload。</p>
+          </div>
+        </details>
+        <details open>
+          <summary>Learner JWT + active participant</summary>
+          <div>
+            <p><code>GET /api/participants/me</code></p>
+            <p><code>POST /api/event/initialize</code></p>
+            <p><code>GET /api/sessions/progress</code>、<code>GET /api/sessions/{session_id}/state</code></p>
+            <p><code>PATCH /api/tasks/{task_id}/draft</code>、<code>POST /api/tasks/{task_id}/submit</code>、<code>GET /api/tasks/attempts/{attempt_id}</code></p>
+            <p><code>POST /api/conversations</code>、<code>GET /api/conversations/{conversation_id}</code></p>
+            <p><code>POST /api/chat</code>、<code>POST /api/chat/stream</code>、<code>GET /api/chat/operations/{client_request_id}</code></p>
+          </div>
+        </details>
+        <details>
+          <summary>Admin key</summary>
+          <div>
+            <p><code>/api/admin/*</code>：snapshot、Auth user 清單、Prompt preview/dry-run、Event 編輯/封存/還原/素材鎖定、Task 編輯、Persona 啟停、Participant 建立/編輯/封存/還原、Condition 編輯、Session timer/restart、research logs/replay/export。</p>
+            <p><code>POST/PATCH/DELETE /api/personas*</code> 是相容入口，也有 Admin key 保護；其中 DELETE 的實際語意是可恢復封存，不是 hard delete。</p>
+          </div>
+        </details>
+      </section>
+
+      <section id="config" data-searchable>
+        <div class="section-head">
+          <h2>設定與密鑰</h2>
+          <p>文件只記環境變數名稱，不記真實值。開發環境的 <code>.env.local.supabase</code> 會覆蓋本機 Supabase 連線。</p>
+        </div>
+        <table>
+          <thead><tr><th>變數</th><th>誰使用</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>VITE_SUPABASE_URL</code><br><code>VITE_SUPABASE_ANON_KEY</code></td><td>Frontend</td><td>Supabase Auth 登入；anon/publishable key 可給瀏覽器，service-role 絕對不可。</td></tr>
+            <tr><td><code>SUPABASE_URL</code><br><code>SUPABASE_ANON_KEY</code></td><td>Backend</td><td>PostgREST endpoint 與 JWT user endpoint 驗證。</td></tr>
+            <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td>Backend only</td><td>Repository 的高權限資料存取；不得進 frontend bundle、log 或文件。</td></tr>
+            <tr><td><code>HISTOSPHERE_ADMIN_KEY</code></td><td>Backend + Admin request</td><td>共享管理門檻；沒有預設值，缺少即拒絕啟動。</td></tr>
+            <tr><td><code>LLM_MODEL</code></td><td>Backend</td><td>正式實驗唯一 provider/model，使用 LiteLLM model id；換 provider 前必須先完成相同流程的實際驗證。</td></tr>
+            <tr><td><code>LLM_TEMPERATURE</code><br><code>LLM_MAX_OUTPUT_TOKENS</code><br><code>LLM_TIMEOUT_SECONDS</code></td><td>Backend</td><td>全域生成參數；目前預設 0.3、4096、60 秒。</td></tr>
+            <tr><td>Provider API keys</td><td>Backend only</td><td><code>GEMINI_API_KEY</code>、<code>COHERE_API_KEY</code>、<code>NVIDIA_API_KEY</code> 或通用 <code>LLM_API_KEY</code>，由選定模型決定。其他 LiteLLM provider 不應在未驗證前視為正式支援。</td></tr>
+            <tr><td><code>LLM_REJECTION_LOG_PATH</code></td><td>Backend</td><td>未通過 schema/內容驗證的模型輸出與 failure audit。</td></tr>
+          </tbody>
+        </table>
+        <div class="callout danger">
+          <strong>密鑰衛生</strong>
+          <p>不要把真實 key、測試帳號密碼或 participant credential 寫進 Git、截圖、research export 或這份文件。洩漏後必須輪替，不是只從檔案刪掉。</p>
+        </div>
+      </section>
+
+      <section id="development" data-searchable>
+        <div class="section-head">
+          <h2>啟動與最低驗證</h2>
+          <p>文件改動不必跑整套；程式、schema 或研究流程改動需依風險選擇驗證。</p>
+        </div>
+        <table>
+          <thead><tr><th>指令</th><th>何時執行</th><th>驗證範圍</th></tr></thead>
+          <tbody>
+            <tr><td><code>pnpm test:frontend:unit</code></td><td>Frontend/composable/API adapter 改動</td><td>前端純邏輯與資料 contract</td></tr>
+            <tr><td><code>pnpm test:backend</code></td><td>Service、API、Auth、Prompt、Judge 改動</td><td>後端 unit/API contract</td></tr>
+            <tr><td><code>pnpm build</code></td><td>合併前或 UI 結構改動</td><td>Nuxt type/build integration</td></tr>
+            <tr><td><code>pnpm test:supabase:schema</code></td><td>Migration/domain/repository 改動</td><td>實際 local schema、FK、NOT NULL、unique index</td></tr>
+            <tr><td><code>pnpm test:runtime:smoke</code></td><td>完整流程或啟動腳本改動</td><td>真實服務是否可互相連通</td></tr>
+            <tr><td><code>pnpm test:quality</code></td><td>正式 demo/收案前</td><td>上述完整驗證</td></tr>
+          </tbody>
+        </table>
+        <p class="lead">測試用的 <code>InMemoryRepository</code> 必須由 test 明確啟用。Production/development 若缺 Supabase 設定應直接失敗，不能悄悄改用記憶體造成「畫面看似成功但資料沒保存」。</p>
+      </section>
+
+      <section id="change" data-searchable>
+        <div class="section-head">
+          <h2>安全修改流程</h2>
+          <p>最小改動不是少驗證，而是只改真正負責該規則的層。</p>
+        </div>
+        <ol class="timeline">
+          <li><b>先確認研究語意</b><p>分清楚這是 UI 文案、工程 contract，還是會改變 Condition／處遇內容的研究決策。</p></li>
+          <li><b>建立 Git restore point</b><p>大型新增、schema、Prompt 或研究流程改動前先 commit；不要把不相關的使用者變更一起回復。</p></li>
+          <li><b>Database 先寫新 migration</b><p>向後相容地補欄位／資料，再加 constraint。禁止 destructive migration 與 hard delete。</p></li>
+          <li><b>同步 domain → protocol → repository</b><p>若欄位或操作改變，正式 Supabase adapter 與測試 adapter 都要一致。</p></li>
+          <li><b>把規則放進 Service/Core</b><p>Endpoint 僅處理 HTTP；Frontend 不能是研究規則的唯一守門員。</p></li>
+          <li><b>補一個能抓到真實風險的測試</b><p>優先驗證 ownership、cardinality、resume、redaction、material lock 與 export exclusion，不重複寫同義測試。</p></li>
+          <li><b>以真實 local Supabase 驗證</b><p>Migration 類改動不能只靠 in-memory unit test；至少跑 schema check，流程風險再跑 smoke。</p></li>
+          <li><b>取得授權後更新文件</b><p>大型改動完成後，依專案規則先詢問研究者，再同步主要文件與 System Map。</p></li>
+        </ol>
+      </section>
+
+      <section id="troubleshooting" data-searchable>
+        <div class="section-head">
+          <h2>故障排查</h2>
+          <p>先判斷是哪一層拒絕，不要以清資料或重建 Session 當第一反應。</p>
+        </div>
+        <details open>
+          <summary>後端無法啟動：缺少 HISTOSPHERE_ADMIN_KEY</summary>
+          <div>這是預期的 fail-fast。於本機 <code>.env</code> 設定 key；不要在程式碼加入 fallback。</div>
+        </details>
+        <details>
+          <summary>401：A valid Supabase Auth bearer token is required</summary>
+          <div>Frontend 沒傳 token、token 過期，或誤用 anon key 當使用者 access token。重新登入後再檢查 request header。</div>
+        </details>
+        <details>
+          <summary>403：Participant mapping / ownership / Condition</summary>
+          <div>依序確認 Auth user 是否綁 participant、participant 是否 active、Condition 是否在 <code>condition_list</code>、是否正按 Admin 分派順序，以及 Session owner 是否相同。</div>
+        </details>
+        <details>
+          <summary>409：素材未鎖、Session 已完成或操作重複</summary>
+          <div>409 通常是保護性拒絕，不是伺服器掛掉。查看 detail 後到 Admin 完成素材鎖定、恢復目前 Session，或等待既有 chat operation 完成。</div>
+        </details>
+        <details>
+          <summary>Task 一直顯示 processing</summary>
+          <div>先用同一 <code>attempt_id</code> 查 polling endpoint；GET 會在需要時重新排程仍為 processing 的工作。不要另建 Attempt。查看 backend log 與 rejection audit。</div>
+        </details>
+        <details>
+          <summary>Chat 看似卡住</summary>
+          <div>Learner 訊息已先持久化，串流會回報狀態。檢查 operation endpoint、LLM timeout 與 provider log；使用同一 <code>client_request_id</code> 可安全恢復，不能改內容後重用該 id。</div>
+        </details>
+        <details>
+          <summary>Supabase CLI 顯示 running，但 54321 不通</summary>
+          <div>執行 <code>pnpm dev:repair:supabase-ports</code> 或依 <code>local-development.md</code> 檢查被占用的官方 ports，再重跑 <code>pnpm dev:full</code>。不要任意改 port 逃避衝突。</div>
+        </details>
+      </section>
+
+      <section id="references" data-searchable>
+        <div class="section-head">
+          <h2>延伸文件</h2>
+          <p>本手冊負責導覽；詳細 contract 仍維持在各自的單一深入文件。</p>
+        </div>
+        <div class="grid-2">
+          <article class="card"><h3><a href="./architecture.md">architecture.md</a></h3><p>Backend、API、runtime、2×2 與測試 contract。</p></article>
+          <article class="card"><h3><a href="./supabase-schema.md">supabase-schema.md</a></h3><p>14 張表的完整 columns、FK、constraints 與 indexes。</p></article>
+          <article class="card"><h3><a href="./system-design.md">system-design.md</a></h3><p>Frontend/Backend 責任與整體使用者流程。</p></article>
+          <article class="card"><h3><a href="./research-data-export.md">research-data-export.md</a></h3><p>Session replay、token 統計、去識別與匯出欄位。</p></article>
+          <article class="card"><h3><a href="./local-development.md">local-development.md</a></h3><p>Docker、Supabase ports、啟動與清理。</p></article>
+          <article class="card"><h3><a href="./histosphere-system-map.html">System Map</a></h3><p>各子系統完成度、暫緩項目與待討論研究問題。</p></article>
+          <article class="card"><h3><a href="../記憶.md">記憶.md</a></h3><p>已確認且長期影響研究／工程的原則。</p></article>
+          <article class="card"><h3><a href="./research-experiment-backlog.md">Research backlog</a></h3><p>尚未定案、暫緩與已接受風險。</p></article>
+        </div>
+      </section>
+
+      <footer>
+        這份手冊不保存密鑰、密碼或即時 participant 名單。運行資料以 Admin 介面與 Supabase 實際狀態為準；架構說明以程式碼及已套用 migration 為準。
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const search = document.querySelector("#doc-search");
+    const sections = [...document.querySelectorAll("[data-searchable]")];
+    const navLinks = [...document.querySelectorAll("nav a")];
+
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLocaleLowerCase("zh-Hant");
+      sections.forEach((section) => {
+        const matches = !query || section.textContent.toLocaleLowerCase("zh-Hant").includes(query);
+        section.classList.toggle("search-hidden", !matches);
+      });
+    });
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      navLinks.forEach((link) => {
+        link.classList.toggle("active", link.getAttribute("href") === `#${visible.target.id}`);
+      });
+    }, { rootMargin: "-15% 0px -70%", threshold: [0.05, 0.2, 0.5] });
+
+    sections.forEach((section) => observer.observe(section));
+  </script>
+</body>
+</html>
