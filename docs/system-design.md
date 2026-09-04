@@ -107,7 +107,7 @@ V1 stores all learner response data in:
 
 - `task_attempts.response_payload`
 
-V1 task display is story-first. `event_tasks.display_text` may include inline blank tokens such as `{{blank:q-cause}}`. Each token maps to one item in `event_tasks.evaluation_payload.questions` through `blank_id` or `id`, allowing the frontend to render cloze, multiple-choice, true/false, and short-answer controls inside the historical story.
+V1 task display is reading-first. `event_tasks.error_elicitation_task_full_text` contains one `{{blank:qNN}}` marker for each item in `event_tasks.evaluation_payload.questions[]`. The canonical contract supports cloze, multiple-choice, and true/false; every answer block also requires the learner's rationale.
 
 V1 stores LLM judgement in:
 
@@ -117,20 +117,24 @@ Expected judgement shape:
 
 ```json
 {
-  "result": "partial",
-  "misconception_summary": "...",
-  "feedback": "...",
+  "contract_version": "error_elicitation_v1",
+  "judge_contract_version": "error_elicitation_judge_v2",
+  "result": "incorrect",
   "question_results": [
     {
       "question_id": "q01",
-      "correctness": "partial",
-      "learner_answer": "..."
+      "answer_correct": true,
+      "reasoning_correct": false,
+      "correctness": "incorrect",
+      "reasoning_issue_types": ["reasoning_error"],
+      "reasoning_feedback": "...",
+      "historical_thinking_tags": ["evidence"]
     }
   ]
 }
 ```
 
-Objective questions are judged by backend rules; open `short_answer` questions are judged by the configured LLM. The only per-question statuses are `correct`, `partial`, `incorrect`, and `unanswered`. These values build the later learning queue and are not Historical Thinking outcome scores.
+The backend grades objective answers by fixed rules. One LLM call judges every learner rationale against the complete reading materials and each researcher's `reasoning_criteria`. An item is `correct` only when both parts pass; all other cases are `incorrect`. Historical Thinking tags describe reasoning observed in the response but never determine correctness or serve as an outcome score.
 
 Submission is asynchronous:
 
@@ -260,6 +264,9 @@ Existing but not used by the current response bundle:
 ### `task_blanks` and `task_answers`
 
 V1 keeps question definitions in `event_tasks.evaluation_payload.questions[]`, learner answers in `task_attempts.response_payload`, and diagnostic results in `task_attempts.judgement_payload`. The normalized legacy tables are not required for the current single-study workflow and should not be expanded without a concrete query or scale requirement.
+
+Each experiment session owns at most one `task_attempts` row and one `conversations` row. Formal sessions also freeze `participants.id` in `experiment_sessions.participant_id`, so later Auth-account rebinding cannot change the ownership of existing research records.
+Learner endpoints compare the current Auth-to-participant mapping with that frozen id. A mismatch returns `403`, and progress queries omit the previous participant's Sessions; Admin-key testing remains exempt.
 
 ### RAG
 

@@ -219,9 +219,9 @@ class ExperimentCondition(BaseModel):
 class Participant(BaseModel):
     """研究受測者 registry。
 
-    對應 ``participants`` 資料表。正式實驗紀錄仍以 Supabase Auth
-    user id 為主，participant record 只管理顯示代號、condition
-    指派與研究端 metadata。
+    對應 ``participants`` 資料表。Supabase Auth user id 負責驗證請求；
+    正式 Session 另凍結 participant id，避免日後帳號改綁改變舊資料歸屬。
+    Participant record 管理顯示代號、condition 指派與研究端 metadata。
 
     Attributes:
         id: Participant UUID。
@@ -260,7 +260,8 @@ class ExperimentSession(BaseModel):
         id: Session UUID。
         condition_id: 關聯的 ExperimentCondition ID。
         condition_key_snapshot: 建立時的 condition_key 快照。
-        user_id: 受測者識別。
+        user_id: Supabase Auth 使用者識別。
+        participant_id: Session 建立時凍結的受測者 registry 識別；Admin test 為空。
         event_id: 關聯事件 ID。
         is_admin_test: 是否由 Admin 測試模式建立，不得混入正式研究匯出。
         status: Session 進度狀態。
@@ -269,9 +270,10 @@ class ExperimentSession(BaseModel):
     """
 
     id: str = Field(default_factory=new_id)
-    condition_id: str | None = None
+    condition_id: str
     condition_key_snapshot: ConditionKey
     user_id: str | None = None
+    participant_id: str | None = None
     event_id: str
     is_admin_test: bool = False
     status: Literal[
@@ -322,7 +324,7 @@ class TaskAttempt(BaseModel):
     """Learner 的 task 作答紀錄。
 
     對應 ``task_attempts`` 資料表，記錄 learner 的作答內容
-    與 LLM 自動判斷結果。
+    與 backend 客觀答案判定、LLM 理由診斷的合併結果。
 
     Attributes:
         id: Attempt UUID。
@@ -341,7 +343,7 @@ class TaskAttempt(BaseModel):
     id: str = Field(default_factory=new_id)
     task_id: str
     event_id: str
-    session_id: str | None = None
+    session_id: str
     user_id: str | None = None
     status: Literal["in_progress", "processing", "submitted", "failed"] = "in_progress"
     response_payload: dict[str, Any] = Field(default_factory=dict)
@@ -423,8 +425,8 @@ class Conversation(BaseModel):
 
     id: str = Field(default_factory=new_id)
     event_id: str
-    task_attempt_id: str | None = None
-    session_id: str | None = None
+    task_attempt_id: str
+    session_id: str
     user_id: str | None = None
     status: Literal["active", "archived"] = "active"
     started_at: datetime = Field(default_factory=utc_now)
@@ -506,7 +508,7 @@ class ChatMessage(BaseModel):
     """
 
     id: str = Field(default_factory=new_id)
-    conversation_id: str | None = None
+    conversation_id: str
     persona_id: str | None = None
     speaker_type: SpeakerType
     speaker_name: str

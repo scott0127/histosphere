@@ -36,10 +36,15 @@ class ResearchExportService:
         if not event:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
+        # 新 Session 以凍結的 registry id 歸屬；舊資料才退回 Auth 對應。
         participant = (
-            self.repository.get_participant_by_auth_user(session.user_id)
-            if session.user_id
-            else None
+            self.repository.get_participant(session.participant_id)
+            if session.participant_id
+            else (
+                self.repository.get_participant_by_auth_user(session.user_id)
+                if session.user_id
+                else None
+            )
         )
         participant_bound = participant is not None and not session.is_admin_test
         if session.is_admin_test:

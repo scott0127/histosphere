@@ -107,8 +107,16 @@ export interface ErrorElicitationResponsePayload {
 export interface ErrorElicitationReasoningJudgement {
   question_id: string;
   reasoning_correct: boolean;
-  reasoning_issue: 'none' | 'factual_error' | 'unsupported_inference' | 'insufficient_reasoning';
+  reasoning_issue_types: Array<'factual_error' | 'reasoning_error'>;
   reasoning_feedback: string;
+  historical_thinking_tags: Array<
+    | 'historical_significance'
+    | 'evidence'
+    | 'continuity_and_change'
+    | 'cause_and_consequence'
+    | 'historical_perspectives'
+    | 'ethical_dimension'
+  >;
 }
 
 export interface ErrorElicitationQuestionResult extends ErrorElicitationReasoningJudgement {
@@ -297,9 +305,10 @@ export interface ConversationLoadResponse {
 
 export interface ExperimentSession {
   id: string;
-  condition_id?: string | null;
+  condition_id: string;
   condition_key_snapshot: ConditionKey;
   user_id?: string | null;
+  participant_id?: string | null;
   event_id: string;
   is_admin_test: boolean;
   status: 'initialized' | 'task_submitted' | 'conversation_started' | 'completed' | 'archived';

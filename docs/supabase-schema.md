@@ -1,6 +1,6 @@
 # Supabase Public Schema Export
 
-最後更新：2026-08-09
+最後更新：2026-09-04
 
 來源：`supabase/migrations/`（schema 單一來源）與 local Supabase Postgres `public` schema。
 
@@ -34,7 +34,7 @@
 - 研究主鏈的歸屬欄位已由 `202608090001_research_integrity_and_material_lock.sql` 設為 `NOT NULL` 並使用 `ON DELETE RESTRICT`，避免新增孤兒研究紀錄或連帶刪除既有資料。可選 metadata／user 欄位仍維持 nullable。
 - `task_blanks` / `task_answers` 已存在但目前正式 flow 仍主要使用 `event_tasks.evaluation_payload.questions[]` 與 `task_attempts.response_payload`。
 - `knowledge_chunks.embedding` 是 `vector` 型別，但目前 RAG retrieval 仍是空實作。
-- `participants.auth_user_id` 對應 Supabase Auth 使用者。正式實驗 runtime 的 `experiment_sessions.user_id`、`task_attempts.user_id`、`conversations.user_id`、`research_logs.user_id` 仍保存 Auth user id，不保存 `participants.id`。
+- `participants.auth_user_id` 對應 Supabase Auth 使用者。正式 Session 建立時，同時把當下 `participants.id` 凍結到 `experiment_sessions.participant_id`；Auth `user_id` 仍作為請求身分，日後帳號改綁不會改變舊研究紀錄歸屬。Admin test 的 `participant_id` 保持 `NULL`。
 - `participants.condition_list` 以 learner-visible condition code 保存分派條件及 Admin 指定執行順序，例如 `{03,01}` 代表先做 03、再做 01。目前不另建 condition assignment table。
 - 所有 listed public tables 目前 RLS 都是 disabled；後端正式 runtime 使用 Supabase service role 透過 `SupabaseRepository` 讀寫。
 - `events.archived_at` 是可逆封存旗標。一般 event management 不刪除 event 或其關聯研究資料。
@@ -42,7 +42,16 @@
 - `experiment_sessions.is_admin_test` 明確區分 Admin 驗證與正式受測 Session；Admin test 不進入 learner 進度或正式研究匯出。
 - `events.materials_locked_at` 為最低限度素材鎖定；只有鎖定事件可供 learner 開始，鎖定期間禁止編輯 Event、Task 與 Persona。
 - `task_attempts.status` 支援 `in_progress`、`processing`、`submitted`、`failed`，供非同步 task submit 與 polling 使用。
-- Runtime safety、chat operation、persona 生命週期、研究完整性與 Admin test 分類分別由 2026-07-11 至 2026-08-09 的 migrations 增量建立；這些 migrations 不刪除既有研究資料。
+- `task_attempts.session_id` 與 `conversations.session_id` 都有 unique index；一個 Session 最多各有一筆作答與一個對話。
+- 四個研究事件的 canonical Error-Elicitation Task 由 `supabase/content/error-elicitation-reading-tasks.json` 管理，migration/seed 只新增缺少的 authoring version，不改寫舊 Task、作答或對話。
+- Runtime safety、chat operation、persona 生命週期、研究完整性、Admin test 分類與資料庫契約由 2026-07-11 至 2026-09-04 的 migrations 增量建立；這些 migrations 不刪除既有研究資料。
+
+### Error-Elicitation Judge JSONB
+
+- `event_tasks.evaluation_payload.questions[]` 保存三種客觀題、正解與研究者的 `reasoning_criteria`。
+- `task_attempts.response_payload` 保存每題 learner 的 `value` 與 `rationale` 原文。
+- `task_attempts.judgement_payload` 使用 `error_elicitation_judge_v2`：backend 判客觀答案，LLM 一次判斷所有理由，並保存 `factual_error`／`reasoning_error` 與描述性 Big Six tags。
+- 每題僅有 `correct`／`incorrect`；只有答案和理由都正確才通過。
 
 ## Tables And Columns
 
@@ -69,7 +78,7 @@
 | 2 | `event_id` | `uuid` | NO |  |
 | 3 | `title` | `text` | YES |  |
 | 4 | `story_text` | `text` | NO |  |
-| 5 | `display_text` | `text` | NO |  |
+| 5 | `error_elicitation_task_full_text` | `text` | NO |  |
 | 6 | `evaluation_payload` | `jsonb` | YES | `'{}'::jsonb` |
 | 7 | `revision_state` | `text` | YES | `'llm_generated'::text` |
 | 8 | `created_at` | `timestamp with time zone` | YES | `now()` |
@@ -103,7 +112,7 @@
 | 4 | `ebl_enabled` | `boolean` | NO | `false` |
 | 5 | `roleplay_enabled` | `boolean` | NO | `false` |
 | 6 | `agent_mode` | `text` | NO | `'generic'::text` |
-| 7 | `response_policy` | `text` | NO | `'direct'::text` |
+| 7 | `response_policy` | `text` | NO | `'standard'::text` |
 | 8 | `description` | `text` | YES |  |
 | 9 | `active` | `boolean` | YES | `true` |
 | 10 | `created_at` | `timestamp with time zone` | YES | `now()` |
@@ -126,6 +135,7 @@
 | 11 | `completed_at` | `timestamp with time zone` | YES |  |
 | 12 | `completion_reason` | `text` | YES |  |
 | 13 | `is_admin_test` | `boolean` | NO | `false` |
+| 14 | `participant_id` | `uuid` | YES |  |
 
 ### `knowledge_chunks`
 
@@ -303,6 +313,7 @@ All public tables use `id uuid` as primary key:
 | Table | Constraint |
 | --- | --- |
 | `task_attempts` | `status IN ('in_progress', 'processing', 'submitted', 'failed')` |
+| `experiment_conditions` | fixed 2×2 mapping between `condition_key`, EBL, Role-play, agent mode and response policy |
 
 ### Foreign Keys
 
@@ -314,6 +325,7 @@ All public tables use `id uuid` as primary key:
 | `event_tasks` | `event_id` | `events(id)` | `ON DELETE RESTRICT` |
 | `experiment_sessions` | `condition_id` | `experiment_conditions(id)` | `ON DELETE RESTRICT` |
 | `experiment_sessions` | `event_id` | `events(id)` | `ON DELETE RESTRICT` |
+| `experiment_sessions` | `participant_id` | `participants(id)` | `ON DELETE RESTRICT` |
 | `knowledge_chunks` | `event_id` | `events(id)` | `ON DELETE CASCADE` |
 | `knowledge_chunks` | `wiki_source_id` | `wiki_sources(id)` | `ON DELETE SET NULL` |
 | `messages` | `conversation_id` | `conversations(id)` | `ON DELETE RESTRICT` |
@@ -340,6 +352,7 @@ All public tables use `id uuid` as primary key:
 | --- | --- |
 | `conversations` | `idx_conversations_event(event_id)` |
 | `conversations` | `idx_conversations_session(session_id)` |
+| `conversations` | `uq_conversations_session(session_id)` unique |
 | `conversations` | `idx_conversations_task_attempt(task_attempt_id)` |
 | `conversations` | `idx_conversations_user(user_id)` |
 | `event_tasks` | `idx_event_tasks_event(event_id)` |
@@ -354,6 +367,7 @@ All public tables use `id uuid` as primary key:
 | `experiment_sessions` | `idx_experiment_sessions_status(status)` |
 | `experiment_sessions` | `idx_experiment_sessions_user(user_id)` |
 | `experiment_sessions` | `idx_experiment_sessions_timer_ends_at(timer_ends_at)` partial index for active timed sessions |
+| `experiment_sessions` | `idx_experiment_sessions_participant(participant_id)` |
 | `knowledge_chunks` | `idx_knowledge_chunks_event(event_id)` |
 | `knowledge_chunks` | `idx_knowledge_chunks_language(language)` |
 | `knowledge_chunks` | `idx_knowledge_chunks_source(source)` |
@@ -381,6 +395,7 @@ All public tables use `id uuid` as primary key:
 | `task_answers` | `task_answers_attempt_id_blank_id_key(attempt_id, blank_id)` |
 | `task_attempts` | `idx_task_attempts_event(event_id)` |
 | `task_attempts` | `idx_task_attempts_session(session_id)` |
+| `task_attempts` | `uq_task_attempts_session(session_id)` unique |
 | `task_attempts` | `idx_task_attempts_task(task_id)` |
 | `task_attempts` | `idx_task_attempts_user(user_id)` |
 | `task_blanks` | `idx_task_blanks_task(task_id)` |

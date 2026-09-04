@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import get_chat_service, require_active_participant_actor
+from app.api.deps import get_chat_service, require_active_participant_actor, require_session_actor
 from app.core.auth import AuthenticatedActor
 from app.core.learner_task_view import learner_view
 from app.models.domain import ChatMessage
@@ -44,10 +44,14 @@ def _require_conversation_id_access(
     if not conversation:
         return
     owner_user_id = conversation.user_id
+    session = None
     if not owner_user_id and conversation.session_id:
         session = service.repository.get_session(conversation.session_id)
         owner_user_id = session.user_id if session else None
     actor.require_owner(owner_user_id)
+    if conversation.session_id and session is None:
+        session = service.repository.get_session(conversation.session_id)
+    require_session_actor(actor, service.repository, session)
 
 
 def _sse_event(payload: dict) -> str:

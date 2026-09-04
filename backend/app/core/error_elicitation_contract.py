@@ -6,8 +6,17 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_
 
 
 ERROR_ELICITATION_CONTRACT_VERSION = "error_elicitation_v1"
+ERROR_ELICITATION_JUDGE_CONTRACT_VERSION = "error_elicitation_judge_v2"
 ErrorElicitationCorrectness = Literal["correct", "incorrect"]
-ReasoningIssue = Literal["none", "factual_error", "unsupported_inference", "insufficient_reasoning"]
+ReasoningIssueType = Literal["factual_error", "reasoning_error"]
+HistoricalThinkingTag = Literal[
+    "historical_significance",
+    "evidence",
+    "continuity_and_change",
+    "cause_and_consequence",
+    "historical_perspectives",
+    "ethical_dimension",
+]
 
 
 class ErrorElicitationAnswer(BaseModel):
@@ -78,21 +87,26 @@ def validate_task_answers(evaluation: dict, response: dict, *, complete: bool) -
 
 
 class ErrorElicitationReasoningJudgement(BaseModel):
-    """LLM 只判理由；不足不等於已證明學生有錯誤觀念。"""
+    """LLM 只判理由；Historical Thinking 標籤不參與對錯。"""
 
     model_config = ConfigDict(extra="forbid")
 
     question_id: StrictStr = Field(min_length=1)
     reasoning_correct: StrictBool
-    reasoning_issue: ReasoningIssue
+    reasoning_issue_types: list[ReasoningIssueType] = Field(max_length=2)
     reasoning_feedback: StrictStr = Field(min_length=1)
+    historical_thinking_tags: list[HistoricalThinkingTag] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def validate_reasoning_result(self) -> "ErrorElicitationReasoningJudgement":
         if not self.question_id.strip() or self.question_id != self.question_id.strip() or not self.reasoning_feedback.strip():
             raise ValueError("question_id and reasoning_feedback must not be blank")
-        if self.reasoning_correct != (self.reasoning_issue == "none"):
-            raise ValueError("reasoning_issue must agree with reasoning_correct")
+        if len(self.reasoning_issue_types) != len(set(self.reasoning_issue_types)):
+            raise ValueError("reasoning_issue_types must not contain duplicates")
+        if len(self.historical_thinking_tags) != len(set(self.historical_thinking_tags)):
+            raise ValueError("historical_thinking_tags must not contain duplicates")
+        if self.reasoning_correct == bool(self.reasoning_issue_types):
+            raise ValueError("correct reasoning must have no issue types; incorrect reasoning requires at least one")
         return self
 
 
@@ -114,6 +128,7 @@ class ErrorElicitationJudgementPayload(BaseModel):
     """同一次模型呼叫判斷所有理由，客觀答案與最終對錯由後端決定。"""
 
     model_config = ConfigDict(extra="forbid")
+    judge_contract_version: Literal["error_elicitation_judge_v2"]
     question_results: list[ErrorElicitationReasoningJudgement] = Field(min_length=1)
 
     @model_validator(mode="after")

@@ -1,4 +1,6 @@
 import json
+import hashlib
+import re
 from pathlib import Path
 
 from app.core.learner_task_view import learner_evaluation
@@ -11,6 +13,21 @@ CONTENT_FILE = (
     / "content"
     / "error-elicitation-reading-tasks.json"
 )
+MIGRATION_FILE = CONTENT_FILE.parents[1] / "migrations" / "202609040002_curated_error_elicitation_tasks.sql"
+
+
+def test_curated_task_migration_matches_the_canonical_json():
+    """避免正式 DB／fresh seed 與研究者核定的 JSON 靜默分歧。"""
+    content = json.loads(CONTENT_FILE.read_text(encoding="utf-8"))
+    sql = MIGRATION_FILE.read_text(encoding="utf-8")
+    embedded_match = re.search(r"\$json\$(.*?)\$json\$::jsonb", sql, re.DOTALL)
+    hash_match = re.search(r"source_sha256: ([0-9a-f]{64})", sql)
+
+    assert embedded_match is not None
+    assert hash_match is not None
+    embedded = embedded_match.group(1)
+    assert json.loads(embedded) == content
+    assert hashlib.sha256(embedded.encode("utf-8")).hexdigest() == hash_match.group(1)
 
 
 def test_four_curated_reading_tasks_follow_the_runtime_contract():

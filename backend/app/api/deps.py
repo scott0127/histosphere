@@ -3,6 +3,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.auth import AuthenticatedActor
 from app.core.config import get_settings
+from app.models.domain import ExperimentSession
 from app.providers.llm import LLMProvider
 from app.providers.wikipedia_provider import WikipediaProvider
 from app.crud.protocols import RepositoryProtocol
@@ -67,6 +68,29 @@ def get_task_service(request: Request) -> TaskService:
 
 def get_session_service(request: Request) -> SessionService:
     return request.app.state.session_service
+
+
+def require_session_actor(
+    actor: AuthenticatedActor,
+    repository: RepositoryProtocol,
+    session: ExperimentSession | None,
+) -> None:
+    """驗證 Auth owner 與 Session 凍結的 participant 身分皆一致。"""
+    if session is None:
+        return
+    # 舊的 Admin test fixture 可在第一筆 learner 操作時綁定 Auth；它不屬於正式研究資料。
+    if session.is_admin_test and not session.user_id and not session.participant_id:
+        return
+    actor.require_owner(session.user_id)
+    if actor.is_admin or not session.participant_id:
+        return
+
+    participant = repository.get_participant_by_auth_user(actor.user_id or "")
+    if not participant or participant.id != session.participant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session belongs to another participant assignment",
+        )
 
 
 def require_admin_key(x_admin_key: str | None = Header(default=None)) -> None:

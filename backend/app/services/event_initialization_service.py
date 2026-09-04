@@ -104,6 +104,19 @@ class EventInitializationService:
             personas = await self._generate_primary_persona(event, sources)
 
         if learner_session:
+            if (
+                participant
+                and learner_session.participant_id
+                and learner_session.participant_id != participant.id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Session belongs to another participant assignment",
+                )
+            # 舊 Session 若尚未凍結 participant 對應，於合法本人恢復時補上。
+            if participant and not learner_session.participant_id:
+                learner_session.participant_id = participant.id
+                learner_session = self.repository.save_session(learner_session)
             attempt = self.repository.get_task_attempt_for_session(learner_session.id)
             task = get_session_task(self.repository, learner_session, attempt)
             if not task:
@@ -142,6 +155,7 @@ class EventInitializationService:
                 condition_id=condition.id,
                 condition_key_snapshot=condition.condition_key,
                 user_id=request.user_id,
+                participant_id=participant.id if participant else None,
                 event_id=event.id,
                 is_admin_test=admin_override,
             )

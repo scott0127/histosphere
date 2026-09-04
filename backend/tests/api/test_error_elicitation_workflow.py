@@ -43,10 +43,10 @@ def answers():
 
 
 def judged():
-    return {"question_results": [
-        {"question_id": "q01", "reasoning_correct": True, "reasoning_issue": "none", "reasoning_feedback": "能指出地點依據。"},
-        {"question_id": "q02", "reasoning_correct": False, "reasoning_issue": "insufficient_reasoning", "reasoning_feedback": "尚未說明畫作可以提供哪些資料。"},
-        {"question_id": "q03", "reasoning_correct": False, "reasoning_issue": "insufficient_reasoning", "reasoning_feedback": "沒有連結到材料。"},
+    return {"judge_contract_version": "error_elicitation_judge_v2", "question_results": [
+        {"question_id": "q01", "reasoning_correct": True, "reasoning_issue_types": [], "reasoning_feedback": "能指出地點依據。", "historical_thinking_tags": ["evidence"]},
+        {"question_id": "q02", "reasoning_correct": False, "reasoning_issue_types": ["reasoning_error"], "reasoning_feedback": "尚未說明畫作可以提供哪些資料。", "historical_thinking_tags": ["evidence"]},
+        {"question_id": "q03", "reasoning_correct": False, "reasoning_issue_types": ["reasoning_error"], "reasoning_feedback": "沒有連結到材料。", "historical_thinking_tags": []},
     ]}
 
 
@@ -79,7 +79,7 @@ def test_new_task_draft_submit_and_research_preserve_both_inputs(client, conditi
     assert all("expected_answer" not in row and "reasoning_feedback" not in row for row in results)
     stored = client.app.state.repository.get_task_attempt(status["attempt"]["id"])
     assert stored.response_payload == response_payload
-    assert stored.judgement_payload["question_results"][1]["reasoning_issue"] == "insufficient_reasoning"
+    assert stored.judgement_payload["question_results"][1]["reasoning_issue_types"] == ["reasoning_error"]
     research = client.get(f"/api/admin/sessions/{initialized['session_id']}/research", headers=HEADERS).json()
     assert research["attempt"]["judgement_payload"] == stored.judgement_payload
     assert research["material_snapshot"]["hash_verified"] is True
@@ -92,7 +92,10 @@ def test_failed_judge_keeps_inputs_and_retries_same_attempt_without_false_grades
     async def broken_judge(*args):
         if failure == "timeout":
             raise TimeoutError("test")
-        return {"question_results": judged()["question_results"][:1]}
+        return {
+            "judge_contract_version": "error_elicitation_judge_v2",
+            "question_results": judged()["question_results"][:1],
+        }
     client.app.state.llm_provider.judge_task_attempt = broken_judge
     url = f"/api/tasks/{initialized['task']['id']}/submit"
     accepted = client.post(url, headers=HEADERS, json=request)

@@ -1311,7 +1311,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Participant、session、task attempt 與 conversation ownership<span class="function-note text-small">Learner 只能讀寫 JWT 所屬帳號的資料；跨帳號 conversation 讀取與 chat 寫入皆回覆 403；Admin key 可進入管理與測試視角</span></span>
+          <span class="function-name">Participant、session、task attempt 與 conversation ownership<span class="function-note text-small">Learner 的 JWT 與 Session 凍結的 participant 必須同時一致；帳號改綁或跨帳號讀寫皆回覆 403；Admin key 可進入管理與測試視角</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1356,6 +1356,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         </div>
         <div class="function" data-status="done">
           <span class="function-name">自動建立素材的 task 格式<span class="function-note text-small">LLM structured schema 與缺漏 fallback 均強制使用 {{blank:qNN}} + evaluation_payload.questions[]</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">四事件 canonical Error-Elicitation Task 匯入<span class="function-note text-small">JSON 是唯一編製來源；migration／seed 只補缺少的 authoring version，不覆寫舊 Task、作答或對話</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1525,13 +1529,13 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       <summary>
         <span class="summary-label">
           <svg class="chevron" data-lucide="chevron-right" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          <span>Learner Task 與評分</span>
+          <span>Error-Elicitation Task 與判定</span>
         </span>
         <span class="status text-small" data-status="done"><span class="dot"></span>既定範圍完成</span>
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Inline 填空、選擇、是非與 legacy short-answer fallback</span>
+          <span class="function-name">Inline 填空、選擇、是非與每題理由輸入</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1539,11 +1543,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">客觀題規則判定 + 開放題 LLM 診斷</span>
+          <span class="function-name">客觀答案規則判定 + 每題理由 LLM 判定</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">四種逐題診斷狀態與 learner 回顧<span class="function-note text-small">只使用 correct、partial、incorrect、unanswered；結果用於後續學習佇列，不作為 Historical Thinking outcome score</span></span>
+          <span class="function-name">二分逐題結果、錯誤原因與 learner 回顧<span class="function-note text-small">答案與理由都正確才通過；factual／reasoning issue 用於後續學習機會，Big Six tags 只作描述性 metadata</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="not-needed">
@@ -1846,6 +1850,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="function-name">研究主鏈 NOT NULL／FK／刪除限制<span class="function-note text-small">Session、Task attempt、答案、Conversation、Message 等歸屬欄位由資料庫強制檢查；既有舊 research log 保留，但新寫入的 session_id 必須存在</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
+        <div class="function" data-status="done">
+          <span class="function-name">Session participant 凍結與一對一研究主鏈<span class="function-note text-small">正式 Session 保存當下 participant id；每個 Session 最多一筆 Task attempt 與一個 Conversation，避免改綁或重送污染歸屬</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
         <div class="function" data-status="not-needed">
           <span class="function-name">RLS<span class="function-note text-small">所有 public tables 目前 disabled；架構依 FastAPI + service role 保護</span></span>
           <span class="status text-small"><span class="dot"></span>目前架構不需要</span>
@@ -1863,11 +1871,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">49 項前端單元測試與 production build 通過</span></span>
+          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">前端單元測試與 production build 通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">126 項後端測試全部通過</span></span>
+          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">完整後端測試全部通過</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
@@ -2015,8 +2023,8 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "P001 即使把請求中的 user ID 改成 P002，後端仍會依 JWT 判定他是 P001。"
       ]],
       ["Participant、session、task attempt 與 conversation ownership", [
-        "受測者只能讀寫自己帳號所屬的實驗、作答與對話；跨帳號存取會被拒絕。",
-        "P001 嘗試讀取 P002 的 conversation 或傳送訊息時，後端會回覆 403。"
+        "受測者只能讀寫 JWT 與 Session 凍結 participant 都相符的實驗、作答與對話；帳號改綁或跨帳號存取會被拒絕。",
+        "P001 的 Auth 日後改綁成 P002，也不能讀取或寫入原本凍結給 P001 的 Session。"
       ]],
       ["Admin key 環境變數強制設定", [
         "Admin key 必須由環境變數提供，程式內沒有預設密碼；缺少設定時後端會拒絕啟動。",
@@ -2049,6 +2057,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       ["自動建立素材的 task 格式", [
         "自動產生的 Task 使用現行文中題目格式，不再產生舊式底線與鬆散 JSON。",
         "建立填空題時會產生 {{blank:q01}}，並在 questions[] 建立對應的 q01 題目資料。"
+      ]],
+      ["四事件 canonical Error-Elicitation Task 匯入", [
+        "四個正式事件的閱讀材料、三種客觀題、答案與理由判準都由同一份 canonical JSON 匯入。",
+        "資料庫已有相同 authoring version 時不重複新增；舊 Task、受測者作答與聊天完全保留。"
       ]],
       ["最低限度正式素材鎖定", [
         "Admin 審核 Task 與人物後可鎖定事件；鎖定後 Learner 才能看到並開始，事件、Task 與人物也不能再被修改。",
@@ -2162,21 +2174,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "目前以整包 Task 儲存，搭配 validation 與本機 Undo / Redo 已足夠；每題獨立 API、跨日操作歷程與發布平台暫不建立。",
         "修改 Q02 會連同完整故事及 questions[] 一起儲存，不另外建立 PATCH /questions/q02。"
       ]],
-      ["Inline 填空、選擇、是非與 legacy short-answer fallback", [
-        "學生可直接在故事中完成三種主要題型；尚未轉換的舊格式 Task 仍能退回簡答欄。",
-        "故事中的 q01 顯示填空框，沒有 questions[] 的舊 Task 則顯示簡答輸入框。"
+      ["Inline 填空、選擇、是非與每題理由輸入", [
+        "學生閱讀材料後，直接在文中完成填空、選擇或是非；每一題都必須另外寫下判斷理由。",
+        "Q01 選答案後若沒有填理由，正式送出會被阻止，但草稿仍會保留。"
       ]],
       ["草稿持久化、required 檢查、202 提交、polling 與 reload 恢復", [
         "系統保存作答草稿、阻止漏答必填題，提交後在背景評分並持續查詢結果。",
         "學生提交後重新整理頁面，仍能回到「評分處理中」並取得最終結果。"
       ]],
-      ["客觀題規則判定 + 開放題 LLM 診斷", [
-        "填空、選擇與是非由後端固定規則判定；開放式簡答才交由 LLM 依題目、參考答案與 rubric 判斷。",
-        "是非題直接比對布林答案；需要解釋因果的簡答題則可由 LLM 判為部分正確。"
+      ["客觀答案規則判定 + 每題理由 LLM 判定", [
+        "後端固定比對填空、選擇與是非答案；同一次 LLM 呼叫依材料與研究者判準檢查所有理由。",
+        "即使選到正解，若理由含史實錯誤或推論不能支持答案，該題仍判為錯誤。"
       ]],
-      ["四種逐題診斷狀態與 learner 回顧", [
-        "每題只顯示正確、部分正確、錯誤或未作答，並保存 learner 原始答案；這些狀態用來安排後續對話，不是前後測分數。",
-        "開放題回答到部分原因時顯示「部分正確」，02／04 再把這項缺口轉成 Historical EBL 對話。"
+      ["二分逐題結果、錯誤原因與 learner 回顧", [
+        "每題只有正確或錯誤；答案和理由都正確才通過，原始答案與理由會完整保存。",
+        "錯誤原因只分史實錯誤與推理錯誤；Big Six 標籤只協助研究者描述回覆，不參與分數。"
       ]],
       ["背景工作耐久性", [
         "作答會先保存到資料庫；後端中斷後，受測者再次開啟或輪詢時會重新掛回評分，已足以支援目前的單機實驗。",
@@ -2394,6 +2406,10 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "資料庫會直接要求 Session、Task attempt、答案、Conversation 與 Message 等研究主鏈具備有效歸屬，並限制刪除仍被引用的紀錄。",
         "新增一筆指向不存在 Session 的 Task attempt 或 research log 時，資料庫會拒絕寫入；既有舊 log 則原樣保留。"
       ]],
+      ["Session participant 凍結與一對一研究主鏈", [
+        "正式 Session 建立時保存當下 participant id；日後把同一 Auth 帳號改綁給別人，也不會改變舊資料歸屬。",
+        "重送初始化或提交時，資料庫會拒絕同一 Session 出現第二筆 Task attempt 或第二個 Conversation。"
+      ]],
       ["RLS", [
         "public tables 尚未啟用 RLS，目前依賴 FastAPI 與後端 service role 控制存取。",
         "受測者必須經過後端 API 讀寫資料，而不是直接操作 Supabase table。"
@@ -2403,7 +2419,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "測試會驗證 condition mapping、Task payload，以及 01 模式等待時不會誤顯示歷史人物。"
       ]],
       ["Backend API／interaction／persona／provider tests", [
-        "本次完整執行 126 項後端測試，API、互動政策、Persona、Provider、Chat operation、素材鎖定與研究匯出皆通過。",
+        "完整後端測試涵蓋 API、互動政策、Persona、Provider、Chat operation、素材鎖定、Judge 契約與研究匯出。",
         "測試會驗證相同 request 重播、失敗重試、Condition 缺失拒絕及後端重啟恢復。"
       ]],
       ["Supabase 現行 schema 唯讀 smoke test", [

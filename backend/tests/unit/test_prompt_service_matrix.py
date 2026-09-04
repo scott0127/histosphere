@@ -17,6 +17,7 @@ def _condition(code: str) -> ExperimentCondition:
 
 def _attempt() -> TaskAttempt:
     return TaskAttempt(
+        session_id="session-1",
         task_id="task-1",
         event_id="event-1",
         status="submitted",

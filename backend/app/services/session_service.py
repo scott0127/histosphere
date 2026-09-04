@@ -54,7 +54,7 @@ class SessionService:
             conversation_id=conversation.id if conversation else None,
         )
 
-    def user_progress(self, user_id: str) -> UserProgressResponse:
+    def user_progress(self, user_id: str, participant_id: str | None = None) -> UserProgressResponse:
         """列出某位受測者在各事件與 condition 下的最新進度。"""
         if not user_id.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
@@ -62,6 +62,8 @@ class SessionService:
         progress: list[UserProgressItem] = []
         for stored_session in self.repository.list_sessions_for_user(user_id.strip()):
             if stored_session.is_admin_test:
+                continue
+            if participant_id and stored_session.participant_id != participant_id:
                 continue
             session = expire_session_if_due(self.repository, stored_session)
             attempt = self.repository.get_task_attempt_for_session(session.id)
@@ -182,6 +184,7 @@ class SessionService:
                 condition_id=source_session.condition_id,
                 condition_key_snapshot=source_session.condition_key_snapshot,
                 user_id=source_session.user_id,
+                participant_id=source_session.participant_id,
                 event_id=source_session.event_id,
                 is_admin_test=source_session.is_admin_test,
             )

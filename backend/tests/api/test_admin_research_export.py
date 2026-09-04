@@ -3,6 +3,7 @@
 import json
 
 from app.core.experiment_conditions import condition_code_for_key
+from app.models.domain import Participant
 
 
 ADMIN_HEADERS = {"x-admin-key": "test-admin"}
@@ -83,6 +84,7 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
     payload = response.json()
     assert payload["participant_code"] == "PTEST"
     assert payload["participant_bound"] is True
+    assert payload["session"]["participant_id"] is not None
     assert payload["session"]["is_admin_test"] is False
     assert payload["session"]["user_id"] is None
     assert payload["attempt"]["user_id"] is None
@@ -114,6 +116,32 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
         "conversation_opening",
         "chat_response",
     }
+
+
+def test_session_export_keeps_the_participant_bound_when_auth_mapping_changes(client):
+    initialized, _result = _prepare_conversation(client)
+    repository = client.app.state.repository
+    original = repository.get_participant_by_auth_user("participant-001")
+    assert original is not None
+
+    original.auth_user_id = None
+    repository.save_participant(original)
+    repository.save_participant(
+        Participant(
+            code="PNEW",
+            auth_user_id="participant-001",
+            condition_list=[condition_code_for_key("no_ebl_no_roleplay")],
+        )
+    )
+
+    response = client.get(
+        f"/api/admin/sessions/{initialized['session_id']}/research",
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["participant_code"] == "PTEST"
+    assert response.json()["participant_bound"] is True
 
 
 def test_admin_research_export_is_anonymized_and_supports_json_and_csv(client):
@@ -187,5 +215,7 @@ def test_research_routes_require_admin_key_and_restart_captures_new_snapshot(cli
         headers=ADMIN_HEADERS,
     )
     assert replay.status_code == 200
+    assert replay.json()["participant_code"] == "PTEST"
+    assert replay.json()["participant_bound"] is True
     assert replay.json()["material_snapshot"]["status"] == "captured"
     assert replay.json()["material_snapshot"]["hash_verified"] is True

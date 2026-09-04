@@ -38,7 +38,7 @@ const expectedSchema = {
   event_tasks: ['id', 'event_id', 'story_text', 'error_elicitation_task_full_text', 'evaluation_payload'],
   events: ['id', 'canonical_name', 'description', 'source_summary', 'archived_at', 'materials_locked_at'],
   experiment_conditions: ['id', 'condition_key', 'ebl_enabled', 'roleplay_enabled', 'active'],
-  experiment_sessions: ['id', 'condition_key_snapshot', 'user_id', 'event_id', 'is_admin_test', 'status', 'timer_ends_at'],
+  experiment_sessions: ['id', 'condition_key_snapshot', 'user_id', 'participant_id', 'event_id', 'is_admin_test', 'status', 'timer_ends_at'],
   knowledge_chunks: ['id', 'event_id', 'content', 'embedding', 'metadata'],
   messages: ['id', 'conversation_id', 'speaker_type', 'sequence_index', 'content', 'metadata'],
   personas: ['id', 'event_id', 'name', 'prompt_profile', 'avatar_url', 'active'],

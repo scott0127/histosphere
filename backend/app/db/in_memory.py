@@ -83,9 +83,9 @@ class InMemoryRepository(RepositoryProtocol):
         """建立四組 2x2 實驗條件預設值。
 
         條件組合:
-            - ``no_ebl_no_roleplay``: 無 EBL + 無 role-play（generic / direct）。
+            - ``no_ebl_no_roleplay``: 無 EBL + 無 role-play（generic / standard）。
             - ``ebl_no_roleplay``: 有 EBL + 無 role-play（generic / scaffold）。
-            - ``no_ebl_roleplay``: 無 EBL + 有 role-play（persona / direct）。
+            - ``no_ebl_roleplay``: 無 EBL + 有 role-play（persona / standard）。
             - ``ebl_roleplay``: 有 EBL + 有 role-play（persona / scaffold）。
         """
         seed = [
@@ -389,6 +389,16 @@ class InMemoryRepository(RepositoryProtocol):
         Returns:
             TaskAttempt: 儲存後的 attempt。
         """
+        duplicate = next(
+            (
+                stored
+                for stored in self.task_attempts.values()
+                if stored.session_id == attempt.session_id and stored.id != attempt.id
+            ),
+            None,
+        )
+        if duplicate:
+            raise ValueError("A session may only have one task attempt")
         attempt.updated_at = utc_now()
         self.task_attempts[attempt.id] = attempt
         return attempt
@@ -405,10 +415,9 @@ class InMemoryRepository(RepositoryProtocol):
         return self.task_attempts.get(attempt_id)
 
     def get_task_attempt_for_session(self, session_id: str, task_id: str | None = None) -> TaskAttempt | None:
-        """取得指定 session 的最新 attempt。
+        """取得指定 session 的唯一 attempt。
 
-        可選搭配 task_id 進一步篩選。若有多筆 attempt，
-        回傳 updated_at 最新的一筆。
+        可選搭配 task_id 進一步篩選。
 
         Args:
             session_id: Session UUID 字串。
@@ -489,6 +498,16 @@ class InMemoryRepository(RepositoryProtocol):
         Returns:
             Conversation: 儲存後的 conversation。
         """
+        duplicate = next(
+            (
+                stored
+                for stored in self.conversations.values()
+                if stored.session_id == conversation.session_id and stored.id != conversation.id
+            ),
+            None,
+        )
+        if duplicate:
+            raise ValueError("A session may only have one conversation")
         conversation.updated_at = utc_now()
         self.conversations[conversation.id] = conversation
         self.messages.setdefault(conversation.id, [])
@@ -506,13 +525,13 @@ class InMemoryRepository(RepositoryProtocol):
         return self.conversations.get(conversation_id)
 
     def get_conversation_by_session(self, session_id: str) -> Conversation | None:
-        """依 session_id 取得最新的 conversation。
+        """依 session_id 取得唯一的 conversation。
 
         Args:
             session_id: Session UUID 字串。
 
         Returns:
-            Conversation | None: 最新的 conversation，或 None。
+            Conversation | None: 對應的 conversation，或 None。
         """
         conversations = [conversation for conversation in self.conversations.values() if conversation.session_id == session_id]
         conversations.sort(key=lambda item: item.updated_at, reverse=True)

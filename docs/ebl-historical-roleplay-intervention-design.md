@@ -58,17 +58,15 @@ Task Judge 只判定哪些作答可成為後續對話的學習目標，不產生
 
 ### 4.2 題型責任
 
-- `cloze`、`multiple_choice`、`true_false`：backend 以固定規則判定。
-- `short_answer`：LLM 依題目、參考答案與 rubric 判定。
+- `cloze`、`multiple_choice`、`true_false` 的客觀答案：backend 以固定規則判定。
+- 每一題的 learner 理由：LLM 在單次 structured call 中，依完整閱讀材料與研究者設定的 `reasoning_criteria` 判定。
 
-每題只使用：
+每題只使用二分結果：
 
 - `correct`
-- `partial`
 - `incorrect`
-- `unanswered`
 
-不輸出數值分數、`needs_review`、`actionability`，也不由 Task Judge 分類 Historical Thinking 六向度。
+只有「答案正確且理由正確」才是 `correct`。Judge 可記錄 `factual_error`、`reasoning_error`，並以零至六個 Big Six tags 描述 learner 回覆；tags 不參與對錯、不要求 learner 使用特定術語，也不是 Historical Thinking outcome。
 
 ### 4.3 後續用途
 
@@ -213,7 +211,7 @@ Historical EBL 的 backend 會驗證 state、move、Disclosure 相鄰限制、�
 
 ## 12. Measurement Boundary
 
-Task Judge 的 `correct / partial / incorrect / unanswered` 只用來組織學習流程，不應直接當作 Historical Thinking outcome。
+Task Judge 的 `correct / incorrect` 只用來建立後續對話的 learner error profile，不應直接當作 Historical Thinking outcome。
 
 正式 outcome 應由獨立前後測或建構題 rubric 測量。HAT 式短史料建構題是目前候選方向，但正式維度、題數、評分規則與評分者一致性仍需和教授定案。
 

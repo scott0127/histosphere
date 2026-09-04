@@ -26,6 +26,7 @@ def _condition(code: str) -> ExperimentCondition:
 
 def _attempt() -> TaskAttempt:
     return TaskAttempt(
+        session_id="session-1",
         task_id="task-1",
         event_id="event-1",
         status="submitted",
@@ -634,11 +635,17 @@ def test_terminal_feedback_accepts_answer_formats_and_does_not_mistake_shared_ke
     attempt = _multi_error_attempt()
     for result in attempt.judgement_payload["question_results"][:2]:
         result["expected_answer"] = answer
-    pending = ChatMessage(speaker_type="assistant", speaker_name="Tutor", content="請先整理最後判斷。", metadata={
-        "interaction_policy_version": INTERACTION_POLICY_VERSION,
-        "target_question_id": "q01", "dialogue_state": "SELF_CORRECT",
-        "disclosure_level": "D4", "completion_status": "final_answer_pending",
-    })
+    pending = ChatMessage(
+        conversation_id="conversation-1",
+        speaker_type="assistant",
+        speaker_name="Tutor",
+        content="請先整理最後判斷。",
+        metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q01", "dialogue_state": "SELF_CORRECT",
+            "disclosure_level": "D4", "completion_status": "final_answer_pending",
+        },
+    )
     runtime = build_interaction_runtime(_condition("02"), attempt, [pending])
     result = enforce_interaction_response(runtime, {
         "dialogue_state": "RESOLVED", "dialogue_move": "corrective_feedback",
@@ -651,6 +658,7 @@ def test_terminal_feedback_accepts_answer_formats_and_does_not_mistake_shared_ke
 
 def test_all_correct_attempt_uses_only_researcher_authored_fallback():
     attempt = TaskAttempt(
+        session_id="session-1",
         task_id="task-1",
         event_id="event-1",
         status="submitted",
@@ -684,6 +692,7 @@ def test_all_correct_attempt_uses_only_researcher_authored_fallback():
 
 def test_all_correct_attempt_without_researcher_fallback_does_not_invent_an_error():
     attempt = TaskAttempt(
+        session_id="session-1",
         task_id="task-1",
         event_id="event-1",
         status="submitted",

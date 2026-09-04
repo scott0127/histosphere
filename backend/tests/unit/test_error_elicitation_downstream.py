@@ -26,10 +26,12 @@ def _condition(code="02"):
     )
 
 
-def _attempt(answer_correct=True, reasoning_correct=False, issue="insufficient_reasoning"):
+def _attempt(answer_correct=True, reasoning_correct=False, issue_types=None):
+    issue_types = ["reasoning_error"] if issue_types is None and not reasoning_correct else (issue_types or [])
     return TaskAttempt(
         task_id="task-1",
         event_id="event-1",
+        session_id="session-1",
         status="submitted",
         judgement_payload={
             "contract_version": "error_elicitation_v1",
@@ -50,12 +52,13 @@ def _attempt(answer_correct=True, reasoning_correct=False, issue="insufficient_r
                 "learner_rationale": RAW_RATIONALE,
                 "answer_correct": answer_correct,
                 "reasoning_correct": reasoning_correct,
-                "reasoning_issue": issue,
+                "reasoning_issue_types": issue_types,
                 "reasoning_feedback": "PRIVATE feedback",
+                "historical_thinking_tags": ["evidence"],
                 "reasoning_criteria": "PRIVATE criteria",
                 "correctness": "correct" if answer_correct and reasoning_correct else "incorrect",
                 "expected_answer": "B",
-                "error_code": issue,
+                "error_code": issue_types[0] if issue_types else None,
                 "evidence_ids": ["m01"],
             }],
         },
@@ -98,16 +101,17 @@ def test_reasoning_error_can_restate_the_already_correct_answer_without_revealin
     assert "early_answer_exposure" in enforce_interaction_response(wrong_answer_runtime, output, response).metadata["fidelity_flags"]
 
 
-@pytest.mark.parametrize("issue", ["insufficient_reasoning", "factual_error", "unsupported_inference"])
-def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue):
-    runtime = build_interaction_runtime(_condition(), _attempt(issue=issue), [])
+@pytest.mark.parametrize("issue_types", [["reasoning_error"], ["factual_error"], ["factual_error", "reasoning_error"]])
+def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue_types):
+    runtime = build_interaction_runtime(_condition(), _attempt(issue_types=issue_types), [])
     prompt = runtime.prompt_block()
     payload = json.loads(prompt.split("Current target: ", 1)[1].split("\n", 1)[0])
     assert payload["learner_rationale"] == RAW_RATIONALE
-    assert payload["reasoning_issue"] == issue
+    assert payload["reasoning_issue_types"] == issue_types
+    assert payload["historical_thinking_tags"] == ["evidence"]
     assert payload["reasoning_feedback"] == "PRIVATE feedback"
     assert payload["reasoning_criteria"] == "PRIVATE criteria"
-    assert "not evidence of a factual misconception" in prompt
+    assert "not automatically a factual misconception" in prompt
     metadata = resolve_interaction_metadata(runtime, {
         "dialogue_state": "NOTICE_ERROR",
         "dialogue_move": "error_awareness_prompt",
@@ -115,7 +119,8 @@ def test_reasoning_issue_reaches_private_prompt_and_research_metadata(issue):
     }, "What supported your answer?")
     assert metadata["answer_correct"] is True
     assert metadata["reasoning_correct"] is False
-    assert metadata["reasoning_issue"] == issue
+    assert metadata["reasoning_issue_types"] == issue_types
+    assert metadata["historical_thinking_tags"] == ["evidence"]
     assert metadata["completion_status"] == "continue"
     assert "reasoning_feedback" not in metadata
     assert "reasoning_criteria" not in metadata
@@ -153,7 +158,7 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
     assert attempt.model_dump() == before
     assert context["question_results"][0]["learner_rationale"] == RAW_RATIONALE
     assert "prompt" not in context["question_results"][0]
-    assert "not evidence of a factual misconception" in learner_task
+    assert "not automatically a factual misconception" in learner_task
     general = next(module.content for module in modules if module.name == "general_prompt")
     assert "ALL four conditions" in general
     assert "Do not proactively prescribe sourcing" in general
@@ -174,6 +179,7 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
 def test_resumed_target_retains_rationale_and_advances_only_after_existing_resolution():
     attempt = _attempt()
     message = ChatMessage(
+        conversation_id="conversation-1",
         speaker_type="assistant", speaker_name="Tutor", content="Explain your reasoning.",
         metadata={
             "interaction_policy_version": "2x2-interaction-v7",
@@ -194,6 +200,7 @@ def test_resumed_target_retains_rationale_and_advances_only_after_existing_resol
 
 def test_legacy_message_redaction_preserves_runtime_metadata_and_returns_a_copy():
     message = ChatMessage(
+        conversation_id="conversation-1",
         speaker_type="assistant", speaker_name="Tutor", content="Visible response",
         metadata={
             "judgement": {"feedback": "PRIVATE"},

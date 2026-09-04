@@ -21,7 +21,12 @@ def test_request_preserves_raw_rationale_and_json_roundtrip(request_type):
     }
     original = deepcopy(raw)
     request = request_type(session_id="session-1", response_payload=raw)
-    attempt = TaskAttempt(task_id="task-1", event_id="event-1", response_payload=request.response_payload)
+    attempt = TaskAttempt(
+        task_id="task-1",
+        event_id="event-1",
+        session_id="session-1",
+        response_payload=request.response_payload,
+    )
 
     assert TaskAttempt.model_validate_json(attempt.model_dump_json()).response_payload == original
     assert request.model_dump()["response_payload"] == original
@@ -65,8 +70,9 @@ def test_question_result_requires_both_answer_and_reasoning(answer_correct, reas
         "question_id": "q01",
         "answer_correct": answer_correct,
         "reasoning_correct": reasoning_correct,
-        "reasoning_issue": "none" if reasoning_correct else "insufficient_reasoning",
+        "reasoning_issue_types": [] if reasoning_correct else ["reasoning_error"],
         "reasoning_feedback": "理由能支持答案。" if reasoning_correct else "未說明來源與結論的關係。",
+        "historical_thinking_tags": ["evidence"],
         "correctness": expected,
     }
     result = ErrorElicitationQuestionResult.model_validate(raw)
@@ -81,8 +87,8 @@ def test_question_result_requires_both_answer_and_reasoning(answer_correct, reas
     [
         {"reasoning_feedback": " "},
         {"reasoning_correct": "false"},
-        {"reasoning_issue": "none"},
-        {"reasoning_issue": "needs_review"},
+        {"reasoning_issue_types": []},
+        {"reasoning_issue_types": ["needs_review"]},
     ],
 )
 def test_reasoning_judgement_requires_specific_consistent_result(changes):
@@ -90,7 +96,7 @@ def test_reasoning_judgement_requires_specific_consistent_result(changes):
         ErrorElicitationReasoningJudgement.model_validate({
             "question_id": "q01",
             "reasoning_correct": False,
-            "reasoning_issue": "insufficient_reasoning",
+            "reasoning_issue_types": ["reasoning_error"],
             "reasoning_feedback": "沒有說明理由，不能據此推測學生的歷史觀念。",
             **changes,
         })

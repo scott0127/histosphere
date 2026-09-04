@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core import config
+from app.models.domain import Participant
 
 
 def _admin_initialize(client: TestClient, event_name: str = "JWT 身分邊界測試") -> dict:
@@ -142,6 +143,74 @@ def test_jwt_blocks_cross_account_conversation_reads_and_chat_writes(client):
         "/api/chat/operations/ownership-operation-001",
         headers=other_user_headers,
         params={"conversation_id": conversation_id},
+    ).status_code == 403
+
+
+def test_rebound_auth_user_cannot_access_session_frozen_to_previous_participant(client):
+    material = _admin_initialize(client, "JWT participant 凍結測試")
+    initialized = client.post(
+        "/api/event/initialize",
+        json={
+            "event_name": material["event"]["canonical_name"],
+            "condition_key": "ebl_roleplay",
+            "rebuild": False,
+        },
+    )
+    assert initialized.status_code == 200
+    session_id = initialized.json()["session_id"]
+    task_id = initialized.json()["task"]["id"]
+
+    submitted = client.post(
+        f"/api/tasks/{task_id}/submit",
+        json={
+            "session_id": session_id,
+            "response_payload": {"answer_text": "測試回答"},
+        },
+    )
+    assert submitted.status_code == 202
+    completed = client.get(submitted.json()["poll_url"])
+    assert completed.status_code == 200
+    result = completed.json()["result"]
+
+    repository = client.app.state.repository
+    original = repository.get_participant_by_auth_user("participant-001")
+    assert original is not None
+    assert repository.get_session(session_id).participant_id == original.id
+    original.auth_user_id = None
+    repository.save_participant(original)
+    repository.save_participant(
+        Participant(
+            code="P-REBOUND",
+            auth_user_id="participant-001",
+            condition_list=["04"],
+        )
+    )
+
+    assert client.get(f"/api/sessions/{session_id}/state").status_code == 403
+    assert client.get("/api/sessions/progress").json()["progress"] == []
+    assert client.get(submitted.json()["poll_url"]).status_code == 403
+    assert client.get(f"/api/conversations/{result['conversation_id']}").status_code == 403
+    assert client.post(
+        "/api/chat",
+        json={
+            "conversation_id": result["conversation_id"],
+            "user_message": "不應寫入舊 participant 的 session",
+        },
+    ).status_code == 403
+    assert client.patch(
+        f"/api/tasks/{task_id}/draft",
+        json={
+            "session_id": session_id,
+            "response_payload": {"answers": []},
+        },
+    ).status_code == 403
+    assert client.post(
+        "/api/event/initialize",
+        json={
+            "event_name": material["event"]["canonical_name"],
+            "condition_key": "ebl_roleplay",
+            "rebuild": False,
+        },
     ).status_code == 403
 
 

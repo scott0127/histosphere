@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_session_service, require_active_participant_actor
+from app.api.deps import get_session_service, require_active_participant_actor, require_session_actor
 from app.core.auth import AuthenticatedActor
 from app.core.learner_task_view import learner_view
 from app.schemas.responses import SessionStateResponse, UserProgressResponse
@@ -40,7 +40,12 @@ def user_progress(
         UserProgressResponse: 包含 progress 清單，每筆紀錄
             含 event_id、condition_key、session_id、status 等。
     """
-    return service.user_progress(actor.resolve_user_id(user_id))
+    resolved_user_id = actor.resolve_user_id(user_id)
+    participant = None if actor.is_admin else service.repository.get_participant_by_auth_user(resolved_user_id)
+    return service.user_progress(
+        resolved_user_id,
+        participant_id=participant.id if participant else None,
+    )
 
 
 @router.get("/{session_id}/state", response_model=SessionStateResponse)
@@ -64,5 +69,5 @@ def session_state(
             personas、condition、attempt 與 conversation_id。
     """
     response = service.load_state(str(session_id))
-    actor.require_owner(response.session.user_id)
+    require_session_actor(actor, service.repository, response.session)
     return learner_view(response)

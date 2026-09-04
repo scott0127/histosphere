@@ -8,6 +8,7 @@ import unicodedata
 
 from app.core.error_elicitation_contract import (
     ERROR_ELICITATION_CONTRACT_VERSION,
+    ERROR_ELICITATION_JUDGE_CONTRACT_VERSION,
     ErrorElicitationJudgementPayload,
     ErrorElicitationQuestionResult,
     validate_task_answers,
@@ -92,7 +93,7 @@ def enrich_task_judgement(
     response_payload: dict[str, Any],
     judgement: dict[str, Any],
 ) -> dict[str, Any]:
-    """建立逐題診斷結果；客觀題用規則，簡答題採用 LLM 判定。"""
+    """建立逐題診斷結果；新版 Task 由規則判答案、LLM 判每題理由。"""
     evaluation_payload = getattr(task, "evaluation_payload", {})
     if evaluation_payload.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
         return _enrich_error_elicitation(task, response_payload, judgement)
@@ -212,7 +213,10 @@ def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dic
     """模型只負責理由；漏題或不合法輸出是處理失敗，不是學生答錯。"""
     evaluation = task.evaluation_payload
     validate_task_answers(evaluation, response, complete=True)
-    parsed = ErrorElicitationJudgementPayload.model_validate({"question_results": judgement.get("question_results")})
+    parsed = ErrorElicitationJudgementPayload.model_validate({
+        "judge_contract_version": judgement.get("judge_contract_version"),
+        "question_results": judgement.get("question_results"),
+    })
     reasoning = {result.question_id: result for result in parsed.question_results}
     questions = evaluation["questions"]
     if set(reasoning) != {question["id"] for question in questions}:
@@ -247,12 +251,19 @@ def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dic
             "source_text": question.get("source_text"),
             "evidence_ids": question.get("accepted_evidence_ids", []),
             "error_code": None if result.correctness == "correct" else (
-                "answer_incorrect" if not answer_correct else rationale.reasoning_issue
+                "answer_incorrect"
+                if not answer_correct
+                else (
+                    "factual_error"
+                    if "factual_error" in rationale.reasoning_issue_types
+                    else "reasoning_error"
+                )
             ),
         })
     enriched = {
         **{key: value for key, value in judgement.items() if key not in {"score", "question_results"}},
         "contract_version": ERROR_ELICITATION_CONTRACT_VERSION,
+        "judge_contract_version": ERROR_ELICITATION_JUDGE_CONTRACT_VERSION,
         "error_elicitation_task_full_text": task.error_elicitation_task_full_text,
         "materials": evaluation.get("materials", []),
         "result": "correct" if all(result["correctness"] == "correct" for result in results) else "incorrect",

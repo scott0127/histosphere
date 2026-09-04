@@ -31,10 +31,10 @@ def task_and_response():
 
 
 def judge_payload():
-    return {"question_results": [
-        {"question_id": "q01", "reasoning_correct": True, "reasoning_issue": "none", "reasoning_feedback": "所述與材料相符。"},
-        {"question_id": "q02", "reasoning_correct": False, "reasoning_issue": "unsupported_inference", "reasoning_feedback": "不能將所有畫作一概視為虛假。"},
-        {"question_id": "q03", "reasoning_correct": True, "reasoning_issue": "none", "reasoning_feedback": "所引資料正確。"},
+    return {"judge_contract_version": "error_elicitation_judge_v2", "question_results": [
+        {"question_id": "q01", "reasoning_correct": True, "reasoning_issue_types": [], "reasoning_feedback": "所述與材料相符。", "historical_thinking_tags": ["evidence"]},
+        {"question_id": "q02", "reasoning_correct": False, "reasoning_issue_types": ["reasoning_error"], "reasoning_feedback": "不能將所有畫作一概視為虛假。", "historical_thinking_tags": ["evidence"]},
+        {"question_id": "q03", "reasoning_correct": True, "reasoning_issue_types": [], "reasoning_feedback": "所引資料正確。", "historical_thinking_tags": []},
     ], "llm_call": {"model": "test"}}
 
 
@@ -46,7 +46,8 @@ def test_real_merge_uses_rules_and_reasons_without_overwriting_raw_answers():
         (True, True, "correct"), (True, False, "incorrect"), (False, True, "incorrect"),
     ]
     assert result["question_results"][1]["learner_rationale"] == original["answers"][1]["rationale"]
-    assert result["question_results"][1]["error_code"] == "unsupported_inference"
+    assert result["question_results"][1]["error_code"] == "reasoning_error"
+    assert result["question_results"][1]["historical_thinking_tags"] == ["evidence"]
     assert result["result"] == "incorrect"
     assert result["llm_call"] == {"model": "test"}
     assert response == original
@@ -88,8 +89,12 @@ def test_provider_batches_reasons_with_full_context_in_one_call():
     class Runner:
         async def run_json(self, **kwargs):
             calls.append(kwargs)
+            payload = judge_payload()
             return SimpleNamespace(
-                payload=kwargs["schema"].model_validate({"question_results": judge_payload()["question_results"]}),
+                payload=kwargs["schema"].model_validate({
+                    "judge_contract_version": payload["judge_contract_version"],
+                    "question_results": payload["question_results"],
+                }),
                 metadata=SimpleNamespace(provider="fake", model="fake", as_dict=lambda: {"model": "fake"}),
             )
     provider = LiteLLMProvider(Settings())

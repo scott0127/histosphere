@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 
-from app.api.deps import get_task_service, require_active_participant_actor
+from app.api.deps import get_task_service, require_active_participant_actor, require_session_actor
 from app.core.auth import AuthenticatedActor
 from app.core.learner_task_view import learner_view
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
@@ -72,6 +72,7 @@ def save_task_draft(
         TaskDraftResponse: 包含已儲存的 TaskAttempt 紀錄。
     """
     user_id = actor.resolve_user_id(request.user_id)
+    require_session_actor(actor, service.repository, service.repository.get_session(request.session_id))
     verified_request = request.model_copy(update={"user_id": user_id})
     return learner_view(service.save_draft(str(task_id), verified_request))
 
@@ -107,6 +108,7 @@ async def submit_task(
             judgement、greeting 與初始 history。
     """
     user_id = actor.resolve_user_id(payload.user_id)
+    require_session_actor(actor, service.repository, service.repository.get_session(payload.session_id))
     verified_payload = payload.model_copy(update={"user_id": user_id})
     accepted, _ = service.queue_submission(str(task_id), verified_payload)
     if accepted.status == "processing":
@@ -125,10 +127,14 @@ def task_submission_status(
     """Return queued task processing state and the final navigation payload."""
     response = service.submission_status(str(attempt_id))
     owner_user_id = response.attempt.user_id
+    session = None
     if not owner_user_id and response.attempt.session_id:
         session = service.repository.get_session(response.attempt.session_id)
         owner_user_id = session.user_id if session else None
     actor.require_owner(owner_user_id)
+    if response.attempt.session_id and session is None:
+        session = service.repository.get_session(response.attempt.session_id)
+    require_session_actor(actor, service.repository, session)
     if response.attempt.status == "processing":
         _schedule_processing(request, background_tasks, service, str(attempt_id))
     return learner_view(response)

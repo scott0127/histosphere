@@ -13,7 +13,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_conversation_service, require_active_participant_actor
+from app.api.deps import (
+    get_conversation_service,
+    require_active_participant_actor,
+    require_session_actor,
+)
 from app.core.auth import AuthenticatedActor
 from app.core.learner_task_view import learner_view
 from app.schemas.requests import ConversationCreateRequest
@@ -44,6 +48,7 @@ async def create_conversation(
             personas、condition、greeting 與初始 history。
     """
     user_id = actor.resolve_user_id(request.user_id)
+    require_session_actor(actor, service.repository, service.repository.get_session(request.session_id))
     response = await service.create_conversation(
         event_id=request.event_id,
         task_attempt_id=request.task_attempt_id,
@@ -76,4 +81,5 @@ def load_conversation(
     response = service.load_conversation(str(conversation_id))
     conversation = service.repository.get_conversation(str(conversation_id))
     actor.require_owner(conversation.user_id if conversation else response.session.user_id if response.session else None)
+    require_session_actor(actor, service.repository, response.session)
     return learner_view(response)

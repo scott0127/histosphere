@@ -46,8 +46,7 @@ EXPERIMENT_CONDITION_DEFINITIONS: Final = (
         agent_mode="generic",
         response_policy="scaffold",
         default_description=(
-            "一般 tutor chatbot；引導 historical thinking、"
-            "evidence-based argumentation、source interpretation。"
+            "一般 AI 歷史對話；以發現錯誤、分析／反思、自我修正與最後修正回饋的 EBL 流程互動。"
         ),
     ),
     ExperimentConditionDefinition(
@@ -69,7 +68,7 @@ EXPERIMENT_CONDITION_DEFINITIONS: Final = (
         agent_mode="persona",
         response_policy="scaffold",
         default_description=(
-            "AI historical persona 基於 learner misconceptions 展開對話並引導 historical thinking。"
+            "AI historical persona 以人物身分執行與 02 相同的錯誤發現、反思、自我修正與修正回饋流程。"
         ),
     ),
 )

@@ -1,6 +1,6 @@
 # Research Experiment Backlog
 
-更新日期：2026-08-20
+更新日期：2026-09-04
 
 ## 文件用途
 
@@ -98,4 +98,4 @@
 
 ### Task Judge
 
-填空、選擇與是非由 backend 規則判定；開放式 `short_answer` 由 LLM 判定。每題只使用 `correct`、`partial`、`incorrect`、`unanswered`，不產生數值分數、人工覆核狀態或 Historical Thinking 六向度分類。
+正式 Error-Elicitation Task 只使用填空、選擇與是非；每題同時要求答案與理由。Backend 以固定規則判答案，LLM 在一次 structured call 中判所有理由。只有兩者都正確才記為 `correct`，其他情況皆為 `incorrect`。Judge 只以 `factual_error`／`reasoning_error` 說明問題；Big Six tags 為描述性 metadata，不參與對錯，也不是 outcome 測量。

@@ -160,9 +160,9 @@ Attempt lifecycle: `in_progress -> processing -> submitted`, with `failed` retai
 
 Processing uses an in-process FastAPI background task. The attempt id survives page reloads; polling a persisted `processing` attempt after backend restart re-schedules it with a process-local attempt-id guard. This is client-driven recovery, not a durable queue or multi-instance database claim.
 
-Per-question judgement values: `correct`, `partial`, `incorrect`, `unanswered`.
+Canonical Error-Elicitation Tasks use `cloze`, `multiple_choice`, and `true_false`. Every item requires both an objective answer and a learner-written rationale. The backend grades the objective answer deterministically; one structured LLM call judges all rationales against the researcher-authored criteria and materials.
 
-Objective questions (`cloze`, `multiple_choice`, `true_false`) are judged deterministically by the backend. Open `short_answer` questions use the configured LLM with the question prompt, reference answer and rubric. This judgement creates the later conversation error profile; it is not a pre-test/post-test score and does not classify Historical Thinking dimensions.
+Each item is binary: `correct` only when both answer and rationale are correct; otherwise `incorrect`. The Judge records zero or more `factual_error` / `reasoning_error` issue types plus optional Big Six tags. Those tags are descriptive research metadata, not a correctness requirement or a Historical Thinking outcome score.
 
 ### Chat
 
@@ -198,10 +198,10 @@ Admin dry-run: `POST /api/admin/prompt-dry-run` calls the configured provider wi
 
 | condition_key | EBL | Role-play | agent_mode | response_policy | Behavior |
 |---|---:|---:|---|---|---|
-| `no_ebl_no_roleplay` | no | no | `generic` | `direct` (legacy storage key) | Standard historical chat without an EBL sequence. |
-| `ebl_no_roleplay` | yes | no | `generic` | `scaffold` | Generic tutor guides thinking, argumentation, and source interpretation. |
-| `no_ebl_roleplay` | no | yes | `persona` | `direct` (legacy storage key) | The same Standard Chat policy rendered in first person as the active persona. |
-| `ebl_roleplay` | yes | yes | `persona` | `scaffold` | Persona uses learner misconceptions to guide historical thinking. |
+| `no_ebl_no_roleplay` | no | no | `generic` | `standard` | Standard historical chat without an EBL sequence. |
+| `ebl_no_roleplay` | yes | no | `generic` | `scaffold` | Generic tutor supports error recognition, reflection, reattempt, self-correction, and final corrective feedback. |
+| `no_ebl_roleplay` | no | yes | `persona` | `standard` | The same Standard Chat policy rendered in first person as the active persona. |
+| `ebl_roleplay` | yes | yes | `persona` | `scaffold` | The same EBL process as 02, rendered in the active persona's first-person voice. |
 
 ## API Contract
 
@@ -449,7 +449,7 @@ All admin endpoints require `x-admin-key`.
 - `POST /api/admin/events/{event_id}/archive`
 - `POST /api/admin/events/{event_id}/restore`
 - `POST /api/admin/events/{event_id}/material-lock`
-- `PATCH /api/admin/tasks/{task_id}` — validates structured `display_text` blank tokens against `evaluation_payload.questions` before saving. Validation errors return `422` with `detail.message` and `detail.issues[]`.
+- `PATCH /api/admin/tasks/{task_id}` — validates `error_elicitation_task_full_text` markers against `evaluation_payload.questions` before saving. Validation errors return `422` with `detail.message` and `detail.issues[]`.
 - `PATCH /api/admin/personas/{persona_id}`
 - `POST /api/admin/participants`
 - `PATCH /api/admin/participants/{participant_id}`
@@ -470,6 +470,9 @@ The active schema lives in `supabase/migrations/` (single source of truth):
 - `supabase/migrations/202607110001_runtime_safety_and_async.sql`
 - `supabase/migrations/202608090001_research_integrity_and_material_lock.sql`
 - `supabase/migrations/202608090002_admin_test_session_classification.sql`
+- `supabase/migrations/202609020001_error_elicitation_task_full_text.sql`
+- `supabase/migrations/202609040001_database_contract_alignment.sql`
+- `supabase/migrations/202609040002_curated_error_elicitation_tasks.sql`
 
 See `supabase-schema.md` for the full table/column/FK/index reference.
 
@@ -479,9 +482,12 @@ Postponed tables: `knowledge_chunks`, `task_blanks`, `task_answers`.
 
 Key comments:
 
-- `event_tasks.evaluation_payload`: V1 LLM judgement rubric/settings.
-- `task_attempts.judgement_payload`: LLM result and misconception summary.
+- `event_tasks.evaluation_payload`: Error-Elicitation questions, materials, answer keys, rationale criteria and authoring version.
+- `task_attempts.judgement_payload`: frozen objective-answer result, rationale diagnosis, issue types and descriptive Historical Thinking tags.
 - `task_attempts.status`: includes `processing` and `failed` for asynchronous work.
+- `experiment_sessions.participant_id`: participant registry identity frozen when a formal session starts; Auth `user_id` remains request identity.
+- Learner Session/Task/Conversation/Chat access checks both the JWT owner and the frozen `participant_id`; rebinding the same Auth account cannot expose or modify the previous participant's Session.
+- `task_attempts.session_id` and `conversations.session_id`: each has a unique index, matching the one-attempt and one-conversation runtime contract.
 - `events.archived_at`: reversible material visibility state; not deletion.
 - `experiment_sessions.timer_started_at` / `timer_ends_at`: set automatically when Chat becomes ready; Admin may reset the fixed five-minute timer.
 - `experiment_sessions.is_admin_test`: separates Admin verification Sessions from formal learner progress and export.
