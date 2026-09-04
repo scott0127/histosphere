@@ -874,7 +874,9 @@ def test_initial_ebl_prompt_uses_private_reference_without_relaxing_d0():
     assert "第三等級反對每一等級各一票" in prompt
     assert "按人數" in prompt
     assert "Private evaluation context" in prompt
-    assert "Use only facts already stated by the learner" in prompt
+    assert "Do not add a target-relevant historical fact" in prompt
+    assert "Do not introduce a new analytical distinction" in prompt
+    assert "Neutral event orientation" in prompt
 
 
 def test_initial_disclosure_cannot_jump_past_prompt_ceiling():

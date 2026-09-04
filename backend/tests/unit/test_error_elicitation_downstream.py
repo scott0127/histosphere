@@ -160,15 +160,15 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
     assert "prompt" not in context["question_results"][0]
     assert "not automatically a factual misconception" in learner_task
     general = next(module.content for module in modules if module.name == "general_prompt")
-    assert "ALL four conditions" in general
-    assert "Do not proactively prescribe sourcing" in general
+    assert "all four experimental conditions" in general
+    assert "Do not proactively require sourcing" in general
     assert general == service._general_prompt()
     if code in {"02", "04"}:
         assert len(context["question_results"]) == 1
         assert "OTHER TARGET feedback" not in rendered
         interaction = next(module.content for module in modules if module.name == "independent_2_prompt")
         assert interaction == service._independent_2_prompt(_condition("02"))
-        assert "recognition of the current error, analysis/reflection" in interaction
+        assert "recognize the current error, analyze/reflect" in interaction
         assert "Target historical-thinking focus:" not in rendered
         assert "resolution_evidence_used" not in rendered
     else:

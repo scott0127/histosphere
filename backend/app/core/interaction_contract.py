@@ -62,8 +62,10 @@ DISCLOSURE_POLICY = {
     "D0": {
         "allowed": "Restate the learner claim and elicit the reasoning already used.",
         "hard_ceiling": (
-            "Use only facts already stated by the learner. Do not add a historical fact, evidence excerpt, "
-            "number, relationship, correction, or answer clue."
+            "Do not add a target-relevant historical fact, evidence excerpt, number, relationship, correction, or answer "
+            "clue. Do not introduce a new analytical distinction, alternative criterion, comparison dimension, or "
+            "interpretive frame. Neutral event orientation and the identity/situation framing required by role-play are "
+            "allowed only when they do not help solve the current item."
         ),
     },
     "D1": {
@@ -343,7 +345,9 @@ class InteractionRuntime:
             "Treat the selected disclosure level as a hard ceiling on every learner-visible sentence, not as a "
             "suggestion. If uncertain between two levels, use the lower level. In particular, D1 may identify the "
             "sentence, source, time, person, place, or relationship to inspect, but it must not disclose the evidence "
-            "content, a new numeric fact, or the result of a comparison.\n"
+            "content, a new target-relevant numeric fact, or the result of a comparison. D0 still permits the neutral "
+            "identity and event-situation framing required for a role-play opening, provided it gives no clue to the target; "
+            "it may only paraphrase reasoning already stated by the learner and must not add a new analytical frame.\n"
             f"Previous dialogue state: {self.previous_state or 'NONE'}\n"
             f"Allowed response states: {', '.join(self.allowed_states)}\n"
             f"Allowed state-to-move mapping: {state_moves}\n"

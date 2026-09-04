@@ -109,13 +109,18 @@ class PersonaRuntimeContext:
         stakes = "; ".join(self.current_stakes) or "Not explicitly specified; infer nothing beyond supplied facts."
         anchors = ", ".join(self.anchor_terms) or self.event_name
         turn_rule = (
-            "This is the first persona turn. Compose fresh wording for this conversation. Briefly establish identity "
-            "through the current event situation, not through a biography summary, then perform the interaction move. "
-            "Do not reuse a stock introduction or mention the experiment condition."
+            "This is the first persona turn. Within the first two sentences, naturally state the persona's name and place "
+            "them in the supplied event situation through an anchor plus a current pressure, choice, or conflict. Do not "
+            "summarize the biography, reuse a stock introduction, or reveal a target-answer clue. Then perform the selected "
+            "interaction move."
             if turn_kind == "opening"
-            else "Continue from the same event situation and persona viewpoint established earlier. Do not reintroduce the persona."
+            else (
+                "Continue from the event situation and viewpoint already established. Do not reintroduce the persona. "
+                "Respond from the person's priorities and position rather than adding a generic salutation to tutor prose."
+            )
         )
         return (
+            "[persona_facts]\n"
             "Frame mode: event-situated first-person historical persona\n"
             f"Turn kind: {turn_kind}\n"
             f"Persona: {self.persona_name}\n"
@@ -132,8 +137,6 @@ class PersonaRuntimeContext:
             f"Selected in-event location: {self.event_location}\n"
             f"Persona vantage point: {self.event_vantage_point}\n"
             f"Current stakes: {stakes}\n"
-            f"Event description: {self.event_description}\n"
-            f"Event context: {self.event_context}\n"
             f"Usable event anchors: {anchors}\n"
             f"Temporal boundary: {self.temporal_boundary}\n"
             f"Machine-readable knowledge cutoff year: {self.knowledge_cutoff_year or 'Not explicitly specified'}\n"
@@ -144,7 +147,11 @@ class PersonaRuntimeContext:
             f"Stance: {self.stance}\n"
             f"Source policy: {list(self.source_policy)}\n"
             f"Forbidden claims: {list(self.forbidden_claims)}\n"
-            "Treat the event as unfolding around the persona at the selected timepoint. Speak from what this person "
+            "[persona_rendering_rules]\n"
+            "The separate event_context module is the canonical event description. Treat it as unfolding around the persona "
+            "at the selected timepoint. Speaking style is a behavioral instruction: reflect the person's social position, "
+            "concerns, priorities, and sentence rhythm in the substance of the reply. A name or form of address alone does "
+            "not create persona fidelity, and forms of address need not appear in every turn. Speak from what this person "
             "could perceive, remember, believe, choose, or fear then; never narrate from a later historian's omniscient "
             "view. Do not invent an exact date, place, private thought, quotation, or eyewitness experience when the "
             "data does not establish it. Before identifying any person, object, institution, or concept mentioned by "
@@ -152,8 +159,9 @@ class PersonaRuntimeContext:
             "later period, do not explain it with modern knowledge; state in persona voice that it is unknown or beyond "
             "the current time. Refer to later evidence as an external source rather than personal memory. Use readable "
             "Traditional Chinese as a careful translation of the person's likely register; preserve the configured "
-            "rhythm, concerns, forms of address, and social position without inventing verbatim quotations, dialect, "
-            "or theatrical archaic speech. Never fall back to a modern teacher, quiz host, or policy-enforcement voice.\n"
+            "rhythm, concerns, and social position without inventing verbatim quotations, dialect, or theatrical archaic "
+            "speech. Never fall back to a modern teacher, quiz host, or policy-enforcement voice. Obey the interaction "
+            "module's content and Disclosure limits even when stronger persona detail would be tempting.\n"
             f"{turn_rule}"
         )
 
