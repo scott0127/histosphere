@@ -22,7 +22,7 @@ from litellm import acompletion, completion_cost
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
-from app.services.llm_generation_audit import record_rejected_generation
+from app.services.llm_generation_audit import record_rejected_generation, record_llm_usage
 
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
@@ -213,12 +213,32 @@ class LLMJsonRunner:
 
             for retry_index in range(MAX_TRANSIENT_RETRIES + 1):
                 attempt_count += 1
+                # 一次網路請求一個 ID，避免重試、JSON 修復與報表副本重複計費。
+                usage_record = dict(
+                    api_key=candidate.api_key, attempt_id=str(uuid4()),
+                    correlation_id=correlation_id, attempt_number=attempt_count,
+                    task_name=task_name, provider=candidate.provider, model=candidate.display_model,
+                )
+                record_llm_usage(**usage_record, status="started")
                 try:
                     completion = await self._complete(
                         candidate,
                         system_prompt=system_prompt,
                         user_prompt=current_user_prompt,
                     )
+                except Exception as exc:
+                    record_llm_usage(**usage_record, status="failed", failure_category=self._failure_category(exc),
+                                     estimated_cost_usd=None, usage_known=False)
+                    if retry_index >= MAX_TRANSIENT_RETRIES or not self._is_transient_error(exc):
+                        raise
+                    transient_retry_count += 1
+                    retry_reason = self._failure_category(exc)
+                    continue
+                # 寫入失敗不應觸發模型重試；空回覆仍可能有付費推理 tokens。
+                record_llm_usage(**usage_record, status="completed" if completion.content else "empty_response",
+                                 usage_known=completion.total_tokens is not None,
+                                 **{k: v for k, v in asdict(completion).items() if k != "content"})
+                try:
                     for field_name in token_totals:
                         value = getattr(completion, field_name)
                         if value is not None:
@@ -228,6 +248,8 @@ class LLMJsonRunner:
                         estimated_cost_usd += completion.estimated_cost_usd
                         cost_seen = True
                     finish_reason = completion.finish_reason
+                    if not completion.content:
+                        raise RuntimeError(f"LLM returned empty content (finish_reason={finish_reason or 'unknown'})")
                     return completion.content
                 except Exception as exc:
                     if retry_index >= MAX_TRANSIENT_RETRIES or not self._is_transient_error(exc):
@@ -350,14 +372,9 @@ class LLMJsonRunner:
 
         response = await acompletion(**kwargs)
         content = response.choices[0].message.content
-        if not content:
-            raise RuntimeError(
-                "LLM returned empty content "
-                f"(finish_reason={self._finish_reason(response) or 'unknown'})"
-            )
         usage = getattr(response, "usage", None)
         return LLMCompletion(
-            content=str(content),
+            content=str(content) if content else "",
             prompt_tokens=self._usage_value(usage, "prompt_tokens"),
             cached_prompt_tokens=self._usage_detail_value(
                 usage,

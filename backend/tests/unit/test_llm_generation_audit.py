@@ -110,7 +110,9 @@ def test_json_runner_audits_initial_and_repair_schema_failures(monkeypatch, tmp_
     assert records[1]["raw_output"] == '{"value":"still invalid"}'
 
 
-def test_json_runner_counts_initial_and_schema_repair_usage(monkeypatch) -> None:
+def test_json_runner_counts_initial_and_schema_repair_usage(monkeypatch, tmp_path) -> None:
+    usage_path = tmp_path / "usage.jsonl"
+    monkeypatch.setenv("LLM_USAGE_LOG_PATH", str(usage_path))
     runner = LLMJsonRunner(
         Settings(llm_model="gpt-5.6-luna", openai_api_key="openai-key")
     )
@@ -157,6 +159,69 @@ def test_json_runner_counts_initial_and_schema_repair_usage(monkeypatch) -> None
     assert result.metadata.reasoning_tokens == 11
     assert result.metadata.total_tokens == 190
     assert result.metadata.estimated_cost_usd == pytest.approx(0.0015)
+    records = [json.loads(line) for line in usage_path.read_text(encoding="utf-8").splitlines()]
+    assert [r["status"] for r in records] == ["started", "completed", "started", "completed"]
+    assert len({r["attempt_id"] for r in records}) == 2
+    assert {r["correlation_id"] for r in records} == {result.metadata.correlation_id}
+    assert sum(r.get("estimated_cost_usd", 0) for r in records) == pytest.approx(0.0015)
+    assert all(r["key_fingerprint"] for r in records)
+    assert "openai-key" not in usage_path.read_text()
+    assert all("content" not in r and "user_prompt" not in r for r in records)
+
+
+def test_usage_log_retains_empty_response_cost_and_unknown_timeout(monkeypatch, tmp_path):
+    usage_path = tmp_path / "usage.jsonl"
+    monkeypatch.setenv("LLM_USAGE_LOG_PATH", str(usage_path))
+    runner = LLMJsonRunner(Settings(llm_model="gpt-5.6-luna", openai_api_key="test-key"))
+    replies = iter([LLMCompletion(content="", total_tokens=40, completion_tokens=30,
+                                  estimated_cost_usd=0.0001), TimeoutError("no response")])
+
+    async def fake_complete(*args, **kwargs):
+        reply = next(replies)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(runner, "_complete", fake_complete)
+    with pytest.raises(RuntimeError):
+        asyncio.run(runner.run_json(schema=_Payload, system_prompt="s", user_prompt="u", task_name="empty"))
+    rows = [json.loads(line) for line in usage_path.read_text(encoding="utf-8").splitlines()]
+    assert [r["status"] for r in rows] == ["started", "empty_response", "started", "failed"]
+    assert rows[1]["estimated_cost_usd"] == 0.0001
+    assert rows[-1]["estimated_cost_usd"] is None
+    assert rows[-1]["usage_known"] is False
+
+
+def test_usage_log_failure_stops_before_paid_request(monkeypatch):
+    runner = LLMJsonRunner(Settings(llm_model="gpt-5.6-luna", openai_api_key="test-key"))
+
+    def unavailable(**kwargs):
+        raise OSError("disk full")
+
+    async def must_not_call(*args, **kwargs):
+        pytest.fail("must not make an untracked paid request")
+
+    monkeypatch.setattr("app.providers.llm.json_runner.record_llm_usage", unavailable)
+    monkeypatch.setattr(runner, "_complete", must_not_call)
+    with pytest.raises(RuntimeError):
+        asyncio.run(runner.run_json(schema=_Payload, system_prompt="s", user_prompt="u", task_name="blocked"))
+
+
+def test_usage_summary_deduplicates_attempts_and_retains_unknown_cost(tmp_path):
+    from scripts.report_llm_usage import summarize
+
+    path = tmp_path / "usage.jsonl"
+    base = dict(provider="openai", model="test", recorded_at="2026-09-05T00:00:00+00:00")
+    completed = dict(base, attempt_id="one", status="completed", estimated_cost_usd=0.1, total_tokens=30)
+    records = [dict(base, attempt_id="one", status="started"), completed, completed,
+               dict(base, attempt_id="two", status="started")]
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\ntruncated", encoding="utf-8")
+    result = summarize(path)
+    assert result["malformed_lines"] == 1
+    assert result["groups"][0]["attempts"] == 2
+    assert result["groups"][0]["unknown_cost_attempts"] == 1
+    assert result["groups"][0]["total_tokens"] == 30
+    assert result["groups"][0]["estimated_known_cost_usd"] == 0.1
 
 
 def test_json_runner_repairs_payload_that_fails_dynamic_validation(monkeypatch) -> None:

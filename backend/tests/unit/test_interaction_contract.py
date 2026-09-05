@@ -98,6 +98,53 @@ def test_standard_chat_cells_do_not_force_task_correction():
         assert metadata["historical_ebl_policy_version"] == HISTORICAL_EBL_POLICY_VERSION
 
 
+@pytest.mark.parametrize("code, flagged", [("02", True), ("04", False)])
+def test_persona_ebl_exploration_has_no_response_length_gate(code, flagged):
+    runtime = build_interaction_runtime(_condition(code), _attempt(), [])
+    metadata = resolve_interaction_metadata(runtime, {
+        "dialogue_state": "NOTICE_ERROR", "dialogue_move": "error_awareness_prompt",
+        "disclosure_level": "D0", "completion_status": "continue",
+    }, "歷史人物自然論述。" * 100)
+    assert ("overlong_scaffold_response" in metadata["fidelity_flags"]) is flagged
+
+
+def test_04_related_conversation_preserves_the_pending_learning_opportunity():
+    from dataclasses import replace
+
+    runtime = replace(build_interaction_runtime(_condition("04"), _attempt(), []),
+                      previous_state="NOTICE_ERROR", previous_disclosure_level="D1",
+                      previous_attempts_in_state=2, previous_completion_status="continue")
+    raw = dict(dialogue_state="NOTICE_ERROR", dialogue_move="natural_response",
+               disclosure_level="D1", completion_status="continue", learner_progress="not_assessed")
+    metadata = resolve_interaction_metadata(runtime, raw, "眼下的財政與各方立場，確實使局勢難以安定。")
+    assert metadata["dialogue_move"] == "natural_response"
+    assert metadata["primary_ebl_move"] == "none"
+    assert metadata["dialogue_state"] == "NOTICE_ERROR"
+    assert metadata["disclosure_level"] == "D1"
+    assert metadata["attempts_in_state"] == 2
+    assert metadata["target_question_id"] == "q01"
+    assert metadata["completion_status"] == "continue"
+    assert metadata["off_topic_redirect"] is False
+    assert metadata["fidelity_flags"] == []
+    # 02 仍有每回合 EBL 的原規則；此次明確只探索 04 的人物主導對話。
+    other = replace(runtime, roleplay_enabled=False, condition_code="02")
+    assert "invalid_dialogue_move" in resolve_interaction_metadata(other, raw, "test")["fidelity_flags"]
+
+
+@pytest.mark.parametrize("previous_status, expected_move", [
+    ("continue", "final_answer_prompt"), ("final_answer_pending", "corrective_feedback"),
+])
+def test_04_conversation_cannot_skip_terminal_feedback(previous_status, expected_move):
+    from dataclasses import replace
+
+    runtime = replace(build_interaction_runtime(_condition("04"), _attempt(), []),
+                      previous_state="SELF_CORRECT", previous_disclosure_level="D4",
+                      previous_completion_status=previous_status)
+    result = resolve_interaction_metadata(runtime, dict(dialogue_move="natural_response"), "test")
+    assert result["dialogue_move"] == expected_move
+    assert "invalid_dialogue_move" in result["fidelity_flags"]
+
+
 def test_standard_chat_records_off_topic_redirect_without_changing_mode():
     for code in ("01", "03"):
         runtime = build_interaction_runtime(_condition(code), _attempt(), [])

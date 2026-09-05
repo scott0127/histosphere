@@ -61,34 +61,23 @@ def _modules(code: str) -> dict[str, str]:
     return {module.name: module.content for module in modules}
 
 
-def test_prompt_modules_change_only_on_their_assigned_factor():
+def test_shared_modules_and_explicit_04_persona_led_exploration():
     matrix = {code: _modules(code) for code in ("01", "02", "03", "04")}
 
     assert len({matrix[code]["general_prompt"] for code in matrix}) == 1
 
     assert matrix["01"]["independent_1_prompt"] == matrix["02"]["independent_1_prompt"]
-    assert matrix["03"]["independent_1_prompt"] == matrix["04"]["independent_1_prompt"]
+    # 使用者要求先優化 04 的人物主導對話，不能再把舊版逐字等價當成已成立。
+    assert matrix["03"]["independent_1_prompt"] != matrix["04"]["independent_1_prompt"]
     assert matrix["01"]["independent_1_prompt"] != matrix["03"]["independent_1_prompt"]
     assert "Identity presentation must not change" in matrix["01"]["independent_1_prompt"]
-    assert "Role-play changes expression and viewpoint" in matrix["04"]["independent_1_prompt"]
-    assert "Identity is only the renderer" in matrix["04"]["independent_1_prompt"]
-    assert "interaction_runtime and independent_2_prompt alone determine" in matrix["04"]["independent_1_prompt"]
-    assert "Natural Chinese may omit the subject" in matrix["04"]["independent_1_prompt"]
-    assert "Before composing the final character voice" in matrix["04"]["independent_1_prompt"]
-    assert "Judge the voice of the whole utterance" in matrix["04"]["independent_1_prompt"]
-    assert "NOTICE_ERROR: let the person's" in matrix["04"]["independent_1_prompt"]
-    assert "REFLECT: connect the permitted help" in matrix["04"]["independent_1_prompt"]
-    assert "SELF_CORRECT: invite the learner's changed judgment" in matrix["04"]["independent_1_prompt"]
-    assert "RESOLVED or authorized corrective feedback" in matrix["04"]["independent_1_prompt"]
-    assert "Never prescribe a named Historical Thinking technique" in matrix["04"]["independent_1_prompt"]
-    assert "A straightforward reflective question can remain" in matrix["04"]["independent_1_prompt"]
-    assert "what makes its disputed connection hold" not in matrix["04"]["independent_1_prompt"]
-    assert "make only the authorized transition" in matrix["04"]["independent_1_prompt"]
-    assert "Do not assign the learner a historical office" in matrix["04"]["independent_1_prompt"]
-    assert "Use the single Disclosure definition in interaction_runtime" in matrix["04"]["independent_1_prompt"]
-    assert "Persona rendering must not increase solution assistance" in matrix["04"]["runtime_policy"]
-    assert "perform a final character-voice pass BEFORE placing text in response" in matrix["04"]["runtime_policy"]
-    assert "within the same completion" in matrix["04"]["runtime_policy"]
+    assert "PRIMARY GOAL: sustain a believable conversation" in matrix["04"]["independent_1_prompt"]
+    assert "SECONDARY HIDDEN GOAL" in matrix["04"]["independent_1_prompt"]
+    assert "Identity is only the renderer" not in matrix["04"]["independent_1_prompt"]
+    assert "Montgomery:" in matrix["04"]["independent_1_prompt"]
+    assert "not historical evidence or a fixed template" in matrix["04"]["independent_1_prompt"]
+    assert "dialogue_move=natural_response" in matrix["04"]["runtime_policy"]
+    assert "never overrides historical accuracy" in matrix["04"]["runtime_policy"]
     assert "Do not draft a generic assistant or tutor reply" not in matrix["04"]["runtime_policy"]
     assert "Every reply must include" not in matrix["04"]["independent_1_prompt"]
 
@@ -97,7 +86,11 @@ def test_prompt_modules_change_only_on_their_assigned_factor():
     assert matrix["01"]["independent_2_prompt"] != matrix["02"]["independent_2_prompt"]
 
     assert matrix["01"]["interaction_runtime"] == matrix["03"]["interaction_runtime"]
-    assert matrix["02"]["interaction_runtime"] == matrix["04"]["interaction_runtime"]
+    assert "Hidden EBL opportunity within a character-led" in matrix["04"]["interaction_runtime"]
+    from app.core.interaction_contract import DISCLOSURE_POLICY
+    import json
+    for code in ("02", "04"):
+        assert json.dumps(DISCLOSURE_POLICY, ensure_ascii=False) in matrix[code]["interaction_runtime"]
     assert "The EBL action and Disclosure level are separate decisions" in matrix["02"]["interaction_runtime"]
     assert '"D0"' in matrix["02"]["interaction_runtime"]
     assert '"D4"' in matrix["02"]["interaction_runtime"]

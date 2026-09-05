@@ -20,6 +20,25 @@ from uuid import uuid4
 _AUDIT_LOCK = Lock()
 
 
+def record_llm_usage(*, api_key: str | None, **record: Any) -> None:
+    """逐次記錄呼叫開始與結果；沒有用量時保留未知，不當成免費。"""
+    path = Path(os.getenv("LLM_USAGE_LOG_PATH", ".dev-logs/llm-usage.jsonl"))
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[3] / path
+    entry = {
+        **record,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "key_fingerprint": hashlib.sha256(api_key.encode()).hexdigest()[:16] if api_key else None,
+        "cost_basis": "provider_usage_litellm_estimate_not_invoice",
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _AUDIT_LOCK:
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            file.flush()
+            os.fsync(file.fileno())
+
+
 def _audit_path() -> Path:
     configured = os.getenv("LLM_REJECTION_LOG_PATH")
     if configured:

@@ -9,6 +9,12 @@ os.environ.setdefault("ALLOW_IN_MEMORY_REPOSITORY", "true")
 os.environ.setdefault("HISTOSPHERE_ADMIN_KEY", "test-admin")
 os.environ.setdefault("LLM_CONTENT_VALIDATION_ENABLED", "true")
 
+
+@pytest.fixture(autouse=True)
+def isolate_llm_usage_log(monkeypatch, tmp_path):
+    # 測試假用量不能混入真實 API 費用帳本。
+    monkeypatch.setenv("LLM_USAGE_LOG_PATH", str(tmp_path / "llm-usage.jsonl"))
+
 from app.core.auth import AuthenticatedUser
 from app.core.config import get_settings
 from app.main import create_app

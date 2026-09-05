@@ -26,9 +26,10 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v9"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v10-persona-led"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v9",
     "2x2-interaction-v8",
     "2x2-interaction-v7",
     "2x2-interaction-v6",
@@ -354,6 +355,57 @@ class InteractionRuntime:
                 "Before the final-answer step, withhold the correct answer unless the learner has already "
                 "self-corrected and met the EBL resolution criteria. Do not request final-answer closure early."
             )
+        persona_turn_policy = (
+            "\n04 conversational priority: the historical person leads; the following EBL actions describe "
+            "learning support, not the whole content of the reply. Develop a substantive historical point through "
+            "the person's concerns and integrate the learning invitation where it belongs. "
+            "If a later learner message discusses a related historical matter rather than the current error, "
+            "you may use dialogue_move=natural_response without a forced EBL question. Keep the previous "
+            "dialogue_state and disclosure_level, completion_status=continue, learner_progress=not_assessed, "
+            "and all resolution_* fields=false. This is NOT off_topic_redirect. Do not advance or resolve the "
+            "error, count a failed attempt, or increase support during this conversational turn. The same "
+            "solution-assistance ceiling still applies. Opening, final-answer and corrective-feedback turns "
+            "cannot take this interlude; their required steps remain binding.\n"
+            if self.roleplay_enabled else ""
+        )
+        if self.roleplay_enabled:
+            # 04 只交付隱藏判斷資料，不把教師的句型、填空模板當成人物應說的話。
+            return (
+                f"{shared}\n"
+                "Hidden EBL opportunity within a character-led historical conversation. Determine whether the latest "
+                "reply recognizes the current error, reflects on it, or corrects it. The historical person chooses "
+                "what they have to say; these internal state names are not a script or the subject of their speech. "
+                "Do not turn an option letter, worksheet instruction or sentence stem into the conversation. "
+                "Engage the historical claim behind it. Historical Thinking is the AI's shared quality basis, not "
+                "a separate learner skill exercise.\n"
+                f"Disclosure policy: {json.dumps(DISCLOSURE_POLICY, ensure_ascii=False)}\n"
+                "Disclosure controls ONLY assistance that settles the current error, not historical discussion, "
+                "personality or reply length. Historical context, concerns and judgments may develop at every level. "
+                "A decisive explanation hidden in that narrative still counts as solution assistance. Withholding "
+                "an option letter is insufficient if the learner need only repeat your supplied correction. "
+                "Reliable historical knowledge beyond supplied materials is allowed within the person's time and access; "
+                "never invent a source, quotation or firsthand experience.\n"
+                f"Previous state: {self.previous_state or 'NONE'}\n"
+                f"Allowed states/moves: {state_moves}\n"
+                f"Previous Disclosure: {self.previous_disclosure_level or 'NONE'}\n"
+                f"Allowed Disclosure this turn: {', '.join(self.allowed_disclosure_levels)}\n"
+                f"Next target (only after closing this one): {json.dumps(next_target_payload, ensure_ascii=False)}\n"
+                "Select the permitted state and assistance level from the learner's actual contribution. Levels move "
+                "at most one step. Record progress and the reason privately. With no learner reply yet, use D0 and "
+                "not_assessed; invite discussion of the original claim without supplying its correction. "
+                "When giving learning support, let the person's substantive response carry it; no more than two related "
+                "questions are needed, and a question is not mandatory in every turn.\n"
+                "Self-correction is established only when the learner (1) recognizes what in their answer or reason "
+                "needs changing, (2) explains why, and (3) gives a revised answer AND reason satisfying the existing "
+                "question criteria. These may appear across turns. Set the three resolution_* booleans from this "
+                "evidence, not merely a correct answer or terminology; require no additional citation or named skill. "
+                "If all three are met, use RESOLVED/resolution/resolved, confirm the verified answer before a natural "
+                "bridge to the next error. Do not reveal the next answer or invent another error. If no target remains, "
+                "continue historical conversation without claiming the timed stage ended.\n"
+                "Unrelated requests use off_topic_redirect=true with no substantive answer; preserve state and "
+                "Disclosure and do not count failure. A pending terminal correction still takes precedence.\n"
+                f"{terminal_instruction}{persona_turn_policy}"
+            )
         return (
             f"{shared}\n"
             "Decision order: select the EBL action (recognize the error, analyze/reflect, or self-correct), "
@@ -413,7 +465,7 @@ class InteractionRuntime:
             "feedback even if that reply is off topic, without answering the unrelated request. "
             "When evidence_ids is empty, do not invent a source ID, quotation, or retrieval claim. Reliable contextual "
             "knowledge remains available under the same solution-assistance and identity boundaries.\n"
-            f"{terminal_instruction}"
+            f"{terminal_instruction}{persona_turn_policy}"
         )
 
 
@@ -897,13 +949,20 @@ def resolve_interaction_metadata(
         }
 
     corrective_feedback_delivered = runtime.corrective_feedback_required
+    # 人物可回答相關歷史問題；此回合不是 EBL 失敗，也不是離題。
+    conversational_turn = bool(
+        runtime.roleplay_enabled and runtime.target is not None
+        and runtime.previous_state is not None
+        and not runtime.final_answer_required and not corrective_feedback_delivered
+        and not off_topic_redirect and raw.get("dialogue_move") == "natural_response"
+    )
     final_answer_required = runtime.final_answer_required and not off_topic_redirect
     proposed_state = raw.get("dialogue_state")
     if corrective_feedback_delivered:
         # learner 已有最後整理機會；即使仍錯或偏題，也給正解收尾，不再追加作答。
         off_topic_redirect = False
         proposed_state = "RESOLVED"
-    elif off_topic_redirect:
+    elif off_topic_redirect or conversational_turn:
         # 離題只做範圍重新導向，不視為學習進展，也不推進 EBL 階段。
         proposed_state = (
             runtime.previous_state
@@ -916,7 +975,7 @@ def resolve_interaction_metadata(
     resolution_error_recognized = raw.get("resolution_error_recognized") is True
     resolution_error_reflected = raw.get("resolution_error_reflected") is True
     resolution_self_corrected = raw.get("resolution_self_corrected") is True
-    if off_topic_redirect or runtime.previous_completion_status == "corrective_resolution_pending":
+    if off_topic_redirect or conversational_turn or runtime.previous_completion_status == "corrective_resolution_pending":
         resolution_error_recognized = False
         resolution_error_reflected = False
         resolution_self_corrected = False
@@ -943,6 +1002,7 @@ def resolve_interaction_metadata(
     expected_move = (
         "corrective_feedback" if corrective_feedback_delivered
         else "final_answer_prompt" if final_answer_requested
+        else "natural_response" if conversational_turn
         else DIALOGUE_MOVE_BY_STATE[proposed_state]
     )
     allowed_provider_moves = {expected_move} if (
@@ -961,11 +1021,12 @@ def resolve_interaction_metadata(
     question_count = response_text.count("？") + response_text.count("?")
     if question_count > MAX_FOCUSED_QUESTIONS_PER_TURN:
         flags.add("excessive_scaffold_questions")
-    if len(response_text) > 700:
+    # 04 人物表達驗收暫不設字數門檻；之後另行檢討正式 2x2 篇幅控制。
+    if not runtime.roleplay_enabled and len(response_text) > 700:
         flags.add("overlong_scaffold_response")
     if final_answer_requested or corrective_feedback_delivered:
         resolved_disclosure_level = "D4"
-    elif off_topic_redirect:
+    elif off_topic_redirect or conversational_turn:
         resolved_disclosure_level = (
             runtime.previous_disclosure_level
             if runtime.previous_disclosure_level in runtime.allowed_disclosure_levels
@@ -997,7 +1058,7 @@ def resolve_interaction_metadata(
     same_state = proposed_state == runtime.previous_state
     attempts_in_state = (
         runtime.previous_attempts_in_state
-        if off_topic_redirect
+        if off_topic_redirect or conversational_turn
         else runtime.previous_attempts_in_state + 1 if same_state else 0
     )
     if corrective_feedback_delivered:
@@ -1055,9 +1116,11 @@ def resolve_interaction_metadata(
         learner_progress = "clear_progress" if resolution_self_corrected else "no_progress"
     elif final_answer_requested and learner_progress == "resolved":
         learner_progress = "partial_progress"
-    elif off_topic_redirect:
+    elif off_topic_redirect or conversational_turn:
         learner_progress = "no_progress"
         revision_status = "not_yet"
+        if conversational_turn:
+            learner_progress = "not_assessed"
     disclosure_reason = raw.get("disclosure_reason")
     if not isinstance(disclosure_reason, str) or not disclosure_reason.strip():
         disclosure_reason = None
@@ -1066,6 +1129,7 @@ def resolve_interaction_metadata(
         "provide_corrective_resolution"
         if corrective_feedback_delivered
         else "request_final_answer" if final_answer_requested
+        else "none" if conversational_turn
         else primary_reasoning_move(proposed_state)
     )
 
