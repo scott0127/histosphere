@@ -95,8 +95,12 @@ def test_shared_modules_and_explicit_04_persona_led_exploration():
     assert '"D0"' in matrix["02"]["interaction_runtime"]
     assert '"D4"' in matrix["02"]["interaction_runtime"]
     assert "Disclosure limits solution assistance for the current error" in matrix["02"]["interaction_runtime"]
-    assert "withholding the answer label alone is insufficient" in matrix["02"]["interaction_runtime"]
-    assert "reduce the solution assistance, not the character's voice" in matrix["02"]["interaction_runtime"]
+    for code in ("02", "04"):
+        policy = matrix[code]["interaction_runtime"]
+        assert "Do not announce the correct option, fill-in, truth value" in policy
+        assert "Comparisons may include both sides" in policy
+        assert "only agreement, choosing a letter" not in policy
+        assert "learner need only repeat" not in policy
     assert "do not mechanically count facts" in matrix["02"]["interaction_runtime"]
     assert "not an exhaustive historical-knowledge whitelist" in matrix["02"]["interaction_runtime"]
     assert "Full corrective feedback is a separate runtime-authorized step" in matrix["02"]["interaction_runtime"]

@@ -26,9 +26,10 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v10-persona-led"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v11-answer-boundary"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v10-persona-led",
     "2x2-interaction-v9",
     "2x2-interaction-v8",
     "2x2-interaction-v7",
@@ -61,46 +62,43 @@ DIALOGUE_MOVE_BY_STATE: dict[str, str] = {
 }
 DISCLOSURE_LEVELS = ("D0", "D1", "D2", "D3", "D4")
 # 等級只限制針對當前錯誤的解題協助，不限制人物語氣、篇幅或一般歷史背景。
-# 背景若實際提示了答案，仍須算入協助；不能透過人物敘事繞過界線。
+# 史實、比較與理由線索可以充分提供；界線是不要替受測者宣告作答結論。
 DISCLOSURE_POLICY = {
     "D0": {
         "allowed": (
             "Engage the learner's claim and invite independent reconsideration. Acknowledge any rationale already "
-            "submitted instead of asking the learner to repeat it. Event orientation and a personal reaction are welcome."
+            "submitted instead of asking the learner to repeat it. Develop the historical situation and your reaction; "
+            "begin with an open invitation rather than a worked correction."
         ),
         "hard_ceiling": (
-            "Do not supply a new key solution clue, diagnose the missing distinction for the learner, or correct their "
-            "answer or rationale. Background may establish the situation, but must not do this problem-solving work."
+            "Do not announce the correct option, fill-in, truth value, or corrected task conclusion for the learner."
         ),
     },
     "D1": {
         "allowed": (
             "Point out a doubt, direction, or distinction worth reconsidering in the current claim. "
-            "Explain what to think about without doing the comparison or correction for the learner."
+            "Ground that doubt in relevant historical facts, the person's concerns, or a concrete contrast."
         ),
         "hard_ceiling": (
-            "Do not supply the decisive content or explanation that settles the item. A direction must leave the "
-            "learner something substantive to work out, not merely invite agreement with a supplied answer."
+            "Do not announce the correct option, fill-in, truth value, or corrected task conclusion for the learner."
         ),
     },
     "D2": {
         "allowed": (
-            "Offer partial relevant information or a useful clue, explaining its meaning if needed. "
-            "Use accurate task content or well-established historical knowledge within the identity's knowledge boundary."
+            "Offer useful facts and explain their relationships or implications. Comparisons may include both sides. "
+            "Make the historical issue understandable, then invite the learner's own revised judgment."
         ),
         "hard_ceiling": (
-            "Leave a task-specific part of the correction for the learner to work out. Do not supply all the decisive "
-            "details and leave only an option letter, agreement, or rewording to the learner."
+            "Do not announce the correct option, fill-in, truth value, or corrected task conclusion for the learner."
         ),
     },
     "D3": {
         "allowed": (
             "Connect information already offered, highlight a tension, or break the difficulty into manageable parts. "
-            "Make the route to revision clearer without completing it."
+            "Explain the reasoning route explicitly if helpful, while leaving the final task judgment to the learner."
         ),
         "hard_ceiling": (
-            "Leave a meaningful task-specific inference or revision to the learner, not just agreement with or "
-            "repetition of the correction already supplied."
+            "Do not announce the correct option, fill-in, truth value, or corrected task conclusion for the learner."
         ),
     },
     "D4": {
@@ -381,8 +379,10 @@ class InteractionRuntime:
                 f"Disclosure policy: {json.dumps(DISCLOSURE_POLICY, ensure_ascii=False)}\n"
                 "Disclosure controls ONLY assistance that settles the current error, not historical discussion, "
                 "personality or reply length. Historical context, concerns and judgments may develop at every level. "
-                "A decisive explanation hidden in that narrative still counts as solution assistance. Withholding "
-                "an option letter is insufficient if the learner need only repeat your supplied correction. "
+                "Facts, comparisons and reasoning cues are allowed even when they make the answer easier to infer. "
+                "Levels guide how explicit the support is, not a fact quota or a ban on useful historical explanation. "
+                "Before authorized feedback, do not announce the correct option, fill-in, truth value or final task "
+                "conclusion, including a paraphrase or a rhetorical question that already asserts that conclusion. "
                 "Reliable historical knowledge beyond supplied materials is allowed within the person's time and access; "
                 "never invent a source, quotation or firsthand experience.\n"
                 f"Previous state: {self.previous_state or 'NONE'}\n"
@@ -416,15 +416,12 @@ class InteractionRuntime:
             f"Disclosure policy: {json.dumps(DISCLOSURE_POLICY, ensure_ascii=False)}\n"
             "Disclosure limits solution assistance for the current error, not response length, paragraph count, personality, "
             "or all historical information. Natural event context, personal concerns, and conversational framing may appear "
-            "at every level. However, if they help settle this error, they count as solution assistance and must fit the "
-            "selected level. Assess what the whole reply enables the learner to solve; do not mechanically count facts or "
-            "hide extra help in a persona introduction or ending. Materials are not an exhaustive historical-knowledge whitelist. "
+            "at every level. Facts, comparisons and reasoning cues may make the answer easy to infer; that alone is not "
+            "answer disclosure. Levels guide assistance, not a fact quota; do not mechanically count facts. "
+            "Materials are not an exhaustive historical-knowledge whitelist. "
             "Use only reliable historical knowledge consistent with the active identity's time and access. A quotation or a "
-            "claimed source still needs support. For a choice, true/false, or fill-in item, a seemingly small hint may itself "
-            "give away the answer: withholding the answer label alone is insufficient. Treat the correct interpretation and "
-            "its decisive rationale as part of the solution, not just expected_answer's literal text. Before sending, check "
-            "what task-specific reasoning the learner still has to do: if only agreement, choosing a letter, or restating "
-            "your supplied correction remains, reduce the solution assistance, not the character's voice or general context. "
+            "claimed source still needs support. Before authorized feedback, do not announce the correct option, fill-in, "
+            "truth value or corrected task conclusion, including its paraphrase or a rhetorical question that asserts it. "
             "Do not deliberately prolong the exchange "
             "when the learner has already recognized, reflected on, and corrected the error.\n"
             f"Previous dialogue state: {self.previous_state or 'NONE'}\n"
