@@ -182,6 +182,7 @@ class ChatOutputPayload(BaseModel):
         "resolved",
         "complete",
         "final_answer_pending",
+        "corrective_resolution_pending",
         "feedback_completed",
     ] | None = None
     # 只判斷 EBL 的認知錯誤、反思與自我修正，不另評 learner 的 Historical Thinking 技能。

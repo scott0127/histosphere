@@ -42,8 +42,13 @@ GENERAL_PROMPT = (
     "response, not an extra learner exercise in EBL. Do not proactively require sourcing, contextualization, corroboration, "
     "multi-causal analysis, or named Historical Thinking techniques. If the learner explicitly asks about one of these, "
     "answer the request normally. The conversation scope is the selected historical event, its actors, chronology, context, "
-    "evidence, and interpretation. If the latest message is clearly unrelated, set off_topic_redirect=true, give no "
-    "substantive answer to it, and briefly return to the event. Do not use that redirect to repeat a task question, test the "
+    "evidence, and interpretation. Judge the actual request in recent conversational context, not merely a historical "
+    "name inside it. Genuine event-related questions remain welcome; do not force every new question back to the task "
+    "or infer misconduct merely from casual wording. "
+    "If the latest message is clearly unrelated, set off_topic_redirect=true, give no substantive answer to it, "
+    "and use a brief acknowledgment followed by ONE bridge to the last substantive historical claim or material. "
+    "Do not follow a chain of diversions with explanations, translations or a new lecture. "
+    "Do not use that redirect to repeat a task question, test the "
     "learner, advance EBL, or increase Disclosure. If relevance is uncertain, treat the message as related. The only "
     "exception is runtime-authorized terminal feedback: finish the current correction but still do not answer the unrelated request."
 )
@@ -79,20 +84,12 @@ RETRY_REMEDIATION: dict[str, str] = {
     "invalid_dialogue_move": "Use the dialogue move required by the selected dialogue state.",
     "excessive_scaffold_questions": "Use no more than the permitted number of tightly related questions.",
     "overlong_scaffold_response": "Shorten the scaffold while retaining the required learner action.",
-    "early_answer_exposure": (
-        "Remove the complete answer and its direct synonym; provide only the evidence or reasoning support allowed now."
-    ),
     "invalid_disclosure_transition": (
         "Choose disclosure_level only from the allowed disclosure levels listed in interaction_runtime. "
         "Reassess learner_progress and regenerate the complete response; do not silently clamp the previous value."
     ),
     "next_target_transition_missing": (
         "After resolving the current item, explicitly bridge to the next unresolved item without revealing its answer."
-    ),
-    "next_answer_exposure": "Remove the next item's answer; only the current item's correction is authorized.",
-    "corrective_answer_missing": (
-        "Before leaving the current error, explicitly state its verified expected answer and explain its corrected "
-        "rationale. For an answer-alias list, use one accepted answer, not the entire list."
     ),
     "incomplete_resolution_criteria": (
         "Do not claim learner resolution unless error recognition, reflection, and a correct revision are demonstrated. "
@@ -447,6 +444,8 @@ class PromptService:
 
     @staticmethod
     def _conversation_history(messages: list[ChatMessage]) -> str:
+        # 系統保底不是人物發言，不讓下一輪把它當作教學或歷史內容。
+        messages = [message for message in messages if not message.metadata.get("system_fallback")]
         if not messages:
             return "No prior conversation turns."
         ordered_messages = sorted(messages, key=lambda message: message.sequence_index)
@@ -549,7 +548,7 @@ class PromptService:
                 "under the runtime rules, keeping the unresolved opportunity for later. Do not invent a new error "
                 "or run an extra Historical Thinking exercise.\n"
                 "Primary conversational identity never overrides historical accuracy, time/access boundaries, "
-                "Disclosure limits on solution assistance or the required final-answer/corrective-feedback steps. "
+                "Disclosure limits on solution assistance or the required corrective-feedback/restatement steps. "
                 "Do not announce the corrected task conclusion inside background narration. Helpful historical facts "
                 "and comparisons are welcome, even when the learner can infer the answer from them. EBL does not limit ordinary "
                 "historical discussion to hint sentences or impose a word limit.\n"

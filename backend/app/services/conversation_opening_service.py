@@ -13,6 +13,7 @@ from app.providers.llm.base import ChatGenerationResult, LLMProvider
 from app.services.completion_validation import validate_completion_candidate
 from app.services.llm_generation_audit import record_rejected_generation
 from app.services.prompt_service import PromptModule, PromptService
+from app.services.answer_delivery_service import deliver_answer
 
 
 MAX_OPENING_GENERATION_ATTEMPTS = 3
@@ -53,6 +54,7 @@ class ConversationOpeningService:
     def __init__(self, llm_provider: LLMProvider, prompt_service: PromptService) -> None:
         self.llm_provider = llm_provider
         self.prompt_service = prompt_service
+        self.answer_review_service = None
 
     async def generate(
         self,
@@ -71,6 +73,18 @@ class ConversationOpeningService:
             task_attempt=attempt,
         )
         base_prompt = self.prompt_service.render_modules(modules)
+        review = self.answer_review_service
+        if review and review.before_delivery(runtime):
+            async def generate(candidate_prompt):
+                return await self.llm_provider.generate_greeting(
+                    event=event, personas=[persona] if persona else [], condition=condition,
+                    attempt=attempt, prompt=candidate_prompt)
+            generation, metadata, final_prompt = await deliver_answer(
+                review_service=review, generate=generate, runtime=runtime, event=event,
+                attempt=attempt, persona=persona, history=[], learner_message="",
+                base_prompt=base_prompt, is_opening=True)
+            return ConversationOpening(generation=generation, metadata=metadata, persona=persona,
+                                       prompt=final_prompt, modules=() if metadata.get("answer_delivery", {}).get("state_held") else tuple(modules))
         persona_context = build_persona_runtime_context(event, persona) if persona else None
         rejected_candidates: list[dict[str, Any]] = []
         accumulated_retry_flags: set[str] = set()

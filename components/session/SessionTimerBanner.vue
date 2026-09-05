@@ -19,21 +19,17 @@
     <span class="font-mono text-base tabular-nums">{{ formattedRemaining }}</span>
   </div>
 
-  <ConfirmActionModal
-    :show="Boolean(session?.timer_ends_at && expired)"
-    title="本階段已結束"
-    message="對話已停止，請進入下一階段。"
-    eyebrow="時間結束"
-    icon="mdi:timer-check-outline"
-    confirm-label="進入下一階段"
-    cancel-label=""
-    @confirm="$emit('next-stage')"
+  <SessionClosureDialog
+    v-if="session?.timer_ends_at && expired"
+    :key="session.timer_ends_at"
+    :session-id="session.id"
+    @next-stage="$emit('next-stage')"
   />
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
+import SessionClosureDialog from '~/components/session/SessionClosureDialog.vue';
 import type { ExperimentSession } from '~/types';
 
 const props = withDefaults(defineProps<{

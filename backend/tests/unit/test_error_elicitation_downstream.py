@@ -95,7 +95,8 @@ def test_reasoning_gap_can_restate_the_already_correct_answer_without_revealing_
     response = "你原先選了「B」，能再看看原本的理由哪裡需要重新想一想？"
     assert enforce_interaction_response(runtime, output, response).retry_required is False
     wrong_answer_runtime = build_interaction_runtime(_condition(), _attempt(answer_correct=False), [])
-    assert "early_answer_exposure" in enforce_interaction_response(wrong_answer_runtime, output, response).metadata["fidelity_flags"]
+    # 引述 learner 的答案仍不等於提供答案；語意由獨立觀察處理。
+    assert "early_answer_exposure" not in enforce_interaction_response(wrong_answer_runtime, output, response).metadata["fidelity_flags"]
 
 
 def test_reasoning_feedback_reaches_private_prompt_but_not_public_metadata():

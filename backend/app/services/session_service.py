@@ -6,15 +6,18 @@
 """
 
 from datetime import timedelta
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException, status
 
 from app.core.research_audit import build_change_payload
-from app.core.research_reproducibility import get_session_task, record_session_material_snapshot
+from app.core.research_reproducibility import get_session_task, record_session_material_snapshot, stable_hash
+from app.core.interaction_contract import build_interaction_runtime
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
 from app.schemas.responses import (
     SessionRestartResponse,
+    SessionClosureResponse,
     SessionStateResponse,
     UserProgressItem,
     UserProgressResponse,
@@ -52,7 +55,79 @@ class SessionService:
             condition=condition,
             attempt=attempt,
             conversation_id=conversation.id if conversation else None,
+            closure=self._closure(session, attempt, condition, conversation),
         )
+
+    def _closure(self, session, attempt, condition, conversation) -> SessionClosureResponse | None:
+        # 正解只在計時已結束的 EBL 活動提供；不改動對話、不公布尚未談到的其他題目。
+        if not (session.status == "completed" and session.completion_reason == "timer_elapsed"
+                and condition and condition.ebl_enabled and attempt and conversation):
+            return None
+        history = self.repository.list_messages(conversation.id)
+        spoken = [m for m in history if m.speaker_type != "learner"
+                  and not m.metadata.get("system_fallback")
+                  and not m.metadata.get("answer_delivery", {}).get("state_held")]
+        if not spoken:
+            return None
+        runtime = build_interaction_runtime(condition, attempt, history)
+        target = runtime.target
+        if not target:
+            return None
+        last = spoken[-1].metadata
+        if last.get("target_question_id") != target.question_id and not (
+            last.get("next_target_started") and last.get("next_target_question_id") == target.question_id
+        ):
+            return None
+        result = next((r for r in attempt.judgement_payload.get("question_results", [])
+                       if r.get("question_id") == target.question_id), {})
+        answer = target.expected_answer
+        if isinstance(answer, bool):
+            answer_text = "是" if answer else "否"
+        elif isinstance(answer, list):
+            answer_text = str(answer[0]) if answer else ""
+        else:
+            answer_text = "" if answer is None else str(answer)
+        options = result.get("options") or []
+        if not options:
+            snapshot = next((log for log in self.repository.list_research_logs_for_session(session.id)
+                             if log.action_type == "session_material_snapshot"), None)
+            questions = snapshot.payload.get("materials", {}).get("task", {}).get("evaluation_payload", {}).get("questions", []) if snapshot else []
+            options = next((q.get("options", []) for q in questions if q.get("id") == target.question_id), [])
+        for option in options:
+            if isinstance(option, dict) and str(option.get("value")) == answer_text:
+                answer_text = f"{answer_text}：{option.get('label', answer_text)}"
+                break
+        # 使用判定時已凍結的正解解說，不把 rubric 或 LLM 診斷指令當作答案顯示。
+        explanation = str(target.source_text or "").strip()
+        if not answer_text or not explanation:
+            raise HTTPException(status_code=409, detail="本題缺少完整修正說明，請研究人員協助收尾。")
+        closure_id = stable_hash([session.id, session.timer_ends_at, target.question_id, answer_text, explanation])
+        for log in self.repository.list_research_logs_for_session(session.id):
+            if log.action_type == "session_closure_restatement" and log.payload.get("closure_id") == closure_id:
+                return SessionClosureResponse.model_validate(log.payload)
+        return SessionClosureResponse(closure_id=closure_id, question_id=target.question_id,
+                                      question=target.prompt, answer=answer_text, explanation=explanation)
+
+    def submit_closure(self, session_id: str, closure_id: str, reflection: str) -> SessionClosureResponse:
+        """重述保存於研究紀錄，不新增聊天回合，也不把閱讀正解後的重述當作獨立學會。"""
+        state = self.load_state(session_id)
+        closure = state.closure
+        if not closure or closure.closure_id != closure_id:
+            raise HTTPException(status_code=409, detail="收尾狀態已變更，請重新載入。")
+        if closure.completed_at:
+            return closure
+        if not reflection.strip():
+            raise HTTPException(status_code=422, detail="請先用自己的話寫下修正後的想法。")
+        saved = closure.model_copy(update={"reflection": reflection.strip(), "completed_at": utc_now().isoformat()})
+        self.repository.log_research(ResearchLog(
+            id=str(uuid5(NAMESPACE_URL, f"histosphere:closure:{closure_id}")),
+            user_id=state.session.user_id, session_id=session_id, event_id=state.session.event_id,
+            task_id=state.attempt.task_id, attempt_id=state.attempt.id, conversation_id=state.conversation_id,
+            action_type="session_closure_restatement", payload={**saved.model_dump(),
+                "phase": "post_timer_closure", "outcome": "assisted_restatement_recorded",
+                "independent_mastery": False},
+        ))
+        return saved
 
     def user_progress(self, user_id: str, participant_id: str | None = None) -> UserProgressResponse:
         """列出某位受測者在各事件與 condition 下的最新進度。"""

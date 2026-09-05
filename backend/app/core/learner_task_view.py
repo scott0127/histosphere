@@ -21,6 +21,15 @@ PUBLIC_RESULT_FIELDS = {
     "question_id", "blank_id", "question_type", "question_text", "prompt",
     "learner_answer", "learner_rationale", "correctness", "answer_correct", "reasoning_correct",
 }
+PRIVATE_MESSAGE_FIELDS = {
+    "answer_delivery",
+    "judgement", "judgement_payload", "answer_review", "provider_fidelity_flags",
+    "fidelity_flags", "persona_fidelity_flags", "content_validation_mode",
+    "content_validation_would_retry", "content_validation_flags",
+    "corrective_feedback_revealed_answer",
+    "raw_interaction_metadata", "fidelity_retry_required", "fidelity_fallback_applied",
+    "rejected_response_sha256", "rejected_response_length",
+}
 
 
 def _pick(payload: dict[str, Any], fields: set[str]) -> dict[str, Any]:
@@ -69,7 +78,7 @@ def _message_metadata(value: Any) -> Any:
         return {
             key: _message_metadata(item)
             for key, item in value.items()
-            if key not in {"judgement", "judgement_payload"}
+            if key not in PRIVATE_MESSAGE_FIELDS
         }
     if isinstance(value, list):
         return [_message_metadata(item) for item in value]

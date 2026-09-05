@@ -65,6 +65,8 @@ def test_shared_modules_and_explicit_04_persona_led_exploration():
     matrix = {code: _modules(code) for code in ("01", "02", "03", "04")}
 
     assert len({matrix[code]["general_prompt"] for code in matrix}) == 1
+    assert "give no substantive answer to it" in matrix["04"]["general_prompt"]
+    assert "do not force every new question" in matrix["04"]["general_prompt"]
 
     assert matrix["01"]["independent_1_prompt"] == matrix["02"]["independent_1_prompt"]
     # 使用者要求先優化 04 的人物主導對話，不能再把舊版逐字等價當成已成立。
@@ -124,6 +126,8 @@ def test_all_conditions_share_the_event_scope_redirect_policy():
         assert "off_topic_redirect=true" in modules["general_prompt"]
         assert "If relevance is uncertain, treat the message as related" in modules["general_prompt"]
         assert "off_topic_redirect" in modules["runtime_policy"]
+        assert "not merely a historical name" in modules["general_prompt"]
+        assert "last substantive historical claim or material" in modules["general_prompt"]
 
     assert "outside the selected event" in matrix["01"]["independent_1_prompt"]
     assert "outside the selected event" in matrix["02"]["independent_1_prompt"]
@@ -133,6 +137,14 @@ def test_all_conditions_share_the_event_scope_redirect_policy():
     assert "event-related request" in matrix["03"]["independent_2_prompt"]
     assert "off_topic_redirect=true" in matrix["02"]["interaction_runtime"]
     assert "off_topic_redirect=true" in matrix["04"]["interaction_runtime"]
+    for code in ("03", "04"):
+        assert "Do not say that the object does not exist in this era" in matrix[code]["persona_event_context"]
+        assert "without pretending ignorance" in matrix[code]["persona_event_context"]
+        assert "Do not repeat, paraphrase, classify or explain the unfamiliar concept" in matrix[code]["persona_event_context"]
+        assert "even inside a denial of knowledge" in matrix[code]["persona_event_context"]
+        assert "return to the last substantive historical topic" in matrix[code]["persona_event_context"]
+    # 共用規則不列舉亂問類型，也不替人物提供陌生概念的現代分類。
+    assert "programming" not in matrix["04"]["general_prompt"]
 
 
 def test_learner_message_is_untrusted_data_before_final_runtime_policy():

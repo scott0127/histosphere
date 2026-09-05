@@ -145,7 +145,8 @@ def test_04_related_conversation_preserves_the_pending_learning_opportunity():
 
 
 @pytest.mark.parametrize("previous_status, expected_move", [
-    ("continue", "final_answer_prompt"), ("final_answer_pending", "corrective_feedback"),
+    ("continue", "corrective_feedback"), ("final_answer_pending", "corrective_feedback"),
+    ("corrective_resolution_pending", "corrective_feedback"),
 ])
 def test_04_conversation_cannot_skip_terminal_feedback(previous_status, expected_move):
     from dataclasses import replace
@@ -506,7 +507,7 @@ def test_legacy_d4_skip_record_can_still_resume_without_rewriting_history():
 
 
 @pytest.mark.parametrize("code", ["02", "04"])
-def test_d4_failure_requests_final_answer_without_revealing_or_switching(code):
+def test_d4_failure_gives_feedback_then_requests_restatement_without_switching(code):
     previous = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
@@ -528,24 +529,24 @@ def test_d4_failure_requests_final_answer_without_revealing_or_switching(code):
         runtime,
         {
             "dialogue_state": "SELF_CORRECT",
-            "dialogue_move": "final_answer_prompt",
+            "dialogue_move": "corrective_feedback",
             "disclosure_level": "D4",
-            "completion_status": "final_answer_pending",
+            "completion_status": "corrective_resolution_pending",
             "learner_progress": "no_progress",
             "resolution_error_recognized": False,
             "resolution_error_reflected": False,
             "resolution_self_corrected": False,
         },
-        "請先用自己的話整理這一題最後的答案與理由。",
+        "正確答案是按人數，不是按等級。請用自己的話說明原判斷應如何修正。",
     )
 
-    assert runtime.final_answer_required is True
-    assert runtime.corrective_feedback_required is False
+    assert runtime.restatement_required is False
+    assert runtime.corrective_feedback_required is True
     assert enforced.retry_required is False
-    assert enforced.metadata["completion_status"] == "final_answer_pending"
-    assert enforced.metadata["resolution_outcome"] == "awaiting_final_answer"
-    assert enforced.metadata["dialogue_move"] == "final_answer_prompt"
-    assert enforced.metadata["corrective_feedback_revealed_answer"] is False
+    assert enforced.metadata["completion_status"] == "corrective_resolution_pending"
+    assert enforced.metadata["resolution_outcome"] == "awaiting_restatement"
+    assert enforced.metadata["dialogue_move"] == "corrective_feedback"
+    assert enforced.metadata["corrective_feedback_revealed_answer"] is None
     assert enforced.metadata["next_target_started"] is False
     assert "early_answer_exposure" not in enforced.metadata["fidelity_flags"]
     leaked = enforce_interaction_response(
@@ -555,7 +556,9 @@ def test_d4_failure_requests_final_answer_without_revealing_or_switching(code):
         "正確答案是「按人數」。請用自己的話整理答案。",
     )
     assert leaked.retry_required is True
-    assert {"early_answer_exposure", "invalid_dialogue_move", "invalid_completion_status"} <= set(leaked.metadata["fidelity_flags"])
+    assert "invalid_completion_status" in leaked.metadata["fidelity_flags"]
+    assert leaked.metadata["next_target_started"] is False
+    assert "early_answer_exposure" not in leaked.metadata["fidelity_flags"]
 
 
 def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback():
@@ -596,7 +599,7 @@ def test_d4_success_remains_a_learner_resolution_instead_of_corrective_feedback(
     assert enforced.metadata["corrective_feedback_revealed_answer"] is False
 
 
-def test_terminal_feedback_cannot_close_target_without_showing_the_correct_answer():
+def test_terminal_feedback_content_is_unknown_until_independent_observation():
     previous = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
@@ -623,8 +626,10 @@ def test_terminal_feedback_cannot_close_target_without_showing_the_correct_answe
         "你的判斷仍需要修正。",
     )
 
-    assert enforced.retry_required is True
-    assert "corrective_answer_missing" in enforced.metadata["fidelity_flags"]
+    assert enforced.retry_required is False
+    assert "corrective_answer_missing" not in enforced.metadata["fidelity_flags"]
+    assert enforced.metadata["corrective_feedback_revealed_answer"] is None
+    assert enforced.response == "你的判斷仍需要修正。"
 
 
 @pytest.mark.parametrize(
@@ -667,7 +672,7 @@ def test_terminal_feedback_accepts_natural_true_false_labels(expected_answer, re
     )
 
     assert enforced.retry_required is False
-    assert enforced.metadata["completion_status"] == "feedback_completed"
+    assert enforced.metadata["completion_status"] == "corrective_resolution_pending"
     assert "corrective_answer_missing" not in enforced.metadata["fidelity_flags"]
 
 
@@ -704,7 +709,7 @@ def test_terminal_feedback_accepts_standalone_multiple_choice_code():
     assert "corrective_answer_missing" not in enforced.metadata["fidelity_flags"]
 
 
-def test_nonterminal_choice_code_does_not_confuse_source_label_with_answer_leak():
+def test_nonterminal_choice_code_is_not_judged_by_keyword_presence():
     attempt = _attempt()
     attempt.judgement_payload["question_results"][0]["expected_answer"] = "A"
     runtime = build_interaction_runtime(_condition("02"), attempt, [])
@@ -726,12 +731,13 @@ def test_nonterminal_choice_code_does_not_confuse_source_label_with_answer_leak(
     )
 
     assert "early_answer_exposure" not in source_reference.metadata["fidelity_flags"]
-    assert "early_answer_exposure" in explicit_answer.metadata["fidelity_flags"]
+    assert "early_answer_exposure" not in explicit_answer.metadata["fidelity_flags"]
+    assert explicit_answer.retry_required is False
 
 
 @pytest.mark.parametrize("code", ["02", "04"])
 @pytest.mark.parametrize("pending_status", ["final_answer_pending", "corrective_resolution_pending"])
-def test_final_answer_gets_corrective_feedback_before_next_error_even_if_still_wrong(code, pending_status):
+def test_feedback_then_restatement_order_including_legacy_final_answer(code, pending_status):
     corrective = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
@@ -752,23 +758,24 @@ def test_final_answer_gets_corrective_feedback_before_next_error_even_if_still_w
     enforced = enforce_interaction_response(
         runtime,
         {
-            "dialogue_state": "RESOLVED",
+            "dialogue_state": "RESOLVED" if pending_status == "corrective_resolution_pending" else "SELF_CORRECT",
             "dialogue_move": "corrective_feedback",
             "disclosure_level": "D4",
-            "completion_status": "feedback_completed",
+            "completion_status": "feedback_completed" if pending_status == "corrective_resolution_pending" else "corrective_resolution_pending",
             "off_topic_redirect": True,
         },
         "正確答案是「按人數」，你原先把等級的一票和每個代表的一票混淆了。接著看你對財政危機的判斷。",
     )
 
-    assert runtime.corrective_feedback_required is True
+    finished = pending_status == "corrective_resolution_pending"
+    assert runtime.corrective_feedback_required is (not finished)
+    assert runtime.restatement_required is finished
     assert enforced.retry_required is False
-    assert enforced.metadata["completion_status"] == "feedback_completed"
-    assert enforced.metadata["resolution_outcome"] == "feedback_delivered"
+    assert enforced.metadata["completion_status"] == ("feedback_completed" if finished else "corrective_resolution_pending")
+    assert enforced.metadata["resolution_outcome"] == ("assisted_restatement_completed" if finished else "awaiting_restatement")
     assert enforced.metadata["resolution_criteria_met"] is False
     assert enforced.metadata["learner_revision_status"] == "unresolved"
-    assert enforced.metadata["corrective_feedback_revealed_answer"] is True
-    assert enforced.metadata["next_target_started"] is True
+    assert enforced.metadata["next_target_started"] is finished
 
     completed = ChatMessage(
         conversation_id="conversation-1",
@@ -782,8 +789,8 @@ def test_final_answer_gets_corrective_feedback_before_next_error_even_if_still_w
         _multi_error_attempt(),
         [corrective, completed],
     )
-    assert next_runtime.target.question_id == "q02"
-    assert next_runtime.previous_disclosure_level == "D0"
+    assert next_runtime.target.question_id == ("q02" if finished else "q01")
+    assert next_runtime.previous_disclosure_level == ("D0" if finished else "D4")
 
 
 @pytest.mark.parametrize("answer,feedback", [
@@ -805,7 +812,7 @@ def test_terminal_feedback_accepts_answer_formats_and_does_not_mistake_shared_ke
         metadata={
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "target_question_id": "q01", "dialogue_state": "SELF_CORRECT",
-            "disclosure_level": "D4", "completion_status": "final_answer_pending",
+            "disclosure_level": "D4", "completion_status": "corrective_resolution_pending",
         },
     )
     runtime = build_interaction_runtime(_condition("02"), attempt, [pending])
@@ -814,7 +821,7 @@ def test_terminal_feedback_accepts_answer_formats_and_does_not_mistake_shared_ke
         "disclosure_level": "D4", "completion_status": "feedback_completed",
     }, feedback + "接著看下一個判斷。")
     assert result.retry_required is False
-    assert result.metadata["corrective_feedback_revealed_answer"] is True
+    assert result.metadata["resolution_criteria_met"] is False
     assert result.metadata["next_target_started"] is True
 
 
@@ -1062,9 +1069,13 @@ def test_initial_disclosure_cannot_jump_past_prompt_ceiling():
     assert "invalid_disclosure_transition" in enforced.metadata["fidelity_flags"]
 
 
-def test_ebl_answer_leak_requires_regeneration_before_delivery():
+@pytest.mark.parametrize("raw_response", [
+    "正確答案是「按人數」。你現在理解了嗎？",
+    "按人數和按等級有什麼差異？",
+    "你說『按人數』，這是怎樣推得的？",
+])
+def test_answer_text_never_triggers_lexical_regeneration(raw_response):
     runtime = build_interaction_runtime(_condition("02"), _attempt(), [])
-    raw_response = "正確答案是「按人數」。你現在理解了嗎？"
 
     enforced = enforce_interaction_response(
         runtime,
@@ -1077,11 +1088,10 @@ def test_ebl_answer_leak_requires_regeneration_before_delivery():
     )
 
     assert enforced.fallback_applied is False
-    assert enforced.retry_required is True
+    assert enforced.retry_required is False
     assert enforced.response == raw_response
-    assert "early_answer_exposure" in enforced.metadata["fidelity_flags"]
-    assert enforced.metadata["rejected_response_length"] == len(raw_response)
-    assert len(enforced.metadata["rejected_response_sha256"]) == 64
+    assert "early_answer_exposure" not in enforced.metadata["fidelity_flags"]
+    assert "rejected_response_sha256" not in enforced.metadata
 
 
 def test_redundant_dialogue_move_is_recorded_but_canonicalized_without_retry():

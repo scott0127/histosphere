@@ -11,6 +11,7 @@
         </span>
       </div>
 
+      <p v-if="readingLayout.introduction" class="whitespace-pre-wrap break-words text-lg leading-9 text-[var(--admin-text)]">{{ readingLayout.introduction }}</p>
       <TaskStudentMaterials :materials="task.evaluation_payload.materials || []" />
 
       <div :class="task.evaluation_payload.materials?.length ? 'border-t border-[var(--admin-border-soft)] pt-6' : ''">
@@ -68,7 +69,7 @@
 // 沿用題文標記連結答案與理由，不改動題目、作答資料或判分規則。
 import { computed } from 'vue';
 import type { EventTask, TaskAnswerValue, TaskQuestion, TaskStudentAnswer } from '~/types';
-import { buildTaskStorySegments, isErrorElicitationTask, normalizeTaskQuestions, updateTaskAnswer } from '~/composables/useStudentTask';
+import { buildTaskReadingLayout, isErrorElicitationTask, normalizeTaskQuestions, updateTaskAnswer } from '~/composables/useStudentTask';
 import TaskStudentAnswerBlock from './TaskStudentAnswerBlock.vue';
 import TaskStudentMaterials from './TaskStudentMaterials.vue';
 
@@ -81,7 +82,8 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: TaskStudentAnswer[]): void;
 }>();
 
-const storySegments = computed(() => buildTaskStorySegments(props.task));
+const readingLayout = computed(() => buildTaskReadingLayout(props.task));
+const storySegments = computed(() => readingLayout.value.segments);
 const newFormat = computed(() => isErrorElicitationTask(props.task));
 const questions = computed(() => normalizeTaskQuestions(props.task));
 const inlineQuestionIds = computed(() => {

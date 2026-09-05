@@ -6,6 +6,7 @@ create_conversation 主要保留給相容舊 API 或管理端手動建立。
 """
 
 from fastapi import HTTPException, status
+from app.core.interaction_contract import build_interaction_runtime
 
 from app.models.domain import ChatMessage, Conversation
 from app.core.research_reproducibility import prompt_text_hash, record_prompt_snapshot
@@ -79,6 +80,12 @@ class ConversationService:
             attempt=attempt,
         )
         greeting = opening.generation.response
+        session = self.repository.get_session(session.id)
+        if not session or not self.repository.get_task_attempt(attempt.id):
+            raise HTTPException(status_code=409, detail="Experiment activity no longer exists")
+        session = expire_session_if_due(self.repository, session)
+        if session.status in {"completed", "archived"}:
+            raise HTTPException(status_code=409, detail="Experiment session is already closed")
         if not conversation:
             conversation = self.repository.save_conversation(
                 Conversation(
@@ -89,11 +96,12 @@ class ConversationService:
                 )
             )
 
+        system_fallback = bool(opening.metadata.get("system_fallback"))
         greeting_message = ChatMessage(
             conversation_id=conversation.id,
-            persona_id=opening.persona.id if opening.persona else None,
-            speaker_type="persona" if opening.persona else "assistant",
-            speaker_name=opening.persona.name if opening.persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant"),
+            persona_id=opening.persona.id if opening.persona and not system_fallback else None,
+            speaker_type="persona" if opening.persona and not system_fallback else "assistant",
+            speaker_name="系統提示" if system_fallback else (opening.persona.name if opening.persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant")),
             sequence_index=self.repository.next_message_sequence(conversation.id),
             content=greeting,
             annotations=opening.generation.annotations,
@@ -106,6 +114,11 @@ class ConversationService:
                 **opening.generation.llm_metadata,
             },
         )
+        review = self.opening_service.answer_review_service
+        review_context = review.prepare(
+            greeting_message, runtime=build_interaction_runtime(condition, attempt, []),
+            event=event, attempt=attempt, history=[], learner_message="",
+        ) if review else None
         greeting_message = self.repository.add_message(greeting_message)
         record_prompt_snapshot(
             self.repository,
@@ -123,6 +136,8 @@ class ConversationService:
         )
         session.status = "conversation_started"
         self.repository.save_session(session)
+        if review:
+            review.schedule(greeting_message, review_context)
         return ConversationCreateResponse(
             conversation_id=conversation.id,
             event=event,

@@ -14,20 +14,42 @@ CONTENT_FILE = (
     / "error-elicitation-reading-tasks.json"
 )
 MIGRATION_FILE = CONTENT_FILE.parents[1] / "migrations" / "202609040002_curated_error_elicitation_tasks.sql"
+WUSHE_MIGRATION = MIGRATION_FILE.with_name("202609050001_wushe_reading_materials.sql")
 
 
-def test_curated_task_migration_matches_the_canonical_json():
-    """避免正式 DB／fresh seed 與研究者核定的 JSON 靜默分歧。"""
-    content = json.loads(CONTENT_FILE.read_text(encoding="utf-8"))
-    sql = MIGRATION_FILE.read_text(encoding="utf-8")
+def _migration_payload(path):
+    sql = path.read_text(encoding="utf-8")
     embedded_match = re.search(r"\$json\$(.*?)\$json\$::jsonb", sql, re.DOTALL)
     hash_match = re.search(r"source_sha256: ([0-9a-f]{64})", sql)
 
     assert embedded_match is not None
     assert hash_match is not None
     embedded = embedded_match.group(1)
-    assert json.loads(embedded) == content
     assert hashlib.sha256(embedded.encode("utf-8")).hexdigest() == hash_match.group(1)
+    return json.loads(embedded)
+
+
+def test_curated_task_migration_matches_the_canonical_json():
+    """依序套用新增版本，不回寫已發布 migration，也不改既有作答快照。"""
+    content = json.loads(CONTENT_FILE.read_text(encoding="utf-8"))
+    baseline = _migration_payload(MIGRATION_FILE)
+    updates = _migration_payload(WUSHE_MIGRATION)["tasks"]
+    assert len(updates) == 1
+    assert updates[0]["event_name"] == "霧社事件"
+    old_task = next(task for task in baseline["tasks"] if task["event_name"] == "霧社事件")
+    assert old_task["evaluation_payload"]["questions"] == updates[0]["evaluation_payload"]["questions"]
+    baseline["tasks"] = [updates[0] if task["event_name"] == "霧社事件" else task for task in baseline["tasks"]]
+    assert baseline == content
+
+    # 確保 fresh seed 也會依序套用兩版，照片不是失效的外部網址或生成占位圖。
+    seed_config = (CONTENT_FILE.parents[1] / "config.toml").read_text(encoding="utf-8")
+    assert seed_config.index(MIGRATION_FILE.name) < seed_config.index(WUSHE_MIGRATION.name)
+    evaluation = updates[0]["evaluation_payload"]
+    provenance = evaluation["authoring"]["image_provenance"]
+    assert evaluation["materials"][1]["image_url"] == provenance["path"]
+    image = CONTENT_FILE.parents[2] / "public" / provenance["path"].lstrip("/")
+    assert image.read_bytes().startswith(b"\xff\xd8")
+    assert hashlib.sha256(image.read_bytes()).hexdigest() == provenance["sha256"]
 
 
 def test_four_curated_reading_tasks_follow_the_runtime_contract():

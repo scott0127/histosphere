@@ -65,6 +65,7 @@ enabled = true
 sql_paths = [
   "./seed.sql",
   "./migrations/202609040002_curated_error_elicitation_tasks.sql",
+  "./migrations/202609050001_wushe_reading_materials.sql",
 ]
 
 [db.network_restrictions]

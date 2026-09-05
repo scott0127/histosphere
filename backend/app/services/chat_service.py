@@ -28,6 +28,7 @@ from app.services.completion_validation import validate_completion_candidate
 from app.services.llm_generation_audit import record_rejected_generation
 from app.services.rag_pipeline_service import RagPipelineService
 from app.services.session_runtime import expire_session_if_due
+from app.services.answer_delivery_service import deliver_answer
 
 
 MAX_CHAT_GENERATION_ATTEMPTS = 3
@@ -48,6 +49,7 @@ class ChatService:
         self.llm_provider = llm_provider
         self.prompt_service = prompt_service
         self.rag_pipeline = rag_pipeline
+        self.answer_review_service = None
 
     async def chat(
         self,
@@ -285,9 +287,24 @@ class ChatService:
                 base_prompt=prompt,
                 rag_sources=rag_sources,
                 interaction_runtime=interaction_runtime,
+                conversation_history=prior_messages,
+                persist_answer_audit=True,
             )
 
             assistant_name = self._assistant_name(condition, selected)
+            system_fallback = bool(interaction_metadata.get("system_fallback"))
+            if interaction_metadata.get("answer_delivery", {}).get("state_held"):
+                modules = []
+            if system_fallback:
+                assistant_name = "系統提示"
+            # 模型等待期間活動可能被刪除或結束；不可把舊回覆寫回已關閉活動。
+            current_session = self.repository.get_session(session.id)
+            if (not self.repository.get_conversation(conversation.id)
+                    or not self.repository.get_message(user_message.id) or not current_session):
+                raise HTTPException(status_code=409, detail="Chat activity no longer exists")
+            current_session = expire_session_if_due(self.repository, current_session)
+            if current_session.status in {"completed", "archived"}:
+                raise HTTPException(status_code=409, detail="Experiment session is already closed")
             # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
             prompt_hash = hashlib.sha256(final_prompt.encode("utf-8")).hexdigest()
             profile_payload = selected.prompt_profile if selected else {}
@@ -296,9 +313,9 @@ class ChatService:
             ).hexdigest()
             model_message = ChatMessage(
                 conversation_id=conversation.id,
-                speaker_type="persona" if selected else "assistant",
+                speaker_type="persona" if selected and not system_fallback else "assistant",
                 speaker_name=assistant_name,
-                persona_id=selected.id if selected else None,
+                persona_id=selected.id if selected and not system_fallback else None,
                 sequence_index=self.repository.next_message_sequence(conversation.id),
                 content=generation.response,
                 annotations=generation.annotations,
@@ -310,7 +327,7 @@ class ChatService:
                     "response_policy": condition.response_policy,
                     "generation_status": "completed",
                     "delivery_mode": "validated_stream",
-                    "prompt_preview": prompt[:500],
+                    "prompt_preview": final_prompt[:500],
                     "prompt_hash": prompt_hash,
                     "prompt_modules": [module.name for module in modules],
                     "history_message_ids": [message.id for message in prior_messages],
@@ -326,6 +343,11 @@ class ChatService:
                     **generation.llm_metadata,
                 },
             )
+            review = self.answer_review_service
+            review_context = review.prepare(
+                model_message, runtime=interaction_runtime, event=event, attempt=task_attempt,
+                history=prior_messages, learner_message=request.user_message,
+            ) if review else None
             model_message = self.repository.add_message(model_message)
 
             record_prompt_snapshot(
@@ -396,9 +418,12 @@ class ChatService:
             )
             self.repository.add_message(completed_user_message)
 
+            if review:
+                review.schedule(model_message, review_context)
+
             return ChatResponse(
                 response=generation.response,
-                selected_persona=selected,
+                selected_persona=selected if not system_fallback else None,
                 assistant_name=assistant_name,
                 message=model_message,
                 annotations=generation.annotations,
@@ -506,6 +531,8 @@ class ChatService:
         llm_call: dict[str, Any] | None = None,
     ) -> None:
         """保存失敗狀態，但不把例外內容或密鑰寫入研究資料。"""
+        if not self.repository.get_conversation(conversation.id) or not self.repository.get_message(user_message.id):
+            return
         failed_user_message = user_message.model_copy(
             update={
                 "operation_status": "failed",
@@ -622,8 +649,21 @@ class ChatService:
         base_prompt: str,
         rag_sources: list[RagSource],
         interaction_runtime: InteractionRuntime,
+        conversation_history: list[ChatMessage] | None = None,
+        persist_answer_audit: bool = False,
     ) -> tuple[ChatGenerationResult, dict[str, Any], str]:
         """Generate without persistence; shared by runtime chat and Admin dry-run."""
+        review = self.answer_review_service
+        if review and review.before_delivery(interaction_runtime):
+            async def generate(candidate_prompt):
+                return await self.llm_provider.generate_chat_response(
+                    event=event, persona=selected, condition=condition, task_attempt=task_attempt,
+                    user_message=user_message, prompt=candidate_prompt, rag_sources=rag_sources)
+            return await deliver_answer(
+                review_service=review, generate=generate, runtime=interaction_runtime,
+                event=event, attempt=task_attempt, persona=selected,
+                history=conversation_history or [], learner_message=user_message, base_prompt=base_prompt,
+                persist_audit=persist_answer_audit)
         persona_context = build_persona_runtime_context(event, selected) if selected else None
         rejected_candidates: list[dict[str, Any]] = []
         accumulated_retry_flags: set[str] = set()

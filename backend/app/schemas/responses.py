@@ -283,6 +283,17 @@ class AdminPromptDryRunResponse(AdminPromptPreviewResponse):
     rag_sources: list[RagSource] = Field(default_factory=list)
 
 
+class SessionClosureResponse(BaseModel):
+    """計時對話之外，僅目前已討論錯誤的修正與重述。"""
+    closure_id: str
+    question_id: str
+    question: str
+    answer: str
+    explanation: str
+    reflection: str | None = None
+    completed_at: str | None = None
+
+
 class SessionStateResponse(BaseModel):
     """Session 狀態回應。
 
@@ -305,6 +316,7 @@ class SessionStateResponse(BaseModel):
     condition: ExperimentCondition | None = None
     attempt: TaskAttempt | None = None
     conversation_id: str | None = None
+    closure: SessionClosureResponse | None = None
 
 
 class SessionRestartResponse(BaseModel):

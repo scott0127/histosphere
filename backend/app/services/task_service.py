@@ -9,8 +9,9 @@ from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
 from app.core.error_elicitation_contract import validate_task_answers
+from app.core.interaction_contract import build_interaction_runtime
 from app.core.research_reproducibility import record_prompt_snapshot, stable_hash
-from app.models.domain import ChatMessage, Conversation, ResearchLog, TaskAttempt, utc_now
+from app.models.domain import ChatMessage, Conversation, Event, ResearchLog, TaskAttempt, utc_now
 from app.providers.llm.base import LLMProvider
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
 from app.schemas.responses import (
@@ -190,6 +191,12 @@ class TaskService:
                     condition=condition,
                     attempt=attempt,
                 )
+                # 等待開場期間可能已刪除／結束活動，不能依舊物件重新建立。
+                session = self.repository.get_session(session.id)
+                if not session or not self.repository.get_task_attempt(attempt.id):
+                    return
+                if session.status in {"completed", "archived"}:
+                    raise RuntimeError("Experiment session closed during opening")
                 if not conversation:
                     conversation = self.repository.save_conversation(
                         Conversation(
@@ -199,7 +206,7 @@ class TaskService:
                             user_id=attempt.user_id,
                         )
                     )
-                greeting_message = self._store_greeting(conversation.id, condition, opening, attempt)
+                greeting_message = self._store_greeting(conversation.id, condition, opening, attempt, event)
 
             attempt.status = "submitted"
             attempt.submitted_at = utc_now()
@@ -271,6 +278,8 @@ class TaskService:
             )
         except Exception as exc:
             logger.exception("Task submission processing failed for attempt %s", attempt.id)
+            if not self.repository.get_session(attempt.session_id) or not self.repository.get_task_attempt(attempt.id):
+                return
             attempt.status = "failed"
             previous_judgement = dict(attempt.judgement_payload)
             llm_call = getattr(getattr(exc, "metadata", None), "as_dict", lambda: {})()
@@ -383,17 +392,19 @@ class TaskService:
         condition,
         opening: ConversationOpening,
         attempt: TaskAttempt,
+        event: Event,
     ) -> ChatMessage:
         persona = opening.persona
+        system_fallback = bool(opening.metadata.get("system_fallback"))
         profile_payload = persona.prompt_profile if persona else {}
         profile_hash = hashlib.sha256(
             json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
         ).hexdigest()
         message = ChatMessage(
             conversation_id=conversation_id,
-            persona_id=persona.id if persona else None,
-            speaker_type="persona" if persona else "assistant",
-            speaker_name=persona.name if persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant"),
+            persona_id=persona.id if persona and not system_fallback else None,
+            speaker_type="persona" if persona and not system_fallback else "assistant",
+            speaker_name="系統提示" if system_fallback else (persona.name if persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant")),
             sequence_index=self.repository.next_message_sequence(conversation_id),
             content=opening.generation.response,
             annotations=opening.generation.annotations,
@@ -409,6 +420,12 @@ class TaskService:
                 **opening.generation.llm_metadata,
             },
         )
+        review = self.opening_service.answer_review_service
+        review_context = review.prepare(
+            message, runtime=build_interaction_runtime(condition, attempt, []),
+            event=event, attempt=attempt,
+            history=[], learner_message="",
+        ) if review else None
         message = self.repository.add_message(message)
         if attempt.session_id:
             record_prompt_snapshot(
@@ -425,4 +442,6 @@ class TaskService:
                 modules=opening.modules,
                 llm_call=opening.generation.llm_metadata.get("llm_call"),
             )
+        if review:
+            review.schedule(message, review_context)
         return message

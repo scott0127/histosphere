@@ -40,6 +40,14 @@ class LLMProvider(Protocol):
     task 生成、作答判斷、persona 生成、greeting 與聊天回覆。
     """
 
+    async def review_answer(self, context: dict[str, Any]) -> dict[str, Any]:
+        """獨立觀察已生成回覆的答案揭露，回傳研究紀錄，不改寫回覆。"""
+        ...
+
+    async def generate_recovery_continuation(self, context: dict[str, Any]) -> ChatGenerationResult:
+        """僅取得人物語氣、題文與 learner 原話的受限引導，不取得答案與新材料。"""
+        ...
+
     async def generate_event_profile(self, event_name: str, sources: list[WikiSource]) -> dict[str, Any]:
         """根據事件名稱與 Wikipedia 來源生成事件背景資料。
 

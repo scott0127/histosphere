@@ -609,6 +609,30 @@ class InMemoryRepository(RepositoryProtocol):
                 return message
         return None
 
+    def finish_answer_review(self, message_id: str, expected: dict, report: dict) -> bool:
+        from app.core.answer_review import text_hash
+        message = self.get_message(message_id)
+        if (not message or message.metadata.get("answer_review") != expected
+                or expected.get("status") != "pending"
+                or text_hash(message.content) != expected.get("response_sha256")):
+            return False
+        metadata = {**message.metadata, "answer_review": report}
+        messages = self.messages.get(message.conversation_id, [])
+        for index, current in enumerate(messages):
+            if current.id == message_id and current.content == message.content:
+                messages[index] = current.model_copy(update={"metadata": metadata})
+                return True
+        return False
+
+    def list_pending_answer_reviews(self) -> list[ChatMessage]:
+        return [m for messages in self.messages.values() for m in messages
+                if m.metadata.get("answer_review", {}).get("status") == "pending"]
+
+    def list_pending_answer_deliveries(self) -> list[ResearchLog]:
+        return [log for log in self.research_logs.values()
+                if log.action_type == "answer_delivery_candidate"
+                and log.payload.get("candidate", {}).get("status") in {"generating", "review_pending"}]
+
     def get_learner_message_by_request(
         self,
         conversation_id: str,

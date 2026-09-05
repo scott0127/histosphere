@@ -122,7 +122,8 @@ class ResearchExportService:
         """統計 Task judge、開場、聊天及失敗生成的完整 Session 用量。"""
 
         learner = [message for message in messages if message.speaker_type == "learner"]
-        assistant = [message for message in messages if message.speaker_type in {"assistant", "persona"}]
+        assistant = [message for message in messages if message.speaker_type in {"assistant", "persona"}
+                     and not message.metadata.get("system_fallback")]
         message_calls = [self._llm_call(message) for message in assistant]
         calls: list[dict[str, Any]] = []
         seen_correlation_ids: set[str] = set()
@@ -143,6 +144,27 @@ class ResearchExportService:
             append_call(self._judgement_llm_call(attempt), expected=True)
         for call in message_calls:
             append_call(call, expected=True)
+        # 觀察用量單獨計費，但不算一則對話；尚未回報用量時不可假裝成本完整。
+        for message in assistant:
+            if message.metadata.get("answer_delivery"):
+                continue
+            review = message.metadata.get("answer_review")
+            if isinstance(review, dict):
+                append_call(review.get("llm_call") or {}, expected=True)
+        # 同一候選可能有待審與完成兩筆快照；只計最新版本，再以 call id 去重。
+        candidates = {}
+        for log in logs:
+            if log.action_type == "answer_delivery_candidate":
+                candidate = log.payload.get("candidate", {})
+                candidates[(log.payload.get("delivery_id"), candidate.get("index"))] = candidate
+        for message in messages:
+            delivery = message.metadata.get("answer_delivery", {})
+            for candidate in delivery.get("candidates", []):
+                candidates[(delivery.get("id"), candidate.get("index"))] = candidate
+        for candidate in candidates.values():
+            append_call(candidate.get("generation_call") or {}, expected=True)
+            if candidate.get("review") or candidate.get("review_call"):
+                append_call(candidate.get("review_call") or {}, expected=True)
         # 失敗聊天沒有 AI 訊息，呼叫資料會保存在 learner operation。
         for message in learner:
             if message.operation_status == "failed":
@@ -160,11 +182,13 @@ class ResearchExportService:
         def token_sum(field: str) -> int:
             return sum(int(call.get(field) or 0) for call in calls_with_usage)
 
+        fallback_ids = {m.id for m in messages if m.metadata.get("system_fallback")}
         completed_exchanges = sum(
             1
             for message in learner
-            if message.operation_status == "completed"
-            or message.metadata.get("response_status") == "completed"
+            if (message.operation_status == "completed"
+                or message.metadata.get("response_status") == "completed")
+            and message.metadata.get("response_message_id") not in fallback_ids
         )
         first = messages[0].created_at if messages else None
         last = messages[-1].created_at if messages else None

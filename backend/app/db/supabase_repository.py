@@ -639,6 +639,35 @@ class SupabaseRepository(RepositoryProtocol):
         """依訊息 ID 取得單一訊息。"""
         return self._select_one("messages", ChatMessage, {"id": f"eq.{message_id}"})
 
+    def finish_answer_review(self, message_id: str, expected: dict, report: dict) -> bool:
+        from app.core.answer_review import text_hash
+        message = self.get_message(message_id)
+        if (not message or message.metadata.get("answer_review") != expected
+                or expected.get("status") != "pending"
+                or text_hash(message.content) != expected.get("response_sha256")):
+            return False
+        metadata = {**message.metadata, "answer_review": report}
+        # PATCH 而非 upsert；條件也放進同一筆 UPDATE，防止讀取後被刪除或改文。
+        data = self._request("PATCH", "messages", params={
+            "id": f"eq.{message_id}", "content": f"eq.{message.content}",
+            "metadata->answer_review->>status": "eq.pending",
+            "metadata->answer_review->>input_sha256": f"eq.{expected['input_sha256']}",
+            "metadata->answer_review->>response_sha256": f"eq.{expected['response_sha256']}",
+        }, json={"metadata": metadata}, prefer="return=representation")
+        return bool(data)
+
+    def list_pending_answer_reviews(self) -> list[ChatMessage]:
+        data = self._request("GET", "messages", params={
+            "select": "*", "metadata->answer_review->>status": "eq.pending",
+        })
+        return [ChatMessage(**item) for item in data or []]
+
+    def list_pending_answer_deliveries(self) -> list[ResearchLog]:
+        return self._select_many("research_logs", ResearchLog, {
+            "action_type": "eq.answer_delivery_candidate",
+            "payload->candidate->>status": "in.(generating,review_pending)",
+        })
+
     def get_learner_message_by_request(
         self,
         conversation_id: str,

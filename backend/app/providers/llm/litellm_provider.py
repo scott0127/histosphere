@@ -14,6 +14,10 @@ OAuth proxy；service 層不應直接依賴任何特定模型 SDK。
 import json
 
 from app.core.config import Settings
+from app.core.answer_review import (
+    ANSWER_REVIEW_PROMPT, AnswerReviewPayload,
+    RECOVERY_CONTINUATION_PROMPT, RecoveryContinuationPayload,
+)
 from app.core.error_elicitation_contract import (
     ERROR_ELICITATION_CONTRACT_VERSION,
     ERROR_ELICITATION_JUDGE_CONTRACT_VERSION,
@@ -52,7 +56,7 @@ CHAT_OUTPUT_JSON_CONTRACT = (
     '"learner_progress":"not_assessed|no_progress|partial_progress|clear_progress|resolved",'
     '"disclosure_reason":"brief hidden reason or empty string",'
     '"learner_revision_status":"not_yet|partial|revised|unresolved|not_applicable",'
-    '"completion_status":"continue|resolved|complete|final_answer_pending|feedback_completed",'
+    '"completion_status":"continue|resolved|complete|corrective_resolution_pending|feedback_completed",'
     '"resolution_error_recognized":false,"resolution_error_reflected":false,'
     '"resolution_self_corrected":false,"off_topic_redirect":false,"fidelity_flags":[]}. '
     "Each pipe-delimited field above is an enum: return exactly one allowed value, never the entire pipe string. "
@@ -129,6 +133,40 @@ class LiteLLMProvider:
         """
         self.settings = settings
         self.runner = LLMJsonRunner(settings)
+
+    async def review_answer(self, context: dict) -> dict:
+        """只用題目與實際原文觀察，不接收生成器自評作為判準。"""
+        def validate_excerpts(payload: AnswerReviewPayload) -> None:
+            response = context["candidate"]["response"]
+            if any(finding.excerpt not in response for finding in payload.findings):
+                raise ValueError("Review excerpts must be exact contiguous candidate response text")
+            # 只檢查審查分類與後端授權是否矛盾，不靠字詞重新判定答案。
+            if any(context.get("runtime", {}).get(key) is True for key in (
+                "corrective_feedback_required", "restatement_required"
+            )) and any(
+                finding.category == "early_answer_exposure" for finding in payload.findings
+            ):
+                raise ValueError("Current target feedback is backend-authorized; early_answer_exposure is inapplicable. "
+                                 "Observe missing current feedback or next_answer_exposure separately.")
+
+        result = await self.runner.run_json(
+            schema=AnswerReviewPayload, task_name="review_answer", audit_best_effort=True,
+            system_prompt=ANSWER_REVIEW_PROMPT,
+            user_prompt="JSON schema:\n" + json.dumps(AnswerReviewPayload.model_json_schema())
+                + "\nEvidence:\n" + json.dumps(context, ensure_ascii=False, sort_keys=True, default=str),
+            payload_validator=validate_excerpts,
+        )
+        return {**result.payload.model_dump(), "llm_call": result.metadata.as_dict()}
+
+    async def generate_recovery_continuation(self, context: dict) -> ChatGenerationResult:
+        run = await self.runner.run_json(
+            schema=RecoveryContinuationPayload, task_name="generate_recovery_continuation",
+            audit_best_effort=True, system_prompt=RECOVERY_CONTINUATION_PROMPT,
+            user_prompt="JSON schema:\n" + json.dumps(RecoveryContinuationPayload.model_json_schema())
+                + "\nContext:\n" + json.dumps(context, ensure_ascii=False),
+        )
+        return ChatGenerationResult(response=run.payload.response,
+                                    llm_metadata={"llm_call": run.metadata.as_dict()})
 
     async def generate_event_profile(self, event_name: str, sources: list[WikiSource]) -> dict:
         """根據事件名稱與 Wikipedia 來源生成 events 表需要的背景資訊。

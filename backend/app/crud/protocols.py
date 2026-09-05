@@ -523,6 +523,18 @@ class RepositoryProtocol(Protocol):
         """
         ...
 
+    def finish_answer_review(self, message_id: str, expected: dict, report: dict) -> bool:
+        """只完成仍存在、原文未變且待處理的審查，不新增訊息。"""
+        ...
+
+    def list_pending_answer_reviews(self) -> list[ChatMessage]:
+        """供啟動時標記上次中斷的審查，不用於自動重試。"""
+        ...
+
+    def list_pending_answer_deliveries(self) -> list[ResearchLog]:
+        """僅查詢送出前生成／審查尚未結束的私有紀錄，供重啟標記中斷。"""
+        ...
+
     def list_research_logs_for_session(self, session_id: str) -> list[ResearchLog]:
         """列出指定 Session 的完整研究紀錄，依時間正序。"""
         ...

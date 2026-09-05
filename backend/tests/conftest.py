@@ -8,6 +8,8 @@ os.environ.setdefault("BACKEND_REPOSITORY", "in_memory")
 os.environ.setdefault("ALLOW_IN_MEMORY_REPOSITORY", "true")
 os.environ.setdefault("HISTOSPHERE_ADMIN_KEY", "test-admin")
 os.environ.setdefault("LLM_CONTENT_VALIDATION_ENABLED", "true")
+os.environ["LLM_ANSWER_REVIEW_ENABLED"] = "false"
+os.environ["LLM_ANSWER_REVIEW_MODE"] = "observe"
 
 
 @pytest.fixture(autouse=True)
@@ -273,4 +275,5 @@ def client(monkeypatch) -> TestClient:
     app.state.opening_service.llm_provider = fake_llm
     app.state.chat_service.llm_provider = fake_llm
     app.state.task_service.llm_provider = fake_llm
+    app.state.answer_review_service.provider = fake_llm
     return TestClient(app, headers={"Authorization": "Bearer participant-001"})

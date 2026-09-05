@@ -13,6 +13,7 @@ BaseModel 提供型別安全的 Settings 實例。所有後端元件透過
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -155,6 +156,10 @@ class Settings(BaseModel):
     llm_timeout_seconds: float = 60.0
     # 可暫停內容攔截以檢視模型原始回覆；格式驗證與檢查紀錄仍保留。
     llm_content_validation_enabled: bool = True
+    # 答案語意檢查獨立於舊人物／字詞內容檢查；可觀察或在送出前修正。
+    llm_answer_review_enabled: bool = False
+    llm_answer_review_mode: Literal["observe", "before_delivery"] = "observe"
+    llm_answer_delivery_timeout_seconds: float = Field(default=60.0, gt=0)
     gemini_api_key: str | None = None
     gemini_reasoning_effort: str = "minimal"
     openai_api_key: str | None = None
@@ -251,6 +256,9 @@ def get_settings() -> Settings:
         llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "16384")),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")),
         llm_content_validation_enabled=_env_bool("LLM_CONTENT_VALIDATION_ENABLED", True),
+        llm_answer_review_enabled=_env_bool("LLM_ANSWER_REVIEW_ENABLED", False),
+        llm_answer_review_mode=os.getenv("LLM_ANSWER_REVIEW_MODE", "observe"),
+        llm_answer_delivery_timeout_seconds=float(os.getenv("LLM_ANSWER_DELIVERY_TIMEOUT_SECONDS", "60")),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_reasoning_effort=os.getenv("GEMINI_REASONING_EFFORT", "minimal"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),

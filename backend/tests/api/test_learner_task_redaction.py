@@ -13,6 +13,7 @@ RATIONALE = "  I guessed.\nI need to explain the link.  "
 PRIVATE_VALUES = (
     "PRIVATE_ORIGINAL", "PRIVATE_SOURCE", "PRIVATE_CRITERIA", "PRIVATE_EXPLANATION",
     "PRIVATE_FEEDBACK", "PRIVATE_EXPECTED", "PRIVATE_RUBRIC", "PRIVATE_FALLBACK",
+    "PRIVATE_ANSWER_REVIEW",
 )
 
 
@@ -85,6 +86,7 @@ def _seed(client, admin_test=False):
             "target_count": 1, "target_sequence_number": 1,
             "historical_thinking_tags": ["evidence"],
             "llm_call": {"total_tokens": 18},
+            "answer_review": {"status": "completed", "findings": ["PRIVATE_ANSWER_REVIEW"]},
             "nested": {"judgement": attempt.judgement_payload, "keep": "runtime"},
         },
     ))
@@ -94,6 +96,7 @@ def _seed(client, admin_test=False):
 
 def _assert_private_absent(payload):
     serialized = json.dumps(payload)
+    assert '"answer_review"' not in serialized
     for private in PRIVATE_VALUES:
         assert private not in serialized
 

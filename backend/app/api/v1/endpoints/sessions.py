@@ -15,10 +15,23 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_session_service, require_active_participant_actor, require_session_actor
 from app.core.auth import AuthenticatedActor
 from app.core.learner_task_view import learner_view
-from app.schemas.responses import SessionStateResponse, UserProgressResponse
+from app.schemas.responses import SessionClosureResponse, SessionStateResponse, UserProgressResponse
+from app.schemas.requests import SessionClosureRequest
 from app.services import SessionService
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+
+@router.post("/{session_id}/closure", response_model=SessionClosureResponse)
+def submit_closure(
+    session_id: UUID,
+    request: SessionClosureRequest,
+    actor: AuthenticatedActor = Depends(require_active_participant_actor),
+    service: SessionService = Depends(get_session_service),
+) -> SessionClosureResponse:
+    session = service.repository.get_session(str(session_id))
+    require_session_actor(actor, service.repository, session)
+    return service.submit_closure(str(session_id), request.closure_id, request.reflection)
 
 
 @router.get("/progress", response_model=UserProgressResponse)
@@ -68,6 +81,6 @@ def session_state(
         SessionStateResponse: 包含 session、event、task、
             personas、condition、attempt 與 conversation_id。
     """
+    require_session_actor(actor, service.repository, service.repository.get_session(str(session_id)))
     response = service.load_state(str(session_id))
-    require_session_actor(actor, service.repository, response.session)
     return learner_view(response)

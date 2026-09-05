@@ -424,7 +424,8 @@ def test_chat_policy_matrix(client):
         if initialized["condition"]["response_policy"] == "scaffold":
             assert payload["message"]["metadata"]["target_question_id"] == "q01"
         assert "interaction_runtime" in payload["message"]["metadata"]["prompt_modules"]
-        assert payload["message"]["metadata"]["fidelity_flags"] == []
+        assert "fidelity_flags" not in payload["message"]["metadata"]
+        assert client.app.state.repository.get_message(payload["message"]["id"]).metadata["fidelity_flags"] == []
 
         loaded = client.get(f"/api/conversations/{submitted['conversation_id']}")
         messages = loaded.json()["messages"]
@@ -432,7 +433,7 @@ def test_chat_policy_matrix(client):
 
 
 @pytest.mark.parametrize("condition_key", ["ebl_no_roleplay", "ebl_roleplay"])
-def test_d4_requires_final_answer_then_validated_feedback_before_advancing(client, condition_key):
+def test_d4_gives_feedback_then_waits_for_one_restatement(client, condition_key):
     initialized = initialize_event(client, "D4 切題測試事件", condition_key)
     submitted = submit_task(client, initialized)
     repository = client.app.state.repository
@@ -493,23 +494,22 @@ def test_d4_requires_final_answer_then_validated_feedback_before_advancing(clien
     assert repository.list_messages(submitted["conversation_id"]) == messages_before
 
     calls = []
-    invalid_feedback = "我聽到你的說法了。接著看下一個問題。"
     valid_feedback = "依我所見，應以「按人數」表決，不能把每個等級的一票與每個代表的一票混淆。接著看財政危機。"
 
     async def scripted_response(**kwargs):
         calls.append(kwargs["prompt"])
         if len(calls) == 1:
-            assert "Max-support decision" in kwargs["prompt"]
+            assert "D4 support has been used" in kwargs["prompt"]
             return ChatGenerationResult(
-                response="我想先聽你把最後的判斷與理由整理清楚。",
+                response="應以按人數表決，而非按等級。請用自己的話重述原判斷應如何修正。",
                 interaction_metadata={
-                    "dialogue_state": "SELF_CORRECT", "dialogue_move": "final_answer_prompt",
-                    "disclosure_level": "D4", "completion_status": "final_answer_pending",
+                    "dialogue_state": "SELF_CORRECT", "dialogue_move": "corrective_feedback",
+                    "disclosure_level": "D4", "completion_status": "corrective_resolution_pending",
                 },
             )
-        assert "Terminal feedback:" in kwargs["prompt"]
+        assert "one opportunity to restate" in kwargs["prompt"]
         return ChatGenerationResult(
-            response=invalid_feedback if len(calls) == 2 else valid_feedback,
+            response=valid_feedback,
             interaction_metadata={
                 "dialogue_state": "RESOLVED", "dialogue_move": "corrective_feedback",
                 "disclosure_level": "D4", "completion_status": "feedback_completed",
@@ -523,13 +523,14 @@ def test_d4_requires_final_answer_then_validated_feedback_before_advancing(clien
         "client_request_id": "ask-final",
     })
     assert final_request.status_code == 200
-    assert final_request.json()["message"]["metadata"]["completion_status"] == "final_answer_pending"
-    assert "按人數" not in final_request.json()["response"]
+    assert final_request.json()["message"]["metadata"]["completion_status"] == "corrective_resolution_pending"
+    assert "按人數" in final_request.json()["response"]
     stored_attempt = repository.get_task_attempt(submitted["attempt_id"])
     condition = repository.get_condition_by_key(condition_key)
     waiting = build_interaction_runtime(condition, stored_attempt, repository.list_messages(submitted["conversation_id"]))
     assert waiting.target.question_id == "q01"
-    assert waiting.corrective_feedback_required is True
+    assert waiting.restatement_required is True
+    assert waiting.corrective_feedback_required is False
 
     final_payload = {
         "conversation_id": submitted["conversation_id"], "user_message": "我最後仍認為按等級，因為我把兩種投票方式當成同一件事。",
@@ -540,11 +541,11 @@ def test_d4_requires_final_answer_then_validated_feedback_before_advancing(clien
     metadata = feedback.json()["message"]["metadata"]
     assert metadata["completion_status"] == "feedback_completed"
     assert metadata["resolution_self_corrected"] is False
-    assert metadata["corrective_feedback_revealed_answer"] is True
+    assert "corrective_feedback_revealed_answer" not in metadata
     assert metadata["next_target_started"] is True
-    assert feedback.json()["response"].index("按人數") < feedback.json()["response"].index("接著")
+    assert feedback.json()["response"] == valid_feedback
     messages = repository.list_messages(submitted["conversation_id"])
-    assert all(message.content != invalid_feedback for message in messages)
+    assert any(message.content == valid_feedback for message in messages)
     resumed = build_interaction_runtime(condition, stored_attempt, messages)
     assert resumed.target.question_id == "q02"
     assert resumed.previous_disclosure_level == "D0"
@@ -552,7 +553,7 @@ def test_d4_requires_final_answer_then_validated_feedback_before_advancing(clien
     replay = client.post("/api/chat", json=final_payload)
     assert replay.status_code == 200
     assert replay.json()["response"] == valid_feedback
-    assert len(calls) == 3
+    assert len(calls) == 2
 
 
 def test_invalid_persona_candidate_is_retried_and_never_persisted(client):

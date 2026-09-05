@@ -13,7 +13,7 @@ Provider 方法只需要描述任務與 schema，避免每個生成函式各自�
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from time import perf_counter
 from typing import Generic, TypeVar
 from uuid import uuid4
@@ -93,6 +93,8 @@ class LLMCallMetadata:
     estimated_cost_usd: float | None = None
     finish_reason: str | None = None
 
+    audit_write_failures: list[str] = field(default_factory=list)
+
     def as_dict(self) -> dict:
         """轉成可直接寫入 Supabase JSON 欄位的資料。"""
 
@@ -141,6 +143,7 @@ class LLMJsonRunner:
         user_prompt: str,
         task_name: str,
         payload_validator: Callable[[PayloadT], None] | None = None,
+        audit_best_effort: bool = False,
     ) -> LLMRunResult[PayloadT]:
         """以單一模型呼叫 LLM、驗證 JSON，並回傳 per-call metadata。
 
@@ -175,6 +178,16 @@ class LLMJsonRunner:
         token_usage_seen = False
         estimated_cost_usd = 0.0
         cost_seen = False
+        audit_write_failures: list[str] = []
+
+        def audit(writer, **record) -> None:
+            try:
+                writer(**record)
+            except Exception as exc:
+                if not audit_best_effort:
+                    raise
+                # 背景觀察不能因額外檔案故障丟掉已生成的結果與用量。
+                audit_write_failures.append(type(exc).__name__)
 
         def build_metadata(
             *,
@@ -204,6 +217,7 @@ class LLMJsonRunner:
                 total_tokens=token_totals["total_tokens"] if token_usage_seen else None,
                 estimated_cost_usd=estimated_cost_usd if cost_seen else None,
                 finish_reason=finish_reason,
+                audit_write_failures=list(audit_write_failures),
             )
 
         async def complete(current_user_prompt: str) -> str:
@@ -219,7 +233,7 @@ class LLMJsonRunner:
                     correlation_id=correlation_id, attempt_number=attempt_count,
                     task_name=task_name, provider=candidate.provider, model=candidate.display_model,
                 )
-                record_llm_usage(**usage_record, status="started")
+                audit(record_llm_usage, **usage_record, status="started")
                 try:
                     completion = await self._complete(
                         candidate,
@@ -227,7 +241,7 @@ class LLMJsonRunner:
                         user_prompt=current_user_prompt,
                     )
                 except Exception as exc:
-                    record_llm_usage(**usage_record, status="failed", failure_category=self._failure_category(exc),
+                    audit(record_llm_usage, **usage_record, status="failed", failure_category=self._failure_category(exc),
                                      estimated_cost_usd=None, usage_known=False)
                     if retry_index >= MAX_TRANSIENT_RETRIES or not self._is_transient_error(exc):
                         raise
@@ -235,7 +249,7 @@ class LLMJsonRunner:
                     retry_reason = self._failure_category(exc)
                     continue
                 # 寫入失敗不應觸發模型重試；空回覆仍可能有付費推理 tokens。
-                record_llm_usage(**usage_record, status="completed" if completion.content else "empty_response",
+                audit(record_llm_usage, **usage_record, status="completed" if completion.content else "empty_response",
                                  usage_known=completion.total_tokens is not None,
                                  **{k: v for k, v in asdict(completion).items() if k != "content"})
                 try:
@@ -267,7 +281,7 @@ class LLMJsonRunner:
                     payload_validator(payload)
                 return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"))
             except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
-                record_rejected_generation(
+                audit(record_rejected_generation,
                     stage="schema_validation_initial",
                     provider=candidate.provider,
                     model=candidate.display_model,
@@ -292,7 +306,7 @@ class LLMJsonRunner:
                     if payload_validator is not None:
                         payload_validator(payload)
                 except (json.JSONDecodeError, ValidationError, ValueError) as second_error:
-                    record_rejected_generation(
+                    audit(record_rejected_generation,
                         stage="schema_validation_repair",
                         provider=candidate.provider,
                         model=candidate.display_model,
@@ -311,7 +325,7 @@ class LLMJsonRunner:
         except Exception as exc:
             failure_category = self._failure_category(exc)
             metadata = build_metadata(status="failed", failure_category=failure_category)
-            record_rejected_generation(
+            audit(record_rejected_generation,
                 stage="provider_or_generation_failure",
                 provider=candidate.provider,
                 model=candidate.display_model,

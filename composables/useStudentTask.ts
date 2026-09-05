@@ -100,6 +100,20 @@ export const buildTaskStorySegments = (task: EventTask): TaskStorySegment[] => {
   return segments.length ? segments : [{ type: 'text', text: fullText }];
 };
 
+export const buildTaskReadingLayout = (task: EventTask) => {
+  const segments = buildTaskStorySegments(task);
+  const first = segments[0];
+  // 題組沿用 QNN｜題幹格式；只把題前情境移到材料上方，不改題號或儲存內容。
+  const heading = isErrorElicitationTask(task) && first?.type === 'text'
+    ? /(?:^|\n)(Q\d{2,}[｜|])/i.exec(first.text) : null;
+  if (!heading || first?.type !== 'text') return { introduction: '', segments };
+  const offset = heading.index + heading[0].indexOf(heading[1]!);
+  return {
+    introduction: first.text.slice(0, offset).trim(),
+    segments: [{ type: 'text' as const, text: first.text.slice(offset) }, ...segments.slice(1)],
+  };
+};
+
 const hasTaskAnswerValue = (value: TaskAnswerValue) => {
   if (typeof value === 'string') return value.trim().length > 0;
   if (Array.isArray(value)) return value.length > 0;
@@ -255,6 +269,8 @@ export const taskReviewStatusLabel = (status?: TaskAnswerReviewStatus) => {
 
 export const taskMaterialUrl = (url?: string | null) => {
   if (!url) return undefined;
+  // 本機史料圖片不必依賴外站；只允許圖片目錄，不接受路徑跳脫或任意 API。
+  if (/^\/images\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:jpe?g|png|webp|gif)$/i.test(url)) return url;
   try {
     const parsed = new URL(url);
     return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : undefined;

@@ -65,7 +65,8 @@ test('learner story renders reading text, image and caption before answer/ration
   assert.match(html, /Source text/);
   assert.match(html, /Artist, 1850; depicting events in 1600\./);
   assert.match(html, /src="https:\/\/example.com\/source.png"/);
-  assert.doesNotMatch(html, /Source archive|href=|參考史料|原始來源|>m01</);
+  assert.doesNotMatch(html, /Source archive|href="https:\/\/example.com\/source"|參考史料|原始來源|>m01</);
+  assert.match(html, /href="https:\/\/example.com\/source.png" target="_blank" rel="noopener"/);
   assert.ok(html.indexOf('Source text') < html.indexOf('First statement.'));
   assert.doesNotMatch(html, /DUPLICATE_QUESTION|INTERNAL_KEY|INTERNAL_CRITERIA|blank:q/);
 });

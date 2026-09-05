@@ -4,9 +4,9 @@
     它同時支援 generic chatbot 與 historical persona role-play，
     由 condition.roleplay_enabled 決定是否顯示事件固定人物與人物側欄。
   -->
-  <div class="flex h-screen min-h-0 flex-col bg-[var(--admin-page)] font-sans text-[var(--admin-text)]">
+  <div class="flex h-dvh min-h-0 flex-col bg-[var(--admin-page)] font-sans text-[var(--admin-text)]">
     <header class="shrink-0 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.9)] backdrop-blur-xl">
-      <div class="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+      <div class="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--admin-soft)]">
             <span>{{ activityTitle }}</span>
@@ -26,18 +26,23 @@
       </div>
     </header>
 
-    <main class="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <section class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-soft)]">
+    <main class="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 gap-4 px-3 py-3 md:px-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+      <section class="flex min-h-0 min-w-0 flex-col gap-3">
+        <div class="shrink-0 overflow-hidden rounded-lg border border-[var(--admin-border)]">
         <SessionTimerBanner
           :session="session"
           flush
           @next-stage="$emit('next-stage')"
         />
-        <TaskAttemptReview
-          v-if="task && taskAttempt"
-          :task="task"
-          :attempt="taskAttempt"
-        />
+        </div>
+        <StudySplitView>
+          <template #task>
+            <TaskAttemptReview v-if="task && taskAttempt" :task="task" :attempt="taskAttempt" />
+            <p v-else class="p-5 text-sm text-[var(--admin-soft)]">目前沒有作答紀錄。</p>
+          </template>
+        <div class="shrink-0 border-b border-[var(--admin-border-soft)] px-5 py-3 text-sm font-semibold">
+          {{ condition?.roleplay_enabled ? `與 ${lockedPersona?.name || '歷史人物'} 對話` : '對話' }}
+        </div>
         <div ref="chatContainerRef" class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-6 pt-7">
           <!-- message.speaker_type 是新版 message contract 的核心欄位，用來區分 learner/persona/assistant。 -->
           <div
@@ -50,7 +55,7 @@
           >
             <div
               :class="[
-                'max-w-[88%] rounded-lg border px-5 py-4 shadow-sm',
+                'max-w-[94%] min-w-0 break-words rounded-lg border px-4 py-4 shadow-sm md:max-w-[92%]',
                 message.speaker_type === 'learner'
                   ? 'border-[var(--admin-coffee)] bg-[var(--admin-coffee)] text-[var(--admin-surface)]'
                   : 'border-[var(--admin-border)] bg-[var(--admin-surface)] text-[var(--admin-text)]'
@@ -75,7 +80,7 @@
                 </span>
                 <Icon
                   v-else
-                  :name="message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline'"
+                  :name="message.metadata?.system_fallback ? 'mdi:information-outline' : (message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline')"
                   class="h-4 w-4"
                 />
                 {{ message.speaker_name }}
@@ -128,11 +133,12 @@
               v-model="userInput"
               rows="1"
               :placeholder="inputPlaceholder"
-              class="max-h-36 min-h-12 flex-1 resize-y rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-3 text-sm leading-6 text-[var(--admin-text)] outline-none transition focus:border-[var(--admin-coffee-muted)] focus:ring-4 focus:ring-[var(--admin-focus)]"
+              class="max-h-36 min-h-12 min-w-0 flex-1 resize-y rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-3 text-sm leading-6 text-[var(--admin-text)] outline-none transition focus:border-[var(--admin-coffee-muted)] focus:ring-4 focus:ring-[var(--admin-focus)]"
               :disabled="isReplying || sessionClosed"
             />
             <button
               type="submit"
+              aria-label="送出訊息"
               :disabled="isReplying || sessionClosed || !userInput.trim()"
               class="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--admin-coffee)] text-[var(--admin-surface)] transition hover:bg-[var(--admin-coffee-hover)] disabled:cursor-not-allowed disabled:bg-[var(--admin-border)]"
             >
@@ -143,9 +149,10 @@
             本階段已結束，請使用上方按鈕進入下一階段。
           </p>
         </footer>
+        </StudySplitView>
       </section>
 
-      <aside class="hidden min-h-0 space-y-4 lg:block">
+      <aside class="hidden min-h-0 space-y-4 overflow-y-auto xl:block">
         <!-- role-play 僅呈現後端鎖定的人物，不提供受測者任何切換控制。 -->
         <div v-if="condition?.roleplay_enabled" class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
           <h2 class="text-sm font-semibold text-[var(--admin-text)]">歷史人物</h2>
@@ -209,6 +216,7 @@ import type { ChatMessage, EventTask, ExperimentCondition, ExperimentSession, Hi
 import Typewriter from './Typewriter.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import TaskAttemptReview from '~/components/task-student/TaskAttemptReview.vue';
+import StudySplitView from '~/components/chat/StudySplitView.vue';
 import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
 import { studentActivityTitle } from '~/composables/useStudentTask';
 

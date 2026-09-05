@@ -294,6 +294,11 @@ class ParticipantUpdateRequest(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class SessionClosureRequest(BaseModel):
+    closure_id: str = Field(min_length=1, max_length=64)
+    reflection: str = Field(min_length=1, max_length=6000)
+
+
 class SessionTimerResetRequest(BaseModel):
     """Admin-only reset of the fixed experiment countdown."""
 

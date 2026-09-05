@@ -244,6 +244,7 @@ def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dic
             "blank_id": qid,
             "question_type": question["type"],
             "question_text": text_by_id.get(qid, ""),
+            "options": question.get("options", []),
             "learner_answer": answer["value"],
             "learner_rationale": answer["rationale"],
             "expected_answer": question["correct_answer"],

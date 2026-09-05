@@ -181,7 +181,7 @@ async def chat_stream(
                 {
                     "type": "status",
                     "stage": "streaming",
-                    "message": "回覆已通過檢查，正在顯示…",
+                    "message": "正在顯示回覆…",
                 }
             )
             for chunk in _response_chunks(response.response):

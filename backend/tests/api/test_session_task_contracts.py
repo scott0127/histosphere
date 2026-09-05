@@ -1,5 +1,86 @@
 from app.core.experiment_conditions import condition_code_for_key
 from app.models.domain import EventTask
+from app.models.domain import ChatMessage, Participant, utc_now
+from datetime import timedelta
+import pytest
+
+
+@pytest.mark.parametrize("condition_key", ["no_ebl_no_roleplay", "ebl_no_roleplay", "no_ebl_roleplay", "ebl_roleplay"])
+def test_timed_closure_is_scoped_durable_and_separate_from_chat(client, condition_key):
+    from tests.test_api import submit_task
+    initialized = initialize_event(client, condition_key=condition_key)
+    submitted = submit_task(client, initialized)
+    repo = client.app.state.repository
+    sid, cid = initialized["session_id"], submitted["conversation_id"]
+    url = f"/api/sessions/{sid}/state"
+    assert client.get(url).json()["closure"] is None
+    assert client.post(f"/api/sessions/{sid}/closure", json={"closure_id": "early", "reflection": "不應提前領答案"}).status_code == 409
+    session = repo.get_session(sid)
+    session.timer_ends_at = utc_now() - timedelta(seconds=1)
+    repo.save_session(session)
+    response = client.get(url)
+    assert response.status_code == 200, response.text
+    closure = response.json()["closure"]
+    if not condition_key.startswith("ebl_"):
+        assert closure is None
+        return
+    assert closure["question_id"] == "q01"
+    assert closure["answer"] and closure["explanation"]
+    assert "reasoning_criteria" not in closure and "answer_review" not in closure
+    assert client.get(url).json()["closure"] == closure
+    repo.save_participant(Participant(code="OTHER", auth_user_id="other", condition_list=["04"]))
+    assert client.get(url, headers={"Authorization": "Bearer other"}).status_code == 403
+    payload = {"closure_id": closure["closure_id"], "reflection": "我原先的判斷需要改變。"}
+    assert client.post(f"/api/sessions/{sid}/closure", json=payload, headers={"Authorization": "Bearer other"}).status_code == 403
+    assert client.post(f"/api/sessions/{sid}/closure", json={**payload, "reflection": "   "}).status_code == 422
+    before = repo.list_messages(cid)
+    closed = client.post(f"/api/sessions/{sid}/closure", json=payload)
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["completed_at"]
+    assert client.post(f"/api/sessions/{sid}/closure", json=payload).json() == closed.json()
+    assert client.get(url).json()["closure"] == closed.json()
+    assert repo.list_messages(cid) == before
+    logs = [log for log in repo.list_research_logs_for_session(sid) if log.action_type == "session_closure_restatement"]
+    assert len(logs) == 1 and logs[0].payload["independent_mastery"] is False
+    assert client.post("/api/chat", json={"conversation_id": cid, "user_message": "重開聊天", "client_request_id": "late"}).status_code == 409
+    client.app.state.session_service.reset_timer(sid)
+    assert client.get(url).json()["closure"] is None
+    assert client.post(f"/api/sessions/{sid}/closure", json=payload).status_code == 409
+
+
+def test_timed_closure_handles_only_the_current_error_with_frozen_answers(client):
+    from tests.test_api import submit_task
+    from app.core.interaction_contract import INTERACTION_POLICY_VERSION
+    initialized = initialize_event(client)
+    submitted = submit_task(client, initialized)
+    repo = client.app.state.repository
+    sid, cid = initialized["session_id"], submitted["conversation_id"]
+    attempt = repo.get_task_attempt(submitted["attempt_id"])
+    first = attempt.judgement_payload["question_results"][0]
+    attempt.judgement_payload["question_results"] = [first, {**first, "question_id": "q02",
+        "expected_answer": False, "source_text": "原始文件時間不同於出版時間。"}]
+    repo.save_task_attempt(attempt)
+    session = repo.get_session(sid)
+    session.timer_ends_at = utc_now() - timedelta(seconds=1)
+    repo.save_session(session)
+    url = f"/api/sessions/{sid}/state"
+    assert client.get(url).json()["closure"]["question_id"] == "q01"
+    repo.add_message(ChatMessage(conversation_id=cid, sequence_index=1, speaker_type="persona", speaker_name="人物",
+        content="第一個判斷已修正，接著看第二個問題。", metadata={
+            "interaction_policy_version": INTERACTION_POLICY_VERSION, "target_question_id": "q01",
+            "dialogue_state": "RESOLVED", "completion_status": "feedback_completed",
+            "next_target_question_id": "q02", "next_target_started": True}))
+    closure = client.get(url).json()["closure"]
+    assert closure["question_id"] == "q02" and closure["answer"] == "否"
+    # 後來修改題目不能改變本次已凍結的正解與說明。
+    task = repo.get_event_task(attempt.task_id)
+    task.evaluation_payload["questions"][0]["source_text"] = "CHANGED"
+    repo.save_event_task(task)
+    assert client.get(url).json()["closure"] == closure
+    repo.add_message(ChatMessage(conversation_id=cid, sequence_index=2, speaker_type="persona", speaker_name="人物",
+        content="第二題已完成。", metadata={"interaction_policy_version": INTERACTION_POLICY_VERSION,
+            "target_question_id": "q02", "dialogue_state": "RESOLVED", "completion_status": "feedback_completed"}))
+    assert client.get(url).json()["closure"] is None
 
 
 def initialize_event(client, event_name="法國大革命", condition_key="ebl_roleplay", user_id="participant-001"):

@@ -36,6 +36,12 @@ INTERNAL_LEAK_MARKERS = (
     "prompt module",
 )
 
+# 答案由背景語意觀察處理；生成模型的自評不具有獨立裁判資格。
+ANSWER_OBSERVATION_FLAGS = frozenset({
+    "early_answer_exposure", "next_answer_exposure", "corrective_answer_missing",
+    "corrective_feedback_missing",
+})
+
 
 @dataclass(frozen=True)
 class CompletionCandidateValidation:
@@ -64,7 +70,7 @@ def validate_completion_candidate(
     metadata = dict(interaction.metadata)
     flags = set(metadata.get("fidelity_flags", []))
     provider_flags = set(metadata.get("provider_fidelity_flags", []))
-    flags.update(provider_flags)
+    flags.update(provider_flags - ANSWER_OBSERVATION_FLAGS)
     compact_response = generation.response.replace(" ", "").lower()
     if any(marker.replace(" ", "").lower() in compact_response for marker in INTERNAL_LEAK_MARKERS):
         flags.add("internal_condition_leak")
@@ -79,12 +85,12 @@ def validate_completion_candidate(
         flags.update(persona_flags)
 
     retry_flags = set()
-    if interaction.retry_required:
-        retry_flags.update(metadata.get("fidelity_flags", []))
+    retry_flags.update(set(metadata.get("fidelity_flags", [])) & INTERACTION_RETRY_FLAGS)
     retry_flags.update(
         flag
         for flag in provider_flags
-        if flag in INTERACTION_RETRY_FLAGS or flag in PERSONA_RETRY_FLAGS
+        if (runtime.interaction_mode == "scaffold" and flag in INTERACTION_RETRY_FLAGS)
+        or (persona_context is not None and flag in PERSONA_RETRY_FLAGS)
     )
     retry_flags.update(flag for flag in persona_flags if flag in PERSONA_RETRY_FLAGS)
     if "internal_condition_leak" in flags:

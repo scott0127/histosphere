@@ -40,6 +40,7 @@ const mdiClientIcons = [
   'mdi:feather',
   'mdi:history',
   'mdi:incognito',
+  'mdi:information-outline',
   'mdi:library-outline',
   'mdi:lightbulb-outline',
   'mdi:link-variant',

@@ -12,23 +12,34 @@
     >
       <section class="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[12px] border-2 border-[var(--admin-line)] bg-[var(--admin-page)] shadow-[0_30px_90px_rgba(47,41,36,0.32)]">
         <header class="flex items-start justify-between gap-4 border-b border-[var(--admin-border)] px-6 py-5">
-          <div>
+          <div class="min-w-0 flex-1">
             <p class="admin-kicker">Session research record</p>
-            <h2 class="admin-heading mt-1 font-serif text-2xl font-bold">
+            <h2 class="admin-heading mt-1 break-words font-serif text-lg font-bold sm:text-2xl">
               {{ research.participant_code }} · {{ research.event.canonical_name }}
             </h2>
             <p class="admin-caption mt-2 text-sm font-semibold">
               {{ conditionLabel }} · {{ sessionStatusLabel }} · {{ shortId(research.session.id) }}
             </p>
           </div>
-          <button
-            type="button"
-            class="admin-button-secondary inline-flex h-10 w-10 shrink-0 items-center justify-center"
-            title="關閉"
-            @click="$emit('close')"
-          >
-            <Icon name="mdi:close" class="h-5 w-5" />
-          </button>
+          <div class="flex shrink-0 gap-2">
+            <button
+              type="button"
+              class="admin-button-secondary inline-flex h-10 w-10 items-center justify-center"
+              title="重新載入紀錄與用量"
+              aria-label="重新載入紀錄與用量"
+              @click="$emit('refresh', research.session.id)"
+            >
+              <Icon name="mdi:refresh" class="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              class="admin-button-secondary inline-flex h-10 w-10 shrink-0 items-center justify-center"
+              title="關閉"
+              @click="$emit('close')"
+            >
+              <Icon name="mdi:close" class="h-5 w-5" />
+            </button>
+          </div>
         </header>
 
         <div class="overflow-y-auto px-6 py-5">
@@ -39,7 +50,7 @@
             </div>
           </div>
           <p class="admin-caption mt-2 text-xs font-semibold">
-            共 {{ research.stats.llm_calls_total }} 次 LLM 呼叫（含 Task judge、開場與聊天）；Token 覆蓋
+            共 {{ research.stats.llm_calls_total }} 次 LLM 呼叫（含 Task judge、開場、聊天、答案審查與修正）；Token 覆蓋
             {{ formatPercent(research.stats.token_usage_coverage) }}。快取輸入
             {{ research.stats.cached_prompt_tokens.toLocaleString() }}；推理 Token
             {{ research.stats.reasoning_tokens.toLocaleString() }}（已包含於輸出 Token）。
@@ -65,14 +76,15 @@
                   :key="message.id || `${message.sequence_index}-${message.created_at}`"
                   class="border px-4 py-3"
                   :class="message.speaker_type === 'learner'
-                    ? 'ml-12 rounded-[8px] border-[var(--admin-coffee)] bg-[var(--admin-coffee)] text-white'
-                    : 'mr-12 rounded-[8px] border-[var(--admin-border)] bg-[var(--admin-surface)] text-[var(--admin-copy-strong)]'"
+                    ? 'ml-4 rounded-[8px] border-[var(--admin-coffee)] bg-[var(--admin-coffee)] text-white sm:ml-12'
+                    : 'mr-4 rounded-[8px] border-[var(--admin-border)] bg-[var(--admin-surface)] text-[var(--admin-copy-strong)] sm:mr-12'"
                 >
                   <div class="flex items-center justify-between gap-3 text-xs font-bold opacity-75">
                     <span>{{ message.speaker_type === 'learner' ? '受測者' : message.speaker_name }}</span>
                     <span>{{ formatDate(message.created_at) }}</span>
                   </div>
-                  <p class="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7">{{ message.content }}</p>
+                  <p class="mt-2 whitespace-pre-wrap break-words text-sm font-semibold leading-7">{{ message.content }}</p>
+                  <AdminAnswerReviewDetails v-if="message.metadata?.answer_review || message.metadata?.answer_delivery" :review="message.metadata.answer_review" :delivery="message.metadata.answer_delivery" />
                 </article>
               </div>
               <div v-else class="admin-empty-state p-5">此 Session 尚未建立對話。</div>
@@ -134,7 +146,7 @@ import type { AdminSessionResearchResponse } from '~/types';
 import { experimentConditionCodes, experimentConditionCodeByKey, experimentConditionLabels } from '~/utils/experimentConditions';
 
 const props = defineProps<{ research: AdminSessionResearchResponse | null }>();
-defineEmits<{ (event: 'close'): void }>();
+defineEmits<{ (event: 'close'): void; (event: 'refresh', sessionId: string): void }>();
 
 const conditionLabel = computed(() => {
   if (!props.research) return '';

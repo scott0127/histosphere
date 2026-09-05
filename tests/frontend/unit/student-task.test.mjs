@@ -72,6 +72,16 @@ test('missing, unknown, duplicate markers and invalid questions block submission
   }
 });
 
+test('reading introduction moves before materials without losing question wording or answer bindings', () => {
+  const task = { ...errorElicitationTask, error_elicitation_task_full_text: 'Reading context.\n\nQ01｜First question.\n{{blank:q01}}\nQ02｜Second.\n{{blank:q02}}\nQ03｜Third.\n{{blank:q03}}' };
+  const layout = taskLogic.buildTaskReadingLayout(task);
+  assert.equal(layout.introduction, 'Reading context.');
+  assert.equal(layout.segments[0].text, 'Q01｜First question.\n');
+  assert.deepEqual(layout.segments.filter((s) => s.type === 'blank').map((s) => s.question.id), ['q01', 'q02', 'q03']);
+  assert.deepEqual(taskLogic.buildTaskReadingLayout(errorElicitationTask), { introduction: '', segments: taskLogic.buildTaskStorySegments(errorElicitationTask) });
+  assert.deepEqual(taskLogic.buildTaskReadingLayout(legacyTask), { introduction: '', segments: taskLogic.buildTaskStorySegments(legacyTask) });
+});
+
 test('new-format submission requires every answer and nonblank rationale, while false is valid', () => {
   const questions = taskLogic.normalizeTaskQuestions(errorElicitationTask);
   assert.equal(taskLogic.isTaskAnswerComplete(questions, completeAnswers, errorElicitationTask), true);
@@ -187,9 +197,10 @@ test('processing failures and pending attempts override any stale binary judgeme
   }
 });
 
-test('material references allow HTTP(S) only and answer display preserves false', () => {
+test('material references allow HTTP(S) and local images only; answer display preserves false', () => {
   assert.equal(taskLogic.taskMaterialUrl('https://archive.example/source?q=1'), 'https://archive.example/source?q=1');
-  for (const url of ['javascript:alert(1)', 'data:text/html,test', 'not a url', '', null]) {
+  assert.equal(taskLogic.taskMaterialUrl('/images/materials/wushe-headquarters-1930.jpg'), '/images/materials/wushe-headquarters-1930.jpg');
+  for (const url of ['javascript:alert(1)', 'data:text/html,test', 'not a url', '', null, '/api/events', '/images/../secret.png', '/images/%2e%2e/secret.png', '//example.com/a.png']) {
     assert.equal(taskLogic.taskMaterialUrl(url), undefined);
   }
   assert.equal(taskLogic.taskAnswerValueToText(false), '否');

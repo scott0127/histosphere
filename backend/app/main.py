@@ -12,6 +12,7 @@ from app.db import InMemoryRepository, SupabaseRepository
 from app.providers import WikipediaProvider
 from app.providers.llm import build_llm_provider
 from app.services.conversation_opening_service import ConversationOpeningService
+from app.services.answer_review_service import AnswerReviewService
 from app.services import (
     ChatService,
     ConversationService,
@@ -40,6 +41,10 @@ async def _session_timer_worker(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    try:
+        await asyncio.to_thread(app.state.answer_review_service.recover_interrupted)
+    except Exception:
+        logger.warning("Could not mark interrupted answer reviews; chat startup continues")
     recovered_operations = await asyncio.to_thread(
         app.state.chat_service.recover_interrupted_operations
     )
@@ -52,6 +57,7 @@ async def _lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.answer_review_service.close()
         worker.cancel()
         with suppress(asyncio.CancelledError):
             await worker
@@ -85,6 +91,8 @@ def create_app() -> FastAPI:
     rag_pipeline = RagPipelineService(repository)
     prompt_service = PromptService()
     opening_service = ConversationOpeningService(llm_provider, prompt_service)
+    answer_review_service = AnswerReviewService(repository, llm_provider)
+    opening_service.answer_review_service = answer_review_service
 
     app.state.repository = repository
     app.state.supabase_jwt_verifier = SupabaseJWTVerifier(settings)
@@ -93,6 +101,7 @@ def create_app() -> FastAPI:
     app.state.rag_pipeline = rag_pipeline
     app.state.prompt_service = prompt_service
     app.state.opening_service = opening_service
+    app.state.answer_review_service = answer_review_service
     app.state.event_service = EventService(repository)
     app.state.event_initialization_service = EventInitializationService(
         repository=repository,
@@ -101,6 +110,7 @@ def create_app() -> FastAPI:
     )
     app.state.conversation_service = ConversationService(repository, opening_service)
     app.state.chat_service = ChatService(repository, llm_provider, prompt_service, rag_pipeline)
+    app.state.chat_service.answer_review_service = answer_review_service
     app.state.persona_service = PersonaService(repository)
     app.state.task_service = TaskService(repository, llm_provider, opening_service)
     app.state.session_service = SessionService(repository)

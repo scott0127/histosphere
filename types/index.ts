@@ -324,6 +324,16 @@ export interface SessionRestartResponse {
   new_session: ExperimentSession;
 }
 
+export interface SessionClosure {
+  closure_id: string;
+  question_id: string;
+  question: string;
+  answer: string;
+  explanation: string;
+  reflection?: string | null;
+  completed_at?: string | null;
+}
+
 export interface SessionStateResponse {
   session: ExperimentSession;
   event: HistoricalEvent;
@@ -332,6 +342,7 @@ export interface SessionStateResponse {
   condition?: ExperimentCondition | null;
   attempt?: TaskAttempt | null;
   conversation_id?: string | null;
+  closure?: SessionClosure | null;
 }
 
 export interface UserProgressItem {

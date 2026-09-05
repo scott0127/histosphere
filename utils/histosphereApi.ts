@@ -20,6 +20,7 @@ import type {
   Participant,
   Persona,
   SessionRestartResponse,
+  SessionClosure,
   SessionStateResponse,
   TaskDraftResponse,
   TaskSubmissionAcceptedResponse,
@@ -258,6 +259,12 @@ export const fetchParticipantMe = (authUserId: string, fetcher: FrontendFetcher 
 
 export const fetchSessionState = (sessionId: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<SessionStateResponse>(`/api/sessions/${sessionId}/state`, learnerAuthOptions());
+};
+
+export const submitSessionClosure = (sessionId: string, closureId: string, reflection: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<SessionClosure>(`/api/sessions/${sessionId}/closure`, {
+    method: 'POST', ...learnerAuthOptions(), body: { closure_id: closureId, reflection },
+  });
 };
 
 export const saveTaskDraft = (taskId: string, input: TaskDraftInput, fetcher: FrontendFetcher = $fetch) => {

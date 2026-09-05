@@ -596,6 +596,7 @@
     <AdminParticipantResearchDialog
       :research="selectedResearchSession"
       @close="closeSessionResearch"
+      @refresh="loadSessionResearch"
     />
   </div>
 </template>
