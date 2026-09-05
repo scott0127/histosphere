@@ -1,8 +1,10 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS
+from app.core.interaction_contract import build_interaction_runtime
 from app.core.persona_prompt_contract import (
     PERSONA_PROMPT_CONTRACT_VERSION,
     audit_persona_response,
@@ -11,6 +13,7 @@ from app.core.persona_prompt_contract import (
 from app.models.domain import Event, ExperimentCondition, Persona, TaskAttempt
 from app.providers.llm.base import ChatGenerationResult
 from app.services.conversation_opening_service import ConversationOpeningService
+from app.services.chat_service import ChatService
 from app.services.prompt_service import PromptService
 
 
@@ -118,6 +121,25 @@ def test_persona_prompt_establishes_scene_once_and_keeps_facts_silent_afterward(
     assert "Do not reintroduce the persona" in continuation
     assert "Repeat a scene anchor only" in continuation
     assert "allow natural Chinese subject omission" in continuation
+
+
+def test_character_notes_reach_only_roleplay_context_without_rewriting_materials():
+    persona = _persona()
+    persona.prompt_profile["teacher_notes"] = "回應立場：先考慮國民公會代表的責任。"
+    event = _event()
+    event.context = "後世整理的事件紀錄，包含 1799 年的政變。"
+    service = PromptService()
+    for code in ("01", "02", "03", "04"):
+        modules = {m.name: m.content for m in service.assemble_chat_modules(
+            event, persona, _condition(code), _attempt(), "我不同意。", []
+        )}
+        assert event.context in modules["event_context"]
+        assert ("先考慮國民公會代表的責任" in modules["persona_event_context"]) == (code in ("03", "04"))
+        if code in ("03", "04"):
+            assert "They are NOT all unfolding now" in modules["persona_event_context"]
+            assert "not the character's lived situation" in modules["persona_event_context"]
+            assert "Forms of address are optional alternatives" in modules["persona_event_context"]
+            assert "A source dated in the same year is not automatically known" in modules["persona_event_context"]
 
 
 def test_opening_audit_requires_identity_event_anchor_and_in_event_situation():
@@ -291,6 +313,43 @@ class _SequenceOpeningProvider:
         self.prompts.append(kwargs["prompt"])
         response = self.responses[min(len(self.prompts) - 1, len(self.responses) - 1)]
         return ChatGenerationResult(response=response, interaction_metadata=_standard_metadata())
+
+    async def generate_chat_response(self, **kwargs) -> ChatGenerationResult:
+        return await self.generate_greeting(**kwargs)
+
+
+@pytest.mark.parametrize("is_opening", [True, False])
+def test_observe_mode_preserves_flagged_output_in_both_generation_paths(monkeypatch, is_opening):
+    from app.services import completion_validation
+
+    monkeypatch.setattr(completion_validation, "get_settings", lambda: SimpleNamespace(
+        llm_content_validation_enabled=False,
+    ))
+    original = "我是羅伯斯比爾。此刻國民公會正面臨危機。請重新檢視你的答案。"
+    provider = _SequenceOpeningProvider([original])
+    service = PromptService()
+    if is_opening:
+        result = asyncio.run(ConversationOpeningService(provider, service).generate(
+            event=_event(), personas=[_persona()], condition=_condition("03"), attempt=_attempt(),
+        ))
+        response, metadata = result.generation.response, result.metadata
+    else:
+        generation, metadata, _ = asyncio.run(ChatService(None, provider, service, None).generate_validated_response(
+            event=_event(), selected=_persona(), condition=_condition("03"), task_attempt=_attempt(),
+            user_message="我不太明白。", base_prompt="Test input", rag_sources=[],
+            interaction_runtime=build_interaction_runtime(_condition("03"), _attempt(), []),
+        ))
+        response = generation.response
+    assert response == original
+    assert len(provider.prompts) == 1
+    assert metadata["generation_retry_count"] == 0
+    assert metadata["rejected_candidates"] == []
+    assert metadata["content_validation_mode"] == "observe"
+    assert metadata["content_validation_would_retry"] is True
+    assert "persona_modern_tutor_register" in metadata["content_validation_flags"]
+    assert metadata["fidelity_retry_required"] is False
+    assert metadata["raw_interaction_metadata"] == _standard_metadata()
+    assert "rejected_response_sha256" not in metadata
 
 
 def test_opening_service_regenerates_a_generic_persona_candidate():

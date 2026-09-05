@@ -160,6 +160,8 @@ class Settings(BaseModel):
     llm_temperature: float = 0.3
     llm_max_output_tokens: int = 4096
     llm_timeout_seconds: float = 60.0
+    # 可暫停內容攔截以檢視模型原始回覆；格式驗證與檢查紀錄仍保留。
+    llm_content_validation_enabled: bool = True
     gemini_api_key: str | None = None
     gemini_reasoning_effort: str = "minimal"
     openai_api_key: str | None = None
@@ -256,6 +258,7 @@ def get_settings() -> Settings:
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),
         llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096")),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")),
+        llm_content_validation_enabled=_env_bool("LLM_CONTENT_VALIDATION_ENABLED", True),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_reasoning_effort=os.getenv("GEMINI_REASONING_EFFORT", "minimal"),
         openai_api_key=os.getenv("OPENAI_API_KEY"),

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("BACKEND_REPOSITORY", "in_memory")
 os.environ.setdefault("ALLOW_IN_MEMORY_REPOSITORY", "true")
 os.environ.setdefault("HISTOSPHERE_ADMIN_KEY", "test-admin")
+os.environ.setdefault("LLM_CONTENT_VALIDATION_ENABLED", "true")
 
 from app.core.auth import AuthenticatedUser
 from app.core.config import get_settings

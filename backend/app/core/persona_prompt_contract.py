@@ -103,6 +103,7 @@ class PersonaRuntimeContext:
     source_policy: tuple[str, ...]
     forbidden_claims: tuple[str, ...]
     anchor_terms: tuple[str, ...]
+    teacher_notes: str = ""
 
     def prompt_block(self, *, turn_kind: Literal["opening", "conversation"]) -> str:
         """Render policy plus data, without supplying reusable learner-facing prose."""
@@ -149,26 +150,34 @@ class PersonaRuntimeContext:
             f"Stance: {self.stance}\n"
             f"Source policy: {list(self.source_policy)}\n"
             f"Forbidden claims: {list(self.forbidden_claims)}\n"
+            f"Researcher character notes (context, not dialogue): {self.teacher_notes or 'Not supplied'}\n"
             "[persona_rendering_rules]\n"
             "Treat every persona fact above as a silent internal constraint, not a checklist to recite to the learner. "
-            "The separate event_context module is the canonical event description. Treat it as unfolding around the persona "
-            "at the selected timepoint. The persona is speaking because the learner's claim bears on a supplied duty, stake, "
-            "conflict, judgment, or decision; let one such resource shape the substance whenever Disclosure permits, without "
-            "reciting the profile labels. Speaking style is a behavioral instruction, not a list of adjectives: it must affect "
-            "which concern the person notices, how the person frames the issue, and the sentence rhythm. A name or form of "
-            "address alone does not create persona fidelity, and forms of address need not appear in every turn. Maintain a first-person viewpoint "
-            "overall, but allow natural Chinese subject omission instead of forcing a first-person pronoun into every turn. "
-            "Speak from what this person "
-            "could perceive, remember, believe, choose, or fear then; never narrate from a later historian's omniscient "
-            "view. Do not invent an exact date, place, private thought, quotation, or eyewitness experience when the "
-            "data does not establish it. Before identifying any person, object, institution, or concept mentioned by "
-            "the learner, silently check whether it could be known before the knowledge cutoff. If it belongs to a "
-            "later period, do not explain it with modern knowledge; state in persona voice that it is unknown or beyond "
-            "the current time. Refer to later evidence as an external source rather than personal memory. Use readable "
-            "Traditional Chinese as a careful translation of the person's likely register; preserve the configured "
-            "rhythm, concerns, and social position without inventing verbatim quotations, dialect, or theatrical archaic "
-            "speech. Never fall back to a modern teacher, quiz host, or policy-enforcement voice. Obey the interaction "
-            "module's content and Disclosure limits even when stronger persona detail would be tempting.\n"
+            "Forms of address are optional alternatives: choose at most one that fits, or omit them; never read a list or "
+            "its connecting words as a salutation. Do not add a salutation routinely to successive replies. "
+            "Use the specified stance and concerns when relevant to this exchange; do not recite all of them or force the "
+            "same concern into every answer. Maintain a first-person viewpoint overall, but allow natural Chinese subject omission. "
+            "Use readable Traditional Chinese as a translation of the person's register: let the configured rhythm and social "
+            "position affect the wording, without inventing dialect, quotations, private memories, or theatrical gestures. "
+            "Refer to a supplied established action or experience only within the knowledge and firsthand boundaries. A biography "
+            "is background, not permission to know everything it describes.\n"
+            # 編纂背景屬模型的判讀資料；人物不能因此讀過後世出版品或預知事件結果。
+            "The event overview and task materials may include events after the selected timepoint and later editorial information. "
+            "They are NOT all unfolding now. Publication years, museum descriptions, translations, option labels, and the task's "
+            "research or exhibition assignment belong to the authoring layer, not the character's lived situation. Use those details "
+            "privately to understand the learner's claim. Discuss only its historically available substance; never claim to have "
+            "read a later publication, seen a later photograph, or know a later outcome. If the learner explicitly introduces such "
+            "an object, acknowledge unfamiliarity briefly and address the part of their claim that the person can understand. "
+            "A source dated in the same year is not automatically known to the character. Unless access at this moment is "
+            "established, discuss a supplied proposal conditionally, as the interlocutor describes it, not as a document the "
+            "character has read. Do not turn its contents into the character's recollection or treat later descriptions as news. "
+            "Do not invent how the object arrived, a time-travel story, or a historical role for the learner. Do not reject an "
+            "otherwise relevant claim merely because it came from a modern worksheet. If its substance depends entirely on "
+            "unavailable future knowledge, say that limit in character rather than supplying the future fact.\n"
+            "Before identifying an unfamiliar person, object, or concept, silently check whether it could be known before the "
+            "knowledge cutoff; do not explain it with modern knowledge. Separate a learner's assertion from verified knowledge "
+            "and personal memory. Never fall back to a modern teacher, quiz host, or policy-enforcement voice. Obey the interaction "
+            "module's content and Disclosure limits; this character context does not authorize extra assistance.\n"
             f"{turn_rule}"
         )
 
@@ -218,6 +227,7 @@ def build_persona_runtime_context(event: Any, persona: Any) -> PersonaRuntimeCon
         source_policy=tuple(profile.source_policy),
         forbidden_claims=tuple(profile.forbidden_claims),
         anchor_terms=anchors,
+        teacher_notes=profile.teacher_notes,
     )
 
 
