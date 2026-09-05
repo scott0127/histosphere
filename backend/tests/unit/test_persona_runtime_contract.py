@@ -238,19 +238,25 @@ def test_persona_audit_rejects_modern_teacher_redirect_but_accepts_in_character_
     assert in_character_redirect == ()
 
 
-def test_persona_audit_rejects_observed_classroom_ebl_wording():
+def test_persona_audit_distinguishes_quiz_instructions_from_natural_reflection():
     context = build_persona_runtime_context(_event(), _persona())
 
     observed_phrasings = (
-        "你已經指出代表人數的問題，請重新檢視原本的判斷，並改寫原先的答案。",
         "請重新選定一個選項，再用自己的話說明理由。",
         "你這次已經看出資料不同，現在請把原來的選項改一次。",
-        "請回頭檢查你自己的兩句話。",
+        "這道題的學習目標是歷史思考。",
     )
 
     for response_text in observed_phrasings:
         flags = audit_persona_response(response_text, context, is_opening=False)
         assert "persona_modern_tutor_register" in flags
+
+    # 反思問句本身不等於脫離人物；人物感仍需檢視整段交流，不能靠關鍵字判定。
+    for response_text in (
+        "共和國的事不能如此草率決定。請重新思考，剛才的判斷有沒有忽略什麼？",
+        "請用自己的話說說，現在你如何看待這件事？",
+    ):
+        assert audit_persona_response(response_text, context, is_opening=False) == ()
 
 
 def test_persona_audit_allows_natural_subject_omission_after_opening():

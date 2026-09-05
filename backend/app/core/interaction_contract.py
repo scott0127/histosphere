@@ -26,9 +26,10 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v8"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v9"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v8",
     "2x2-interaction-v7",
     "2x2-interaction-v6",
     "2x2-interaction-v5",
@@ -58,37 +59,58 @@ DIALOGUE_MOVE_BY_STATE: dict[str, str] = {
     },
 }
 DISCLOSURE_LEVELS = ("D0", "D1", "D2", "D3", "D4")
+# 等級只限制針對當前錯誤的解題協助，不限制人物語氣、篇幅或一般歷史背景。
+# 背景若實際提示了答案，仍須算入協助；不能透過人物敘事繞過界線。
 DISCLOSURE_POLICY = {
     "D0": {
-        "allowed": "Restate the learner claim and elicit the reasoning already used.",
+        "allowed": (
+            "Engage the learner's claim and invite independent reconsideration. Acknowledge any rationale already "
+            "submitted instead of asking the learner to repeat it. Event orientation and a personal reaction are welcome."
+        ),
         "hard_ceiling": (
-            "Do not add a target-relevant historical fact, evidence excerpt, number, relationship, correction, or answer "
-            "clue. Do not introduce a new analytical distinction, alternative criterion, comparison dimension, or "
-            "interpretive frame. Neutral event orientation and the identity/situation framing required by role-play are "
-            "allowed only when they do not help solve the current item."
+            "Do not supply a new key solution clue, diagnose the missing distinction for the learner, or correct their "
+            "answer or rationale. Background may establish the situation, but must not do this problem-solving work."
         ),
     },
     "D1": {
-        "allowed": "Point to the part of the original answer or reading that may need reconsideration.",
+        "allowed": (
+            "Point out a doubt, direction, or distinction worth reconsidering in the current claim. "
+            "Explain what to think about without doing the comparison or correction for the learner."
+        ),
         "hard_ceiling": (
-            "Name where to inspect, but do not state or paraphrase what the evidence says. Do not supply a number, "
-            "comparison result, causal relationship, source excerpt, conclusion, or answer synonym."
+            "Do not supply the decisive content or explanation that settles the item. A direction must leave the "
+            "learner something substantive to work out, not merely invite agreement with a supplied answer."
         ),
     },
     "D2": {
-        "allowed": "Provide one verified content clue that helps the learner reconsider the current error.",
+        "allowed": (
+            "Offer partial relevant information or a useful clue, explaining its meaning if needed. "
+            "Use accurate task content or well-established historical knowledge within the identity's knowledge boundary."
+        ),
         "hard_ceiling": (
-            "Use one clue already present in task materials, task_source_text, or event_context. Do not state the conclusion "
-            "or complete the learner's claim."
+            "Leave a task-specific part of the correction for the learner to work out. Do not supply all the decisive "
+            "details and leave only an option letter, agreement, or rewording to the learner."
         ),
     },
     "D3": {
-        "allowed": "Provide up to two clues or a partial answer structure, and rule out one incorrect path.",
-        "hard_ceiling": "Do not supply the corrected answer or rationale for the learner.",
+        "allowed": (
+            "Connect information already offered, highlight a tension, or break the difficulty into manageable parts. "
+            "Make the route to revision clearer without completing it."
+        ),
+        "hard_ceiling": (
+            "Leave a meaningful task-specific inference or revision to the learner, not just agreement with or "
+            "repetition of the correction already supplied."
+        ),
     },
     "D4": {
-        "allowed": "Organize the strongest available help while leaving the corrected answer for the learner to attempt.",
-        "hard_ceiling": "During scaffolding, do not state the complete answer or a direct synonym; terminal feedback is separate.",
+        "allowed": (
+            "Offer the strongest support: organize what is known, clarify what remains unresolved, and make a final "
+            "independent answer and rationale attempt possible. Follow the runtime's final-answer sequence."
+        ),
+        "hard_ceiling": (
+            "Do not provide the complete correction before the learner's final attempt or demonstrated self-correction. "
+            "Full corrective feedback is a separate runtime-authorized step, not another Disclosure level."
+        ),
     },
 }
 LEGACY_DISCLOSURE_LEVELS = {f"L{index}": level for index, level in enumerate(DISCLOSURE_LEVELS)}
@@ -249,8 +271,8 @@ class InteractionRuntime:
             f"Current target position: {self.target_sequence_number or 0}/{self.target_count}\n"
             f"Current target: {json.dumps(target_payload, ensure_ascii=False)}\n"
             "Private evaluation context: task_source_text, expected_answer, reasoning_criteria, reasoning_feedback, "
-            "and evidence_ids are available only "
-            "to assess learner progress. They do not authorize learner-visible disclosure; every response must "
+            "and evidence_ids are private references for assessing progress and selecting appropriate help. "
+            "Knowing these references does not authorize revealing the complete correction; every response must "
             "follow the interaction mode and, during scaffolding, the selected Disclosure level. "
             "Terminal feedback authorized below is the only pre-transition exception. "
             "If error_source=researcher_authored_fallback, this is another person's claim, not a learner mistake."
@@ -340,25 +362,33 @@ class InteractionRuntime:
             "Do not prescribe a Historical Thinking technique, mandatory evidence citation, or source-comparison "
             "exercise. The learner may use such reasoning spontaneously.\n"
             f"Disclosure policy: {json.dumps(DISCLOSURE_POLICY, ensure_ascii=False)}\n"
-            "Treat the selected disclosure level as a hard ceiling on every learner-visible sentence, not as a "
-            "suggestion. If uncertain between two levels, use the lower level. In particular, D1 may identify the "
-            "sentence, source, time, person, place, or relationship to inspect, but it must not disclose the evidence "
-            "content, a new target-relevant numeric fact, or the result of a comparison. D0 still permits the neutral "
-            "identity and event-situation framing required for a role-play opening, provided it gives no clue to the target; "
-            "it may only paraphrase reasoning already stated by the learner and must not add a new analytical frame.\n"
+            "Disclosure limits solution assistance for the current error, not response length, paragraph count, personality, "
+            "or all historical information. Natural event context, personal concerns, and conversational framing may appear "
+            "at every level. However, if they help settle this error, they count as solution assistance and must fit the "
+            "selected level. Assess what the whole reply enables the learner to solve; do not mechanically count facts or "
+            "hide extra help in a persona introduction or ending. Materials are not an exhaustive historical-knowledge whitelist. "
+            "Use only reliable historical knowledge consistent with the active identity's time and access. A quotation or a "
+            "claimed source still needs support. For a choice, true/false, or fill-in item, a seemingly small hint may itself "
+            "give away the answer: withholding the answer label alone is insufficient. Treat the correct interpretation and "
+            "its decisive rationale as part of the solution, not just expected_answer's literal text. Before sending, check "
+            "what task-specific reasoning the learner still has to do: if only agreement, choosing a letter, or restating "
+            "your supplied correction remains, reduce the solution assistance, not the character's voice or general context. "
+            "Do not deliberately prolong the exchange "
+            "when the learner has already recognized, reflected on, and corrected the error.\n"
             f"Previous dialogue state: {self.previous_state or 'NONE'}\n"
             f"Allowed response states: {', '.join(self.allowed_states)}\n"
             f"Allowed state-to-move mapping: {state_moves}\n"
             f"Allowed move rules: {json.dumps(move_rules, ensure_ascii=False)}\n"
             f"Previous disclosure level: {self.previous_disclosure_level or 'NONE'}\n"
             f"Allowed disclosure levels this turn: {', '.join(self.allowed_disclosure_levels)}\n"
-            f"Prompt evidence ceiling: {self.prompt_disclosure_ceiling or 'NONE'}\n"
+            f"Maximum solution-assistance level allowed this turn: {self.prompt_disclosure_ceiling or 'NONE'}\n"
             f"Previous attempts in state: {self.previous_attempts_in_state}\n"
             f"Next unresolved target for transition only: {json.dumps(next_target_payload, ensure_ascii=False)}\n"
             "Required behavior: if no learner message exists yet, use learner_progress=not_assessed and D0. Otherwise, "
             "first assess the learner's latest message as no_progress, partial_progress, clear_progress, or resolved. "
             "Then choose exactly one disclosure level from the allowed list and briefly "
-            "record the reason in disclosure_reason. Increase support when the learner shows little progress, keep it "
+            "record the solution assistance chosen and why in disclosure_reason, not the amount of scene-setting or prose. "
+            "Increase support when the learner shows little progress, keep it "
             "stable for partial progress, and reduce it when the learner demonstrates more independent reasoning. "
             "Do not change disclosure by more than one level. Choose exactly one allowed response state and perform "
             "one EBL action for the current error. An action may be expressed "
@@ -381,8 +411,8 @@ class InteractionRuntime:
             "and disclosure level unchanged, use learner_progress=no_progress, and do not treat the off-topic message as "
             "another failed scaffold attempt. Exception: after a final answer was requested, close with verified "
             "feedback even if that reply is off topic, without answering the unrelated request. "
-            "When evidence_ids is empty, use only event_context or task_source_text as contextual evidence and do "
-            "not invent a source ID or quotation.\n"
+            "When evidence_ids is empty, do not invent a source ID, quotation, or retrieval claim. Reliable contextual "
+            "knowledge remains available under the same solution-assistance and identity boundaries.\n"
             f"{terminal_instruction}"
         )
 

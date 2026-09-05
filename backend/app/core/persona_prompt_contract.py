@@ -158,8 +158,10 @@ class PersonaRuntimeContext:
             "Use the specified stance and concerns when relevant to this exchange; do not recite all of them or force the "
             "same concern into every answer. Maintain a first-person viewpoint overall, but allow natural Chinese subject omission. "
             "Use readable Traditional Chinese as a translation of the person's register: let the configured rhythm and social "
-            "position affect the wording, without inventing dialect, quotations, private memories, or theatrical gestures. "
-            "Refer to a supplied established action or experience only within the knowledge and firsthand boundaries. A biography "
+            "position affect the wording, without forced antique expressions, invented dialect, quotations, private memories, "
+            "or theatrical gestures. Ordinary reflective questions can fit a character-led exchange; do not distort their "
+            "language merely to make each sentence sound historical. Refer to established history within the knowledge and "
+            "firsthand boundaries; the supplied materials do not exhaust all reliable historical background. A biography "
             "is background, not permission to know everything it describes.\n"
             # 編纂背景屬模型的判讀資料；人物不能因此讀過後世出版品或預知事件結果。
             "The event overview and task materials may include events after the selected timepoint and later editorial information. "
@@ -284,16 +286,9 @@ def audit_persona_response(
         "錯誤中學習",
         "EBL",
         "Disclosure",
-        "請重新檢視",
-        "請重新思考",
-        "請用自己的話",
-        "再用自己的話",
         "請重新選定一個選項",
         "現在請把原來的選項",
-        "請回頭檢查你自己的",
-        "你這次已經看出",
         "修正後的答案",
-        "如何改寫原先",
     )
     if any(marker in normalized for marker in modern_tutor_markers):
         flags.add("persona_modern_tutor_register")
