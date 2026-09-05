@@ -109,6 +109,8 @@ def test_persona_prompt_requires_unknown_future_people_to_stay_unknown():
 
     assert "silently check whether it could be known before the knowledge cutoff" in prompt
     assert "do not explain it with modern knowledge" in prompt
+    assert "express ordinary uncertainty or unfamiliarity" in prompt
+    assert "Do not explain a knowledge cutoff" in prompt
 
 
 def test_persona_prompt_establishes_scene_once_and_keeps_facts_silent_afterward():
