@@ -5,7 +5,6 @@ from app.core.interaction_contract import (
     INTERACTION_POLICY_VERSION,
     build_interaction_runtime,
     enforce_interaction_response,
-    initial_greeting_metadata,
     resolve_interaction_metadata,
 )
 from app.core.historical_ebl_policy import HISTORICAL_EBL_POLICY_VERSION
@@ -21,6 +20,20 @@ def _condition(code: str) -> ExperimentCondition:
         roleplay_enabled=definition.roleplay_enabled,
         agent_mode=definition.agent_mode,
         response_policy=definition.response_policy,
+    )
+
+
+def _opening_metadata(condition, attempt, response):
+    # 測試的開場狀態由 fixture 明確提供；正式開場仍由 LLM 產生結構化欄位。
+    return resolve_interaction_metadata(
+        build_interaction_runtime(condition, attempt, []),
+        {
+            "dialogue_state": "NOTICE_ERROR",
+            "dialogue_move": "error_awareness_prompt",
+            "disclosure_level": "D0",
+            "learner_revision_status": "not_yet",
+        },
+        response,
     )
 
 
@@ -168,7 +181,7 @@ def test_ebl_cells_share_the_same_state_contract():
     metadata_by_code = {}
     for code in ("02", "04"):
         condition = _condition(code)
-        greeting_metadata = initial_greeting_metadata(
+        greeting_metadata = _opening_metadata(
             condition,
             _attempt(),
             "你原本是根據什麼理由作答？",
@@ -252,7 +265,7 @@ def test_ebl_off_topic_redirect_preserves_state_disclosure_and_attempt_count():
 
 def test_invalid_ebl_transition_is_blocked_and_flagged():
     condition = _condition("02")
-    greeting_metadata = initial_greeting_metadata(
+    greeting_metadata = _opening_metadata(
         condition,
         _attempt(),
         "你原本是根據什麼理由作答？",
@@ -979,23 +992,27 @@ def test_same_ebl_state_accepts_model_selected_adjacent_disclosure_level():
         assert enforced.metadata["disclosure_reason"] == "依受測者本回合的推理完整度調整。"
 
 
-def test_first_learner_reply_may_choose_d0_or_d1_only():
+@pytest.mark.parametrize("legacy_metadata", [False, True])
+def test_first_learner_reply_may_choose_d0_or_d1_only(legacy_metadata):
     condition = _condition("02")
     greeting = ChatMessage(
         conversation_id="conversation-1",
         speaker_type="assistant",
         speaker_name="AI Tutor",
         content="你原本是根據什麼理由作答？",
-        metadata=initial_greeting_metadata(
+        metadata=_opening_metadata(
             condition,
             _attempt(),
             "你原本是根據什麼理由作答？",
         ),
     )
+    if legacy_metadata:
+        # 舊對話仍能恢復，但新的 completion schema 不再要求舊欄位。
+        greeting.metadata.pop("disclosure_level")
+        greeting.metadata["scaffold_level"] = "L0"
     runtime = build_interaction_runtime(condition, _attempt(), [greeting])
 
     assert runtime.allowed_disclosure_levels == ("D0", "D1")
-    assert runtime.source_content_available is True
 
     enforced = enforce_interaction_response(
         runtime,
@@ -1019,7 +1036,6 @@ def test_initial_ebl_prompt_allows_context_but_withholds_task_conclusion():
     prompt = runtime.prompt_block()
 
     assert runtime.prompt_disclosure_ceiling == "D0"
-    assert runtime.source_content_available is True
     assert "第三等級反對每一等級各一票" in prompt
     assert "按人數" in prompt
     assert "Private evaluation context" in prompt

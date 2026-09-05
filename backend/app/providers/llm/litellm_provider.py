@@ -471,13 +471,6 @@ class LiteLLMProvider:
         llm_metadata: dict | None = None,
     ) -> ChatGenerationResult:
         """Map the one structured completion schema used by opening and chat."""
-        legacy_disclosure = {
-            "L0": "D0",
-            "L1": "D1",
-            "L2": "D2",
-            "L3": "D3",
-            "L4": "D4",
-        }.get(payload.scaffold_level)
         annotations = [
             Annotation(
                 text=str(item.get("text", event.canonical_name)),
@@ -505,7 +498,7 @@ class LiteLLMProvider:
             interaction_metadata={
                 "dialogue_state": payload.dialogue_state,
                 "dialogue_move": payload.dialogue_move,
-                "disclosure_level": payload.disclosure_level or legacy_disclosure,
+                "disclosure_level": payload.disclosure_level,
                 "learner_progress": payload.learner_progress,
                 "disclosure_reason": payload.disclosure_reason,
                 "learner_revision_status": payload.learner_revision_status,

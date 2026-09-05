@@ -302,7 +302,6 @@ def _isolated_settings(base: Settings, spec: ModelSpec) -> Settings:
     return base.model_copy(
         update={
             "llm_model": spec.model,
-            "llm_fallback_models": [],
             "llm_api_base": None,
             "llm_api_key": None,
             "llm_max_output_tokens": 4096,

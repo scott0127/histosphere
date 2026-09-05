@@ -93,11 +93,6 @@ def _default_llm_model() -> str:
     return "gemini/gemini-3.5-flash-lite"
 
 
-def _default_fallback_models(_primary_model: str) -> list[str]:
-    """正式實驗固定單一模型；保留欄位相容性但永遠不建立 fallback。"""
-    return []
-
-
 class Settings(BaseModel):
     """全域應用設定，透過 Pydantic BaseModel 提供型別驗證。
 
@@ -121,7 +116,6 @@ class Settings(BaseModel):
         admin_key: Admin API 的 x-admin-key 驗證金鑰。
         llm_provider: LLM 呼叫層提供者（預設 ``"litellm"``）。
         llm_model: 主要 LLM 模型名稱（LiteLLM 格式）。
-        llm_fallback_models: 舊設定相容欄位；正式 runtime 永遠為空。
         llm_api_base: 自訂 LLM API base URL（可選）。
         llm_api_key: 自訂 LLM API key（可選）。
         llm_temperature: LLM 生成溫度。
@@ -154,7 +148,6 @@ class Settings(BaseModel):
     admin_key: str = ""
     llm_provider: str = "litellm"
     llm_model: str = "gemini/gemini-3.5-flash-lite"
-    llm_fallback_models: list[str] = Field(default_factory=list)
     llm_api_base: str | None = None
     llm_api_key: str | None = None
     llm_temperature: float = 0.3
@@ -252,7 +245,6 @@ def get_settings() -> Settings:
         admin_key=admin_key,
         llm_provider=os.getenv("LLM_PROVIDER", "litellm"),
         llm_model=llm_model,
-        llm_fallback_models=_default_fallback_models(llm_model),
         llm_api_base=os.getenv("LLM_API_BASE"),
         llm_api_key=os.getenv("LLM_API_KEY"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.3")),

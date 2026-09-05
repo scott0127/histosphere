@@ -407,7 +407,7 @@ class LLMJsonRunner:
         """只建立設定中的單一 LLM endpoint。
 
         正式受測期間不能因 provider 狀態改變而讓不同受測者使用不同模型，
-        因此 ``llm_fallback_models`` 與其他已設定 API key 不參與 runtime。
+        因此其他已設定的 API key 不會被用來建立備援模型。
 
         Returns:
             list[LLMCallCandidate]: 僅包含鎖定模型的單元素清單。

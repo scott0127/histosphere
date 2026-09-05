@@ -234,12 +234,6 @@ class InteractionRuntime:
         allowed = self.allowed_disclosure_levels
         return allowed[-1] if allowed else None
 
-    @property
-    def source_content_available(self) -> bool:
-        """模型可讀取內部判斷資料；Disclosure 只限制受測者實際看見的內容。"""
-
-        return self.target is not None
-
     def prompt_block(self) -> str:
         target = self.target
         source_text = target.source_text if target else None
@@ -1179,32 +1173,3 @@ def enforce_interaction_response(
         fallback_applied=False,
         retry_required=retry_required,
     )
-
-
-def enforce_initial_greeting(
-    condition: Any,
-    task_attempt: Any,
-    greeting: str,
-) -> EnforcedInteractionResponse:
-    """Enforce the first AI turn with the same contract as later chat turns."""
-    runtime = build_interaction_runtime(condition, task_attempt, [])
-    raw: dict[str, Any]
-    if runtime.interaction_mode == "standard_chat":
-        raw = {
-            "dialogue_state": "STANDARD_CHAT",
-            "dialogue_move": "natural_response",
-            "learner_revision_status": "not_applicable",
-        }
-    else:
-        raw = {
-            "dialogue_state": EBL_INITIAL_STATE if runtime.target else "RESOLVED",
-            "dialogue_move": DIALOGUE_MOVE_BY_STATE[EBL_INITIAL_STATE] if runtime.target else "resolution",
-            "disclosure_level": "D0",
-            "learner_revision_status": "not_yet" if runtime.target else "revised",
-        }
-    return enforce_interaction_response(runtime, raw, greeting)
-
-
-def initial_greeting_metadata(condition: Any, task_attempt: Any, greeting: str) -> dict[str, Any]:
-    """Return enforced first-turn metadata for compatibility callers."""
-    return enforce_initial_greeting(condition, task_attempt, greeting).metadata

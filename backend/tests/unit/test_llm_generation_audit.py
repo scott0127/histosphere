@@ -50,11 +50,14 @@ def test_chat_structured_output_preserves_off_topic_redirect_metadata() -> None:
         ChatOutputPayload(
             response="讓我們回到目前的歷史事件。",
             off_topic_redirect=True,
+            disclosure_level="D1",
         ),
         Event(canonical_name="法國大革命"),
     )
 
     assert result.interaction_metadata["off_topic_redirect"] is True
+    assert result.interaction_metadata["disclosure_level"] == "D1"
+    assert "scaffold_level" not in ChatOutputPayload.model_json_schema()["properties"]
 
 
 def test_chat_structured_output_preserves_resolution_criteria() -> None:
@@ -79,7 +82,6 @@ def test_json_runner_audits_initial_and_repair_schema_failures(monkeypatch, tmp_
     runner = LLMJsonRunner(
         Settings(
             llm_model="gemini/gemini-3.6-flash",
-            llm_fallback_models=[],
             gemini_api_key="test-key",
         )
     )
@@ -290,7 +292,6 @@ def test_runtime_locks_the_configured_model_without_provider_fallback() -> None:
     runner = LLMJsonRunner(
         Settings(
             llm_model="gemini/gemini-3.6-flash",
-            llm_fallback_models=["nvidia/backup-model", "cohere/backup-model"],
             gemini_api_key="gemini-key",
             nvidia_api_key="nvidia-key",
             cohere_api_key="cohere-key",
@@ -308,7 +309,6 @@ def test_json_runner_retries_transient_failure_on_same_model_and_records_metadat
     runner = LLMJsonRunner(
         Settings(
             llm_model="gemini/gemini-3.6-flash",
-            llm_fallback_models=["nvidia/backup-model"],
             gemini_api_key="gemini-key",
             nvidia_api_key="nvidia-key",
         )
