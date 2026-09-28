@@ -172,9 +172,49 @@ function Get-ListeningProcessIds {
   )
 }
 
+function Get-HttpListeningProcessIds {
+  param([int]$Port)
+
+  # HTTP.sys owns the socket as PID 4; the request queue identifies the real app.
+  $StateLines = & netsh.exe http show servicestate view=requestq verbose=yes
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not identify the HTTP.sys application on port $Port. No system processes were stopped."
+  }
+
+  $OwnerIds = @()
+  # Each request queue starts with an unindented header. Keep its process list
+  # and registered URLs together, without relying on the localized header text.
+  foreach ($Queue in (($StateLines -join "`n") -split '(?m)(?=^\S)')) {
+    if ($Queue -notmatch "(?im)^\s+https?://(?:\[[^\]]+\]|[^/:\s]+):${Port}(?:/|\s|$)") {
+      continue
+    }
+    foreach ($Match in [regex]::Matches($Queue, '(?m)^\s+ID:\s+(\d+),')) {
+      $OwnerId = [int]$Match.Groups[1].Value
+      if ($OwnerId -gt 4) {
+        $OwnerIds += $OwnerId
+      }
+    }
+  }
+  return @($OwnerIds | Select-Object -Unique)
+}
+
 function Stop-ProcessTree {
   param([int]$ProcessId)
   if ($ProcessId -eq $PID) {
+    return
+  }
+
+  # Guard before walking descendants: PID 4 is the parent of critical Windows processes.
+  if ($ProcessId -le 4) {
+    Write-Warning "Skipping Windows system PID $ProcessId; it must not be terminated."
+    return
+  }
+  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if (-not $Process) {
+    return
+  }
+  if ($Process.SessionId -eq 0) {
+    Write-Warning "Skipping service/system process $ProcessId ($($Process.ProcessName)). Choose another port."
     return
   }
 
@@ -183,11 +223,8 @@ function Stop-ProcessTree {
     Stop-ProcessTree -ProcessId $Child.ProcessId
   }
 
-  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if ($Process) {
-    Write-DevLog "Stopping process $ProcessId ($($Process.ProcessName))"
-    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
-  }
+  Write-DevLog "Stopping process $ProcessId ($($Process.ProcessName))"
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
 function Stop-ListeningProcesses {
@@ -225,6 +262,14 @@ function Assert-PortFree {
     return
   }
   if ($KillExisting) {
+    if ($ProcessIds -contains 4) {
+      $HttpProcessIds = @(Get-HttpListeningProcessIds -Port $Port)
+      if ($HttpProcessIds.Count -eq 0) {
+        throw "Port $Port is held by Windows System (PID 4), but its application could not be identified. No processes were stopped. Inspect 'netsh http show servicestate' and 'netsh interface portproxy show all'."
+      }
+      Write-DevLog "Port $Port uses HTTP.sys; releasing application PID(s): $($HttpProcessIds -join ', ') instead of Windows System."
+      $ProcessIds = @(@($ProcessIds | Where-Object { $_ -ne 4 }) + $HttpProcessIds | Select-Object -Unique)
+    }
     Write-Status "Port $Port" $false "occupied by PID(s): $($ProcessIds -join ', '); killing because -KillExisting was set"
     foreach ($ProcessId in $ProcessIds) {
       Stop-ProcessTree -ProcessId $ProcessId

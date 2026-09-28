@@ -25,9 +25,11 @@ DialogueState = Literal[
     "RESOLVED",
 ]
 
-INTERACTION_POLICY_VERSION = "2x2-interaction-v15-feedback-restatement"
+INTERACTION_POLICY_VERSION = "2x2-interaction-v17-shared-question-progress"
 COMPATIBLE_INTERACTION_POLICY_VERSIONS = {
     INTERACTION_POLICY_VERSION,
+    "2x2-interaction-v16-reviewed-transition",
+    "2x2-interaction-v15-feedback-restatement",
     "2x2-interaction-v14-answer-observation",
     "2x2-interaction-v13-semantic-observation",
     "2x2-interaction-v12-disclosure-audit",
@@ -124,7 +126,6 @@ INTERACTION_RETRY_FLAGS = frozenset(
         "excessive_scaffold_questions",
         "overlong_scaffold_response",
         "incomplete_resolution_criteria",
-        "next_target_transition_missing",
         "invalid_completion_status",
     }
 )
@@ -155,6 +156,7 @@ class InteractionTarget:
     # 僅用於讀取舊 judgement_payload；新版 Judge 不再產生此欄位。
     reasoning_issue: str | None = None
     reasoning_feedback: str | None = None
+    answer_feedback: str | None = None
     reasoning_criteria: Any = None
 
     def as_metadata(self) -> dict[str, Any]:
@@ -250,6 +252,7 @@ class InteractionRuntime:
             "reasoning_correct": target.reasoning_correct if target else None,
             "historical_thinking_tags": list(target.historical_thinking_tags) if target else [],
             "reasoning_feedback": target.reasoning_feedback if target else None,
+            "answer_feedback": target.answer_feedback if target else None,
             "reasoning_criteria": target.reasoning_criteria if target else None,
         }
         shared = (
@@ -258,11 +261,11 @@ class InteractionRuntime:
             f"Interaction mode: {self.interaction_mode}\n"
             f"Current target position: {self.target_sequence_number or 0}/{self.target_count}\n"
             f"Current target: {json.dumps(target_payload, ensure_ascii=False)}\n"
-            "Private evaluation context: task_source_text, expected_answer, reasoning_criteria, reasoning_feedback, "
+            "Private evaluation context: task_source_text, expected_answer, reasoning_criteria, reasoning_feedback, answer_feedback, "
             "and evidence_ids are private references for assessing progress and selecting appropriate help. "
-            "Knowing these references does not authorize revealing the complete correction; every response must "
-            "follow the interaction mode and, during scaffolding, the selected Disclosure level. "
-            "Terminal feedback authorized below is the only pre-transition exception. "
+            "Knowing these references alone does not authorize an unsolicited task-answer summary; follow the "
+            "interaction mode. Standard Chat may answer the learner's actual question directly. During EBL "
+            "scaffolding, follow the selected Disclosure level and authorized terminal feedback. "
             "If error_source=researcher_authored_fallback, this is another person's claim, not a learner mistake."
         )
         if target and target.reasoning_correct is not None:
@@ -270,7 +273,8 @@ class InteractionRuntime:
                 "\nThe submitted learner_rationale is the learner's original wording, not an inferred belief. "
                 "An item is correct only when answer_correct and reasoning_correct are both true. "
                 "When the answer is right but the reasoning is not, focus on the reasoning gap; do not describe "
-                "the answer itself as wrong. Use reasoning_feedback to locate the concrete factual or inferential "
+                "the answer itself as wrong. Use answer_feedback for a cloze answer mismatch and reasoning_feedback for "
+                "a reasoning gap to locate the concrete factual or inferential "
                 "deficiency, but do not quote it to the learner or disclose more than the current Disclosure level. "
                 "An inadequate rationale is not automatically proof of a factual misconception. Historical Thinking "
                 "tags describe what the rationale engages and are not a score or an instruction to teach that label. "
@@ -278,14 +282,39 @@ class InteractionRuntime:
                 "states, Disclosure progression, or formal RESOLVED criteria."
             )
         if self.interaction_mode == "standard_chat":
+            next_target = (
+                {"question_id": self.next_target.question_id, "prompt": self.next_target.prompt,
+                 "learner_answer": self.next_target.learner_answer,
+                 "learner_rationale": self.next_target.learner_rationale}
+                if self.next_target else None
+            )
             return (
                 f"{shared}\n"
                 "Required behavior: conduct a natural historical conversation. Answer the learner's actual request and "
                 "ask a clarification or follow-up when useful. Do not force a correction, Socratic sequence, evidence "
-                "exercise, revision, or reflection.\n"
-                "Structured interaction fields must be dialogue_state=STANDARD_CHAT, "
-                "dialogue_move=natural_response, completion_status=continue, disclosure_level=null, and all three "
-                "resolution_* fields=false."
+                "exercise, revision, or reflection. The current question and completion tracking are shared workflow, "
+                "not EBL scaffolding. Discuss this item's historical claim and the learner's original reason naturally; "
+                "do not withhold an answer or use graduated hints. Related historical questions may be answered without "
+                "forcing the conversation back on every turn.\n"
+                "Privately assess the learner's own statements using the same completion criteria in all conditions: "
+                "(1) resolution_error_recognized: recognizes what in the original answer or rationale needs changing; "
+                "(2) resolution_error_reflected: explains why; (3) resolution_self_corrected: supplies a revised answer "
+                "AND rationale satisfying the current question's existing criteria. Evidence can accumulate across "
+                "learner turns on this question. A sound revised explanation may demonstrate recognition and reflection "
+                "without literally saying 'I was wrong'. Do not add a citation, named skill or extra task requirement. "
+                "A bare option, 'I understand', agreement, a request to move on, or an AI-authored correction alone does "
+                "not establish learner correction. Do not use a reply about another question to resolve this one. "
+                "This records correction demonstrated in dialogue, not proof of independent mastery.\n"
+                "Keep dialogue_state=STANDARD_CHAT, dialogue_move=natural_response and disclosure_level=null. "
+                "Set completion_status=resolved and learner_progress=resolved only when a current target exists and "
+                "all three criteria are demonstrated. Otherwise keep completion_status=continue and report the "
+                "actual learner progress; use not_assessed before any learner reply or when no target exists. "
+                "Opening turns and off-topic redirects must set all three resolution_* fields=false. "
+                "When resolved, briefly acknowledge the corrected idea and introduce the next target's historical "
+                "issue naturally in the same reply. Do not reopen completed errors or dump the next answer unasked. "
+                "If no target remains, continue event discussion until the timer ends; do not invent errors or "
+                "claim that the timed activity has ended. Do not announce internal completion criteria to the learner.\n"
+                f"Next target (only after closing this one): {json.dumps(next_target, ensure_ascii=False)}"
             )
 
         state_moves = ", ".join(
@@ -341,6 +370,12 @@ class InteractionRuntime:
                 "Before authorized corrective feedback, withhold the correct answer unless the learner has already "
                 "self-corrected and met the EBL resolution criteria. Do not request assisted closure early."
             )
+        transition_instruction = (
+            "\nWhen an authorized closure has a next target, introduce that specific target's historical issue "
+            "or original learner claim so the learner knows what is now being discussed. Use natural wording; "
+            "no fixed connector or question-number formula is required. A vague promise "
+            "to continue later or an invitation to reconsider the same question is not a transition.\n"
+        )
         persona_turn_policy = (
             "\n04 conversational priority: the historical person leads; the following EBL actions describe "
             "learning support, not the whole content of the reply. Develop a substantive historical point through "
@@ -392,7 +427,7 @@ class InteractionRuntime:
                 "continue historical conversation without claiming the timed stage ended.\n"
                 "Unrelated requests use off_topic_redirect=true with no substantive answer; preserve state and "
                 "Disclosure and do not count failure. A pending terminal correction still takes precedence.\n"
-                f"{terminal_instruction}{persona_turn_policy}"
+                f"{terminal_instruction}{transition_instruction}{persona_turn_policy}"
             )
         return (
             f"{shared}\n"
@@ -450,7 +485,7 @@ class InteractionRuntime:
             "feedback even if that reply is off topic, without answering the unrelated request. "
             "When evidence_ids is empty, do not invent a source ID, quotation, or retrieval claim. Reliable contextual "
             "knowledge remains available under the same solution-assistance and identity boundaries.\n"
-            f"{terminal_instruction}{persona_turn_policy}"
+            f"{terminal_instruction}{transition_instruction}{persona_turn_policy}"
         )
 
 
@@ -605,6 +640,7 @@ def _target_from_result(result: dict[str, Any]) -> InteractionTarget:
         ),
         reasoning_issue=result.get("reasoning_issue"),
         reasoning_feedback=result.get("reasoning_feedback"),
+        answer_feedback=result.get("answer_feedback"),
         reasoning_criteria=result.get("reasoning_criteria"),
     )
 
@@ -690,30 +726,26 @@ def build_interaction_runtime(
 ) -> InteractionRuntime:
     """Build the backend-owned policy input for one completion."""
     interaction_mode: InteractionMode = "scaffold" if condition.ebl_enabled else "standard_chat"
+    target = select_interaction_target(task_attempt, messages)
+    next_target, target_sequence_number, target_count = _target_queue_context(task_attempt, messages, target)
+    previous_metadata = _last_interaction_metadata(messages)
     if interaction_mode == "standard_chat":
         return InteractionRuntime(
             condition_code=condition_code_for_key(condition.condition_key),
             condition_key=condition.condition_key,
             interaction_mode=interaction_mode,
             roleplay_enabled=condition.roleplay_enabled,
-            target=None,
-            next_target=None,
-            target_sequence_number=None,
-            target_count=0,
-            previous_state=None,
+            target=target,
+            next_target=next_target,
+            target_sequence_number=target_sequence_number,
+            target_count=target_count,
+            previous_state="STANDARD_CHAT" if previous_metadata else None,
             allowed_states=("STANDARD_CHAT",),
             previous_disclosure_level=None,
             previous_attempts_in_state=0,
             previous_completion_status=None,
         )
 
-    target = select_interaction_target(task_attempt, messages)
-    next_target, target_sequence_number, target_count = _target_queue_context(
-        task_attempt,
-        messages,
-        target,
-    )
-    previous_metadata = _last_interaction_metadata(messages)
     last_target_id = previous_metadata.get("target_question_id")
     target_changed = bool(
         target
@@ -759,6 +791,9 @@ def build_interaction_runtime(
         allowed_states = ("SELF_CORRECT", "RESOLVED")
     elif previous_state:
         allowed_states = EBL_STATE_TRANSITIONS[previous_state]
+    elif messages:
+        # 已換到新題且 learner 已回覆時，可直接展現完整修正，不強迫多聊開場一輪。
+        allowed_states = EBL_STATE_TRANSITIONS[EBL_INITIAL_STATE]
     else:
         allowed_states = (EBL_INITIAL_STATE,)
     return InteractionRuntime(
@@ -803,9 +838,16 @@ def resolve_interaction_metadata(
     runtime: InteractionRuntime,
     provider_metadata: dict[str, Any] | None,
     response_text: str,
+    *,
+    is_opening: bool = False,
 ) -> dict[str, Any]:
     """Validate model-proposed metadata against the backend-owned condition contract."""
-    raw = provider_metadata if isinstance(provider_metadata, dict) else {}
+    raw = dict(provider_metadata) if isinstance(provider_metadata, dict) else {}
+    if is_opening:
+        # AI 開場尚無 learner 修正證據；即使模型自報成功也不能產生完成紀錄。
+        raw.update(resolution_error_recognized=False, resolution_error_reflected=False,
+                   resolution_self_corrected=False, learner_progress="not_assessed",
+                   completion_status="continue")
     provider_flags = sorted(
         {
             str(item)
@@ -835,24 +877,45 @@ def resolve_interaction_metadata(
     )
 
     if runtime.interaction_mode == "standard_chat":
+        # 四組共用完成判準；一般對話只追蹤題目，不啟用 EBL 狀態或提示階梯。
+        may_assess = runtime.target is not None and not is_opening and not off_topic_redirect
+        criteria = {
+            key: may_assess and raw.get(key) is True
+            for key in ("resolution_error_recognized", "resolution_error_reflected", "resolution_self_corrected")
+        }
+        resolved = all(criteria.values())
+        if may_assess and raw.get("completion_status") in {"resolved", "complete"} and not resolved:
+            flags.add("incomplete_resolution_criteria")
+        progress = raw.get("learner_progress")
+        if not may_assess:
+            progress = "not_assessed"
+        elif resolved:
+            progress = "resolved"
+        elif progress not in {"not_assessed", "no_progress", "partial_progress", "clear_progress"}:
+            progress = "partial_progress" if any(criteria.values()) else "no_progress"
         return {
             "interaction_policy_version": INTERACTION_POLICY_VERSION,
             "condition_code": runtime.condition_code,
             "interaction_mode": "standard_chat",
             "dialogue_state": "STANDARD_CHAT",
             "dialogue_move": "natural_response",
+            "primary_ebl_move": "none",
             "disclosure_level": None,
+            "allowed_disclosure_levels": [],
             "attempts_in_state": 0,
-            "learner_revision_status": raw.get("learner_revision_status") or "not_applicable",
-            "completion_status": "continue",
-            "learner_progress": "not_assessed",
+            "learner_revision_status": (
+                "revised" if resolved else "not_applicable" if runtime.target is None
+                else "partial" if any(criteria.values()) else "not_yet"
+            ),
+            "completion_status": "resolved" if resolved else "continue",
+            "learner_progress": progress,
             "disclosure_reason": None,
             "off_topic_redirect": off_topic_redirect,
-            "resolution_error_recognized": False,
-            "resolution_error_reflected": False,
-            "resolution_self_corrected": False,
-            "resolution_criteria_met": False,
-            "resolution_outcome": "not_applicable",
+            **criteria,
+            "resolution_criteria_met": resolved,
+            "resolution_outcome": "learner_resolved" if resolved else "in_progress" if runtime.target else "no_target",
+            "next_target_transition_required": bool(resolved and runtime.next_target),
+            "next_target_started": False,
             "fidelity_flags": sorted(flags),
             "provider_fidelity_flags": provider_flags,
             **target_metadata,
@@ -964,15 +1027,10 @@ def resolve_interaction_metadata(
         resolution_outcome = "in_progress"
     if not off_topic_redirect and raw.get("completion_status") not in {None, completion_status}:
         flags.add("invalid_completion_status")
-    next_target_started = bool(
+    next_target_transition_required = bool(
         runtime.next_target
         and (restatement_completed or completion_status == "resolved")
     )
-    if (
-        next_target_started
-        and not any(marker in response_text for marker in ("下一", "接著", "再看", "換到"))
-    ):
-        flags.add("next_target_transition_missing")
     revision_status = raw.get("learner_revision_status")
     if corrective_feedback_delivered or restatement_completed:
         revision_status = "unresolved"
@@ -1028,7 +1086,10 @@ def resolve_interaction_metadata(
         "resolution_outcome": resolution_outcome,
         # 舊欄位保留相容；未有獨立語意判定時不可宣稱已確認答案有無揭露。
         "corrective_feedback_revealed_answer": None if corrective_feedback_delivered else False,
-        "next_target_started": next_target_started,
+        "next_target_transition_required": next_target_transition_required,
+        # 前題完成不等於已把下一題說清楚；送出前的獨立語意審查才可確認後者。
+        # 未啟用審查時，下輪仍選取下一題，但以新題開場，不假設學習者已收到銜接。
+        "next_target_started": False,
         "resolution_error_recognized": resolution_error_recognized,
         "resolution_error_reflected": resolution_error_reflected,
         "resolution_self_corrected": resolution_self_corrected,
@@ -1043,9 +1104,11 @@ def enforce_interaction_response(
     runtime: InteractionRuntime,
     provider_metadata: dict[str, Any] | None,
     response_text: str,
+    *,
+    is_opening: bool = False,
 ) -> EnforcedInteractionResponse:
     """Validate a candidate and require regeneration instead of writing visible fallback prose."""
-    metadata = resolve_interaction_metadata(runtime, provider_metadata, response_text)
+    metadata = resolve_interaction_metadata(runtime, provider_metadata, response_text, is_opening=is_opening)
     flags = set(metadata["fidelity_flags"])
     metadata["fidelity_flags"] = sorted(flags)
     retry_required = bool(flags.intersection(INTERACTION_RETRY_FLAGS))

@@ -165,6 +165,10 @@ export const useConversationSession = (conversationId: Ref<string> | ComputedRef
     history.value.push(response.message);
     history.value.sort((left, right) => left.sequence_index - right.sequence_index);
     if (response.dynamic_context) dynamicContext.value = response.dynamic_context;
+    // 只在後端確認回覆完成後更新題目；串流片段與失敗重試不自行推進。
+    if (chatState.value && 'learning_focus' in response) {
+      chatState.value = { ...chatState.value, learning_focus: response.learning_focus };
+    }
     streamStatus.value = '';
   };
 

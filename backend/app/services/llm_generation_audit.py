@@ -20,11 +20,16 @@ from uuid import uuid4
 _AUDIT_LOCK = Lock()
 
 
-def record_llm_usage(*, api_key: str | None, **record: Any) -> None:
-    """逐次記錄呼叫開始與結果；沒有用量時保留未知，不當成免費。"""
+def llm_usage_path() -> Path:
     path = Path(os.getenv("LLM_USAGE_LOG_PATH", ".dev-logs/llm-usage.jsonl"))
     if not path.is_absolute():
         path = Path(__file__).resolve().parents[3] / path
+    return path
+
+
+def record_llm_usage(*, api_key: str | None, **record: Any) -> None:
+    """逐次記錄呼叫開始與結果；沒有用量時保留未知，不當成免費。"""
+    path = llm_usage_path()
     entry = {
         **record,
         "recorded_at": datetime.now(timezone.utc).isoformat(),

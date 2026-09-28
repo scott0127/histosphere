@@ -21,7 +21,7 @@
       @pointercancel="stopResize"
       @lostpointercapture="resizing = false"
       @keydown="resizeWithKeyboard"
-      @dblclick="share = 38"
+      @dblclick="share = horizontal ? 38 : 32"
     ><span aria-hidden="true" /></div>
     <section id="chat-pane" class="conversation-pane" aria-label="對話">
       <slot />
@@ -33,11 +33,15 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 const container = ref<HTMLElement | null>(null);
-const share = ref(38);
+const share = ref(32);
 const resizing = ref(false);
-const horizontal = ref(true);
+const horizontal = ref(false);
 let media: MediaQueryList | undefined;
-const updateDirection = () => { horizontal.value = Boolean(media?.matches); };
+const updateDirection = () => {
+  const next = Boolean(media?.matches);
+  if (next !== horizontal.value) share.value = next ? 38 : 32;
+  horizontal.value = next;
+};
 const clamp = (value: number) => Math.min(60, Math.max(25, value));
 
 function startResize(event: PointerEvent) {
@@ -65,7 +69,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
   const increase = horizontal.value ? 'ArrowRight' : 'ArrowDown';
   if (![decrease, increase, 'Home', 'End', 'Enter'].includes(event.key)) return;
   event.preventDefault();
-  share.value = event.key === 'Home' ? 25 : event.key === 'End' ? 60 : event.key === 'Enter' ? 38
+  share.value = event.key === 'Home' ? 25 : event.key === 'End' ? 60 : event.key === 'Enter' ? (horizontal.value ? 38 : 32)
     : clamp(share.value + (event.key === increase ? 2 : -2));
 }
 onMounted(() => {
@@ -86,9 +90,62 @@ onBeforeUnmount(() => media?.removeEventListener('change', updateDirection));
 .split-handle:hover span, .split-handle:focus-visible span, .is-resizing .split-handle span { background: var(--admin-coffee); }
 .split-handle:focus-visible { outline: 2px solid var(--admin-coffee); outline-offset: -2px; }
 .is-resizing { user-select: none; }
+
+.chat-workspace .reading-pane,
+.chat-workspace .conversation-pane {
+  border-color: var(--chat-border, var(--admin-border));
+  border-radius: 20px;
+  background: var(--chat-surface, var(--admin-surface));
+  box-shadow: var(--chat-edge, inset 0 1px 0 rgb(255 255 255 / 88%)),
+    var(--chat-shadow, 0 2px 6px rgb(76 57 44 / 3%), 0 10px 24px rgb(76 57 44 / 4%));
+}
+
+.chat-workspace .split-handle {
+  border-radius: 8px;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.chat-workspace .split-handle span {
+  width: 44px;
+  height: 5px;
+  border-radius: 999px;
+  background: #b2a395;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 80%);
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.chat-workspace .split-handle:hover,
+.chat-workspace .split-handle:focus-visible,
+.chat-workspace .is-resizing .split-handle {
+  background: var(--chat-coffee-soft, var(--admin-coffee-soft));
+}
+
+.chat-workspace .split-handle:hover span,
+.chat-workspace .split-handle:focus-visible span,
+.chat-workspace .is-resizing .split-handle span {
+  background: var(--chat-coffee, var(--admin-coffee));
+  box-shadow: 0 0 0 2px rgb(123 93 75 / 8%);
+}
+
+.chat-workspace .split-handle:focus-visible {
+  outline: 2px solid var(--chat-coffee, var(--admin-coffee));
+  outline-offset: -2px;
+}
+
 @media (min-width: 768px) {
   .study-split { flex-direction: row; }
   .split-handle { cursor: col-resize; }
   .split-handle span { width: 4px; height: 36px; }
+  .chat-workspace .split-handle span { width: 5px; height: 44px; }
+}
+
+@media (max-width: 767px) {
+  .chat-workspace .reading-pane,
+  .chat-workspace .conversation-pane { border-radius: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-workspace .split-handle,
+  .chat-workspace .split-handle span { transition: none; }
 }
 </style>

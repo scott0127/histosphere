@@ -1,4 +1,8 @@
-"""Shared validation for opening and conversational LLM completions."""
+"""開場與聊天共用的狀態整理，以及人物／內容觀察。
+
+EBL 狀態仍由後端核對；內容旗標是否觸發重生取決於通用驗證開關。
+獨立答案審查使用另一個開關，不能從這裡的觀察結果推論它已停用。
+"""
 
 from __future__ import annotations
 
@@ -36,7 +40,7 @@ INTERNAL_LEAK_MARKERS = (
     "prompt module",
 )
 
-# 答案由背景語意觀察處理；生成模型的自評不具有獨立裁判資格。
+# 答案由獨立語意審查處理（送出前或背景）；以下僅隔離舊自評旗標，不是答案裁判。
 ANSWER_OBSERVATION_FLAGS = frozenset({
     "early_answer_exposure", "next_answer_exposure", "corrective_answer_missing",
     "corrective_feedback_missing",
@@ -60,12 +64,13 @@ def validate_completion_candidate(
     persona_context: PersonaRuntimeContext | None,
     is_opening: bool,
 ) -> CompletionCandidateValidation:
-    """Apply the same interaction and persona checks to every learner-facing turn."""
+    """整理本輪狀態並收集旗標；觀察模式保留模型原文，不代表省略狀態檢查。"""
 
     interaction = enforce_interaction_response(
         runtime,
         generation.interaction_metadata,
         generation.response,
+        is_opening=is_opening,
     )
     metadata = dict(interaction.metadata)
     flags = set(metadata.get("fidelity_flags", []))
@@ -85,6 +90,7 @@ def validate_completion_candidate(
         flags.update(persona_flags)
 
     retry_flags = set()
+    # 後端發現的狀態錯誤與模型自報分開處理；模型說自己洩漏答案不算獨立證據。
     retry_flags.update(set(metadata.get("fidelity_flags", [])) & INTERACTION_RETRY_FLAGS)
     retry_flags.update(
         flag

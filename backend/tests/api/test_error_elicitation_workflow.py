@@ -3,6 +3,7 @@ from copy import deepcopy
 import pytest
 
 from app.core.error_elicitation_contract import ERROR_ELICITATION_JUDGE_CONTRACT_VERSION
+from app.core.interaction_contract import build_interaction_runtime
 from app.models.domain import EventTask
 from app.providers.llm.json_runner import LLMCallMetadata, LLMRunError
 from app.services.task_service import TaskService
@@ -45,7 +46,7 @@ def answers():
 
 def judged():
     return {"judge_contract_version": ERROR_ELICITATION_JUDGE_CONTRACT_VERSION, "question_results": [
-        {"question_id": "q01", "reasoning_correct": True, "reasoning_feedback": "能指出地點依據。", "historical_thinking_tags": ["evidence"]},
+        {"question_id": "q01", "answer_correct": True, "answer_feedback": "指的是材料中的南京。", "reasoning_correct": True, "reasoning_feedback": "能指出地點依據。", "historical_thinking_tags": ["evidence"]},
         {"question_id": "q02", "reasoning_correct": False, "reasoning_feedback": "尚未說明畫作可以提供哪些資料。", "historical_thinking_tags": ["evidence"]},
         {"question_id": "q03", "reasoning_correct": False, "reasoning_feedback": "沒有連結到材料。", "historical_thinking_tags": []},
     ]}
@@ -55,6 +56,7 @@ def judged():
 def test_new_task_draft_submit_and_research_preserve_both_inputs(client, condition):
     initialized = initialize(client, condition)
     response_payload = answers()
+    response_payload["answers"][0]["value"] = "南京城。"
     calls = []
     async def judge(event, task, response):
         calls.append(response)
@@ -78,22 +80,34 @@ def test_new_task_draft_submit_and_research_preserve_both_inputs(client, conditi
     assert results[1]["answer_correct"] is True
     assert results[1]["reasoning_correct"] is False
     assert all("expected_answer" not in row and "reasoning_feedback" not in row for row in results)
+    assert all("answer_feedback" not in row for row in results)
     stored = client.app.state.repository.get_task_attempt(status["attempt"]["id"])
     assert stored.response_payload == response_payload
     assert stored.judgement_payload["question_results"][1]["reasoning_feedback"] == "尚未說明畫作可以提供哪些資料。"
     assert "reasoning_issue_types" not in stored.judgement_payload["question_results"][1]
+    assert stored.judgement_payload["question_results"][0]["learner_answer"] == "南京城。"
+    assert stored.judgement_payload["question_results"][0]["answer_feedback"] == "指的是材料中的南京。"
+    runtime = build_interaction_runtime(
+        client.app.state.repository.get_condition_by_key(condition), stored, [],
+    )
+    assert runtime.target.question_id == "q02"
+    assert runtime.target_count == 2
     research = client.get(f"/api/admin/sessions/{initialized['session_id']}/research", headers=HEADERS).json()
     assert research["attempt"]["judgement_payload"] == stored.judgement_payload
     assert research["material_snapshot"]["hash_verified"] is True
 
 
-@pytest.mark.parametrize("failure", ["timeout", "missing_question"])
+@pytest.mark.parametrize("failure", ["timeout", "missing_question", "missing_cloze_judgement"])
 def test_failed_judge_keeps_inputs_and_retries_same_attempt_without_false_grades(client, failure):
     initialized = initialize(client, "no_ebl_no_roleplay")
     request = {"session_id": initialized["session_id"], "user_id": "participant-001", "response_payload": answers()}
     async def broken_judge(*args):
         if failure == "timeout":
             raise TimeoutError("test")
+        if failure == "missing_cloze_judgement":
+            result = judged()
+            result["question_results"][0].pop("answer_correct")
+            return result
         return {
             "judge_contract_version": ERROR_ELICITATION_JUDGE_CONTRACT_VERSION,
             "question_results": judged()["question_results"][:1],
@@ -117,7 +131,7 @@ def test_failed_judge_keeps_inputs_and_retries_same_attempt_without_false_grades
     assert complete["attempt"]["response_payload"] == request["response_payload"]
 
 
-@pytest.mark.parametrize("retry_path", ["submit", "unchanged_draft", "restart", "answer", "rationale", "task"])
+@pytest.mark.parametrize("retry_path", ["submit", "unchanged_draft", "restart", "answer", "rationale", "task", "judge_version"])
 def test_opening_failure_reuses_only_a_valid_unchanged_judgement(client, retry_path):
     initialized = initialize(client, "no_ebl_no_roleplay")
     state = client.app.state
@@ -159,6 +173,9 @@ def test_opening_failure_reuses_only_a_valid_unchanged_judgement(client, retry_p
         task = state.repository.get_event_task(initialized["task"]["id"])
         task.evaluation_payload["questions"][0]["reasoning_criteria"] = "An amended criterion."
         state.repository.save_event_task(task)
+    elif retry_path == "judge_version":
+        attempt.judgement_payload["judge_contract_version"] = "error_elicitation_judge_v3"
+        state.repository.save_task_attempt(attempt)
     elif retry_path == "unchanged_draft":
         assert client.patch(f"{task_url}/draft", headers=HEADERS, json=request).status_code == 200
     elif retry_path == "restart":
@@ -174,7 +191,7 @@ def test_opening_failure_reuses_only_a_valid_unchanged_judgement(client, retry_p
     if retry_path == "restart":
         complete = client.get(accepted["poll_url"], headers=HEADERS).json()
     assert complete["attempt"]["status"] == "submitted"
-    assert len(judge_calls) == (2 if retry_path in {"answer", "rationale", "task"} else 1)
+    assert len(judge_calls) == (2 if retry_path in {"answer", "rationale", "task", "judge_version"} else 1)
     saved = state.repository.get_task_attempt(accepted["attempt_id"])
     assert saved.response_payload == request["response_payload"]
     assert saved.judgement_payload["llm_call"] == judge_metadata["llm_call"]

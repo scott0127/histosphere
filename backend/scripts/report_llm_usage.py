@@ -3,26 +3,18 @@ import argparse
 from datetime import datetime
 import json
 from pathlib import Path
+import sys
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.services.llm_usage_summary import read_usage_attempts
 
 
 def summarize(path: Path, since: datetime | None = None) -> dict:
-    attempts = {}
-    malformed_lines = 0
-    for line in path.read_text(encoding="utf-8").splitlines() if path.exists() else []:
-        try:
-            row = json.loads(line)
-            attempt_id = row["attempt_id"]
-            stamp = datetime.fromisoformat(row["recorded_at"])
-        except (ValueError, KeyError, TypeError):
-            malformed_lines += 1
-            continue
-        if since and stamp < since:
-            continue
-        # started/result 共用同一 ID；使用最後結果，重複匯入也不再累加。
-        attempts[attempt_id] = row
+    attempts, malformed_lines = read_usage_attempts(path, since)
     groups = {}
-    for row in attempts.values():
-        key = (row["provider"], row["model"], row.get("key_fingerprint"))
+    for row in attempts:
+        key = (row.get("provider", "unknown"), row.get("model", "unknown"), row.get("key_fingerprint"))
         group = groups.setdefault(key, dict(provider=key[0], model=key[1], key_fingerprint=key[2],
             attempts=0, unknown_cost_attempts=0, prompt_tokens=0, completion_tokens=0,
             total_tokens=0, estimated_known_cost_usd=0.0))

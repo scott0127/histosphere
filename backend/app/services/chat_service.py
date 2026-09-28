@@ -1,8 +1,8 @@
 """Chat orchestration service.
 
-本模組是對話流程的核心協調層：讀取 conversation/session/condition，
-決定是否使用 historical persona，組裝 prompt，呼叫 LLM provider，
-最後把 learner 與 AI 回覆都寫入 messages 與 research_logs。
+先核對活動與 Condition，保存學習者訊息，再組裝 Prompt、生成並檢查 AI 回覆。
+同一請求重送時沿用已保存的結果；模型失敗也不會讓學習者剛輸入的文字消失。
+正式對話訊息與研究紀錄分開保存，內部審查草稿不當成新的聊天回合。
 """
 
 import hashlib
@@ -29,6 +29,8 @@ from app.services.llm_generation_audit import record_rejected_generation
 from app.services.rag_pipeline_service import RagPipelineService
 from app.services.session_runtime import expire_session_if_due
 from app.services.answer_delivery_service import deliver_answer
+from app.services.learning_focus import build_learning_focus
+from app.services.response_timing import finish_response_timing, start_response_timing
 
 
 MAX_CHAT_GENERATION_ATTEMPTS = 3
@@ -56,7 +58,8 @@ class ChatService:
         request: ChatRequest,
         on_user_persisted: MessagePersistedCallback | None = None,
     ) -> ChatResponse:
-        """以可重送的 learner operation 執行一次完整聊天回合。"""
+        """用 client_request_id 辨認同一次送出，避免重新連線後重複生成與計費。"""
+        exchange_timing, started_clock = start_response_timing()
         conversation = self.repository.get_conversation(request.conversation_id)
         if not conversation:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -88,7 +91,18 @@ class ChatService:
                 detail="Experiment session is unavailable",
             )
         session = expire_session_if_due(self.repository, session)
-        if session.status in {"completed", "archived"}:
+        session_closed = session.status in {"completed", "archived"}
+        if session_closed:
+            # 到期後只允許取回已完成的同一回合，不重新生成或接受新訊息。
+            saved_operation = self.repository.get_learner_message_by_request(
+                conversation.id, request.client_request_id,
+            ) if request.client_request_id else None
+            if (session.status == "completed" and session.completion_reason == "timer_elapsed"
+                    and saved_operation and saved_operation.content == request.user_message
+                    and self._operation_state(saved_operation) == "completed"):
+                if on_user_persisted:
+                    await on_user_persisted(saved_operation)
+                return self._completed_response(saved_operation)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
         condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
         if not condition:
@@ -143,6 +157,12 @@ class ChatService:
                 for key, value in existing_operation.metadata.items()
                 if key not in {"failure_type", "llm_call"}
             }
+            original_timing = existing_operation.metadata.get("exchange_timing") or {}
+            exchange_timing.update({
+                "original_request_started_at": original_timing.get("original_request_started_at")
+                    or existing_operation.created_at.isoformat(),
+                "attempt_number": int(existing_operation.metadata.get("retry_count", 0)) + 2,
+            })
             user_message = existing_operation.model_copy(
                 update={
                     "operation_status": "processing",
@@ -150,6 +170,7 @@ class ChatService:
                         **retry_metadata,
                         "response_status": "pending",
                         "retry_count": int(existing_operation.metadata.get("retry_count", 0)) + 1,
+                        "exchange_timing": exchange_timing,
                     },
                 }
             )
@@ -173,6 +194,7 @@ class ChatService:
                         "client_request_id": client_request_id,
                         "retry_count": user_message.metadata["retry_count"],
                         "condition_key": condition.condition_key,
+                        "exchange_timing": exchange_timing,
                     },
                 )
             )
@@ -203,6 +225,7 @@ class ChatService:
                     "response_status": "pending",
                     "persona_selection": "event_fixed",
                     "client_request_id": client_request_id,
+                    "exchange_timing": exchange_timing,
                 },
             )
             try:
@@ -266,6 +289,12 @@ class ChatService:
             # V1 的 RAG 目前是空實作，但保留同一個介面讓未來接 vector retrieval。
             rag_sources = self.rag_pipeline.retrieve(event.id, request.user_message)
             interaction_runtime = build_interaction_runtime(condition, task_attempt, prior_messages)
+            learning_target_question_id = (
+                interaction_runtime.target.question_id if interaction_runtime.target else None
+            )
+            user_message = user_message.model_copy(update={"metadata": {
+                **user_message.metadata, "learning_target_question_id": learning_target_question_id,
+            }})
             modules = self.prompt_service.assemble_chat_modules(
                 event=event,
                 persona=selected,
@@ -297,13 +326,19 @@ class ChatService:
                 modules = []
             if system_fallback:
                 assistant_name = "系統提示"
-            # 模型等待期間活動可能被刪除或結束；不可把舊回覆寫回已關閉活動。
+            # 倒數前已接受的回合可於到期後送達；刪除、封存或其他結束原因仍停止寫入。
             current_session = self.repository.get_session(session.id)
             if (not self.repository.get_conversation(conversation.id)
                     or not self.repository.get_message(user_message.id) or not current_session):
                 raise HTTPException(status_code=409, detail="Chat activity no longer exists")
             current_session = expire_session_if_due(self.repository, current_session)
-            if current_session.status in {"completed", "archived"}:
+            delivered_after_deadline = (
+                current_session.status == "completed"
+                and current_session.completion_reason == "timer_elapsed"
+            )
+            if current_session.status == "archived" or (
+                current_session.status == "completed" and not delivered_after_deadline
+            ):
                 raise HTTPException(status_code=409, detail="Experiment session is already closed")
             # role-play 條件使用 persona speaker；非 role-play 條件使用 generic assistant。
             prompt_hash = hashlib.sha256(final_prompt.encode("utf-8")).hexdigest()
@@ -341,6 +376,8 @@ class ChatService:
                     "dynamic_context": generation.dynamic_context,
                     **interaction_metadata,
                     **generation.llm_metadata,
+                    "delivered_after_deadline": delivered_after_deadline,
+                    "delivery_phase": "post_timer_closure" if delivered_after_deadline else "timed_chat",
                 },
             )
             review = self.answer_review_service
@@ -348,6 +385,13 @@ class ChatService:
                 model_message, runtime=interaction_runtime, event=event, attempt=task_attempt,
                 history=prior_messages, learner_message=request.user_message,
             ) if review else None
+            # Measures through validation/review readiness, before the client stream.
+            exchange_timing = finish_response_timing(exchange_timing, started_clock)
+            model_message = model_message.model_copy(update={"metadata": {
+                **model_message.metadata,
+                "exchange_timing": exchange_timing,
+                "learning_target_question_id": learning_target_question_id,
+            }})
             model_message = self.repository.add_message(model_message)
 
             record_prompt_snapshot(
@@ -378,6 +422,8 @@ class ChatService:
                         "client_request_id": client_request_id,
                         "condition_key": condition.condition_key,
                         "speaker_name": assistant_name,
+                        "delivered_after_deadline": delivered_after_deadline,
+                        "delivery_phase": "post_timer_closure" if delivered_after_deadline else "timed_chat",
                         "response_policy": condition.response_policy,
                         "target_question_id": interaction_metadata.get("target_question_id"),
                         "dialogue_state": interaction_metadata.get("dialogue_state"),
@@ -402,6 +448,7 @@ class ChatService:
                         "fidelity_flags": interaction_metadata.get("fidelity_flags", []),
                         "fidelity_retry_count": interaction_metadata.get("generation_retry_count", 0),
                         "llm_call": generation.llm_metadata.get("llm_call"),
+                        "exchange_timing": exchange_timing,
                     },
                 )
             )
@@ -413,6 +460,8 @@ class ChatService:
                         **user_message.metadata,
                         "response_status": "completed",
                         "response_message_id": model_message.id,
+                        "exchange_timing": exchange_timing,
+                        "learning_target_question_id": learning_target_question_id,
                     }
                 }
             )
@@ -430,6 +479,9 @@ class ChatService:
                 related_events=generation.related_events,
                 dynamic_context=generation.dynamic_context,
                 rag_sources=rag_sources,
+                learning_focus=build_learning_focus(
+                    condition, task_attempt, self.repository.list_messages(conversation.id),
+                ),
             )
         except HTTPException as exc:
             self._record_generation_failure(
@@ -438,6 +490,7 @@ class ChatService:
                 condition=condition,
                 user_message=user_message,
                 failure_type=f"http_{exc.status_code}",
+                started_clock=started_clock,
             )
             raise
         except Exception as exc:
@@ -449,6 +502,7 @@ class ChatService:
                 user_message=user_message,
                 failure_type=type(exc).__name__,
                 llm_call=llm_call,
+                started_clock=started_clock,
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -509,6 +563,16 @@ class ChatService:
             if response_message.persona_id
             else None
         )
+        conversation = self.repository.get_conversation(operation.conversation_id)
+        session = self.repository.get_session(conversation.session_id) if conversation and conversation.session_id else None
+        condition = self.repository.get_condition_by_key(session.condition_key_snapshot) if session else None
+        attempt = (
+            self.repository.get_task_attempt(conversation.task_attempt_id)
+            if conversation and conversation.task_attempt_id else None
+        )
+        # 重送舊回合時只重建當時已送達的題目，不套用更晚回合的狀態。
+        history = [message for message in self.repository.list_messages(operation.conversation_id)
+                   if message.sequence_index <= response_message.sequence_index]
         return ChatResponse(
             response=response_message.content,
             selected_persona=selected_persona,
@@ -518,6 +582,7 @@ class ChatService:
             related_events=response_message.metadata.get("related_events", []),
             dynamic_context=str(response_message.metadata.get("dynamic_context", "")),
             rag_sources=response_message.rag_sources,
+            learning_focus=build_learning_focus(condition, attempt, history),
         )
 
     def _record_generation_failure(
@@ -529,10 +594,20 @@ class ChatService:
         user_message: ChatMessage,
         failure_type: str,
         llm_call: dict[str, Any] | None = None,
+        started_clock: float | None = None,
     ) -> None:
         """保存失敗狀態，但不把例外內容或密鑰寫入研究資料。"""
         if not self.repository.get_conversation(conversation.id) or not self.repository.get_message(user_message.id):
             return
+        exchange_timing = finish_response_timing(
+            user_message.metadata.get("exchange_timing") or {
+                "request_started_at": user_message.created_at.isoformat(),
+                "original_request_started_at": user_message.created_at.isoformat(),
+                "attempt_number": int(user_message.metadata.get("retry_count", 0)) + 1,
+            },
+            started_clock,
+            status="interrupted" if failure_type == "backend_restart" else "failed",
+        )
         failed_user_message = user_message.model_copy(
             update={
                 "operation_status": "failed",
@@ -541,6 +616,7 @@ class ChatService:
                     "response_status": "failed",
                     "failure_type": failure_type,
                     "llm_call": llm_call or None,
+                    "exchange_timing": exchange_timing,
                 }
             }
         )
@@ -558,6 +634,7 @@ class ChatService:
                     "condition_key": condition.condition_key,
                     "failure_type": failure_type,
                     "llm_call": llm_call or None,
+                    "exchange_timing": exchange_timing,
                 },
             )
         )
@@ -597,6 +674,14 @@ class ChatService:
                             "response_status": "failed",
                             "failure_type": "backend_restart",
                             "llm_call": None,
+                            "exchange_timing": finish_response_timing(
+                                user_message.metadata.get("exchange_timing") or {
+                                    "request_started_at": user_message.created_at.isoformat(),
+                                    "original_request_started_at": user_message.created_at.isoformat(),
+                                    "attempt_number": int(user_message.metadata.get("retry_count", 0)) + 1,
+                                },
+                                None, status="interrupted",
+                            ),
                         },
                     }
                 )
@@ -652,7 +737,11 @@ class ChatService:
         conversation_history: list[ChatMessage] | None = None,
         persist_answer_audit: bool = False,
     ) -> tuple[ChatGenerationResult, dict[str, Any], str]:
-        """Generate without persistence; shared by runtime chat and Admin dry-run."""
+        """共用正式聊天與 Admin 試跑的生成入口；不在這裡保存正式聊天訊息。
+
+        開啟先審再送時交給 deliver_answer；否則走通用驗證流程。
+        私有審查紀錄是否落地另由 persist_answer_audit 控制。
+        """
         review = self.answer_review_service
         if review and review.before_delivery(interaction_runtime):
             async def generate(candidate_prompt):
@@ -699,6 +788,7 @@ class ChatService:
                         dynamic_context=generation.dynamic_context,
                         interaction_metadata=metadata,
                         llm_metadata=generation.llm_metadata,
+                        request_messages=generation.request_messages,
                     ),
                     metadata,
                     prompt,

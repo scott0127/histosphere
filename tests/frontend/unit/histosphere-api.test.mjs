@@ -136,7 +136,9 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
     active: true,
   }, fetcher);
 
-  assert.equal(calls.length, 7);
+  await api.fetchAdminLlmUsage('test-admin', fetcher);
+  assert.equal(calls[7].url, '/api/admin/llm-usage');
+  assert.equal(calls.length, 8);
   for (const call of calls) {
     assert.deepEqual(call.options.headers, { 'x-admin-key': 'test-admin' });
   }
@@ -161,6 +163,45 @@ test('frontend api client sends admin key only to admin endpoints', async () => 
   });
   assert.equal(calls[3].options.method, 'PATCH');
   assert.equal(calls[4].options.body.revision_state, 'teacher_modified');
+});
+
+test('participant preview uses the protected endpoint and keeps its assignment separate from the test identity', async () => {
+  const preview = {
+    participant: { id: 'participant-1', condition_list: ['02', '04'] },
+    test_user_id: 'isolated-test-user',
+    progress: [],
+  };
+  const { calls, fetcher } = createFetchRecorder({
+    'GET /api/admin/participants/participant-1/preview': preview,
+  });
+  assert.deepEqual(await api.fetchAdminParticipantPreview('test-admin', 'participant-1', fetcher), preview);
+  await api.initializeEventMaterial({
+    eventName: '霧社事件',
+    conditionKey: 'ebl_no_roleplay',
+    rebuild: false,
+    adminKey: 'test-admin',
+    userId: preview.test_user_id,
+    previewParticipantId: preview.participant.id,
+  }, fetcher);
+
+  assert.deepEqual(calls[0], {
+    url: '/api/admin/participants/participant-1/preview',
+    options: { headers: { 'x-admin-key': 'test-admin' } },
+  });
+  assert.deepEqual(calls[1], {
+    url: '/api/event/initialize',
+    options: {
+      method: 'POST',
+      headers: { 'x-admin-key': 'test-admin' },
+      body: {
+        event_name: '霧社事件',
+        condition_key: 'ebl_no_roleplay',
+        rebuild: false,
+        user_id: 'isolated-test-user',
+        preview_participant_id: 'participant-1',
+      },
+    },
+  });
 });
 
 test('frontend api client loads one session research record through the protected admin endpoint', async () => {

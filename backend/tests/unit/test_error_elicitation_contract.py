@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from app.core.error_elicitation_contract import (
     ERROR_ELICITATION_CONTRACT_VERSION,
     ErrorElicitationQuestionResult,
-    ErrorElicitationReasoningJudgement,
+    ErrorElicitationItemJudgement,
 )
 from app.models.domain import TaskAttempt
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
@@ -86,13 +86,15 @@ def test_question_result_requires_both_answer_and_reasoning(answer_correct, reas
     [
         {"reasoning_feedback": " "},
         {"reasoning_correct": "false"},
+        {"answer_correct": "true"},
+        {"answer_feedback": " "},
         {"historical_thinking_tags": ["evidence", "evidence"]},
         {"reasoning_issue_types": ["reasoning_error"]},
     ],
 )
 def test_reasoning_judgement_requires_specific_consistent_result(changes):
     with pytest.raises(ValidationError):
-        ErrorElicitationReasoningJudgement.model_validate({
+        ErrorElicitationItemJudgement.model_validate({
             "question_id": "q01",
             "reasoning_correct": False,
             "reasoning_feedback": "沒有說明理由，不能據此推測學生的歷史觀念。",

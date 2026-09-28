@@ -37,8 +37,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useAdminCostEstimate } from '~/composables/useAdminCostEstimate';
+import { formatCallCost } from '~/utils/adminLlmUsage';
 
 const props = defineProps<{ review?: unknown; delivery?: unknown }>();
+const { rate } = useAdminCostEstimate();
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const data = computed(() => record(props.review));
@@ -62,7 +65,7 @@ const categoryLabel = (value: unknown) => categories[String(value)] || String(va
 const formatUsage = (value: unknown) => {
   const call = record(value);
   const tokens = call.total_tokens == null ? 'Token 尚未回報' : `${call.total_tokens} tokens`;
-  const cost = typeof call.estimated_cost_usd === 'number' ? `US$${call.estimated_cost_usd.toFixed(6)}` : '費用未完整回報';
+  const cost = formatCallCost(call, rate.value);
   const latency = typeof call.latency_ms === 'number' ? ` · ${(call.latency_ms / 1000).toFixed(1)} 秒` : '';
   return `${tokens} · ${cost}${latency}`;
 };

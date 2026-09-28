@@ -31,6 +31,8 @@ class ChatGenerationResult:
     dynamic_context: str = ""
     interaction_metadata: dict[str, Any] = field(default_factory=dict)
     llm_metadata: dict[str, Any] = field(default_factory=dict)
+    # Ephemeral admin inspection only; never persisted in chat/research metadata.
+    request_messages: list[dict[str, str]] = field(default_factory=list, repr=False)
 
 
 class LLMProvider(Protocol):

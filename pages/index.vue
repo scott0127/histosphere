@@ -6,10 +6,10 @@
     3. 點事件卡後才選活動條件，避免把 condition 當成不同素材來源。
   -->
   <div class="historical-home relative min-h-screen overflow-x-hidden bg-[var(--admin-page)] font-[ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif] text-[var(--admin-text)] [&_.font-serif]:font-[Georgia,'Times_New_Roman','Noto_Serif_TC',serif]">
-    <!-- 背景保留舊 prototype 的歷史地圖質感，但降透明度，避免干擾可讀性。 -->
+    <!-- 顯示歷史地圖紋理，以淺色遮罩維持內容區的可讀性。 -->
     <div class="pointer-events-none fixed inset-0 z-0">
-      <img src="~/assets/images/landing-bg.png" alt="" class="h-full w-full object-cover opacity-[0.35]" />
-      <div class="absolute inset-0 bg-[rgba(242,240,236,0.8)]"></div>
+      <img src="~/assets/images/landing-bg.png" alt="" class="h-full w-full object-cover opacity-[0.65]" />
+      <div class="absolute inset-0 bg-[rgba(242,240,236,0.55)]"></div>
       <div class="absolute inset-0 bg-[radial-gradient(circle_at_26%_42%,rgba(168,141,123,0.18),transparent_45%),linear-gradient(90deg,rgba(47,41,36,0.03),transparent_48%,rgba(47,41,36,0.05))]"></div>
     </div>
 
@@ -17,7 +17,7 @@
       :is-refreshing="isRefreshing"
       :is-admin-mode="isAdminMode"
       :admin-view-mode="adminViewMode"
-      :display-name="displayName"
+      :display-name="isParticipantPreview ? (participant?.code ? `模擬 ${participant.code}` : '受測者測試') : displayName"
       :admin-mode-pending="adminModePending"
       :admin-mode-error="adminModeError"
       @refresh="refreshEventLibrary"
@@ -27,10 +27,30 @@
     />
 
     <main class="relative z-10 mx-auto grid min-h-[calc(100vh-68px)] w-full max-w-[1480px] gap-10 px-6 py-10 lg:h-[calc(100vh-68px)] lg:grid-cols-[430px_minmax(0,1fr)] lg:items-stretch xl:gap-14">
-      <EventCreatePanel
-      />
+      <div class="flex min-h-0 flex-col gap-4">
+        <LearnerActivityGuide
+          v-if="pageReady && !canManageEvents && (isParticipantPreview || isAuthenticated)"
+          :participant-code="participant?.code"
+          :allow-sign-out="!isParticipantPreview && isAuthenticated"
+          @sign-out="signOut"
+        />
+        <EventCreatePanel v-else />
+      </div>
 
+      <AssignedActivityList
+        v-if="!canManageEvents"
+        :assignments="assignedActivities"
+        :events="events"
+        :current-event-id="currentAssignedActivity?.event_id"
+        :progress-by-event="progressByEvent"
+        :loading="loadingEvents || isParticipantLoading"
+        :error="initializeError || participantError"
+        :empty-message="isParticipantPreview ? (participant ? '請在管理端為每一場指定歷史事件與模式；只設定模式還不能開始活動。' : '請回到管理頁，在受測者列表選擇「模擬受測者」。') : '請登入受測者帳號；若登入後仍未顯示活動，請聯絡研究者完成分派。'"
+        :participant-preview="isParticipantPreview"
+        @open="openEventDetail"
+      />
       <EventLibraryList
+        v-else
         v-model:event-name="eventName"
         :events="events"
         :loading-events="loadingEvents"
@@ -50,6 +70,8 @@
       :progress-by-condition="detailConditionProgress"
       :activity-mode="activityMode"
       :admin-access="isAdminMode"
+      :participant-preview="isParticipantPreview"
+      :start-error="initializeError"
       :participant="participant"
       :participant-error="participantError"
       :participant-loading="isParticipantLoading"
@@ -85,10 +107,12 @@
 // - historical event 是素材單位，source、task、primary persona 應由四種 condition 共用。
 // - experiment condition 是活動策略，不應造成事件素材被複製成四份。
 import { computed, onMounted, ref, watch } from 'vue';
+import AssignedActivityList from '~/components/event-library/AssignedActivityList.vue';
 import EventCreatePanel from '~/components/event-library/EventCreatePanel.vue';
 import EventDetailModal from '~/components/event-library/EventDetailModal.vue';
 import EventLibraryHeader from '~/components/event-library/EventLibraryHeader.vue';
 import EventLibraryList from '~/components/event-library/EventLibraryList.vue';
+import LearnerActivityGuide from '~/components/event-library/LearnerActivityGuide.vue';
 import ArchiveConfirmationModal from '~/components/modals/ArchiveConfirmationModal.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import { studentActivityTitle, studentConditionCode } from '~/composables/useStudentTask';
@@ -115,7 +139,7 @@ const pendingStartCondition = ref<ExperimentCondition | null>(null);
 const detailEvent = ref<EventWithPersonas | null>(null);
 const adminModePending = ref(false);
 const adminModeError = ref<string | null>(null);
-const { displayName, initialize: initializeAuth, isAuthenticated, user } = useAuth();
+const { displayName, initialize: initializeAuth, isAuthenticated, user, signOut } = useAuth();
 const {
   activityMode,
   adminViewMode,
@@ -124,6 +148,7 @@ const {
   initAdminMode,
   isAdminMode,
   setAdminViewMode,
+  previewParticipantId,
 } = useAdminMode();
 const {
   conditions,
@@ -139,6 +164,8 @@ const {
 const authStorageScope = computed(() => user.value?.id || 'guest');
 const adminTestUserId = computed(() => adminTestUserUuid(`admin-test:${user.value?.id || 'local'}`));
 const canManageEvents = computed(() => isAdminMode.value && activityMode.value === 'admin');
+const isParticipantPreview = computed(() => isAdminMode.value && adminViewMode.value === 'admin_testmode');
+const pageReady = ref(false);
 const showEventIntroduction = computed(() => shouldShowEventIntroduction(activityMode.value));
 
 const storedAdminKey = () => {
@@ -150,9 +177,13 @@ const {
   isInitializing,
   isParticipantLoading,
   loadParticipantForAuthUser,
+  loadAdminParticipantPreview,
+  previewTestUserId,
   participant,
   participantError,
   assignedConditionCodes,
+  assignedActivities,
+  currentAssignedActivity,
   currentAssignedConditionCode,
   progressByEvent,
   resetForAuthScope,
@@ -166,7 +197,8 @@ const detailConditionProgress = computed(() => {
 });
 
 const visibleConditions = computed(() => {
-  if (isAdminMode.value) return conditions.value;
+  if (canManageEvents.value) return conditions.value;
+  if (!currentAssignedActivity.value || currentAssignedActivity.value.event_id !== detailEvent.value?.id) return [];
   const currentCode = currentAssignedConditionCode.value;
   if (!currentCode) return [];
   return conditions.value.filter((condition) => {
@@ -177,7 +209,7 @@ const visibleConditions = computed(() => {
 
 const pendingStartProgress = computed(() => {
   if (!pendingStartCondition.value) return null;
-  if (isAdminMode.value) return null;
+  if (canManageEvents.value) return null;
   return detailConditionProgress.value[pendingStartCondition.value.condition_key] || null;
 });
 
@@ -190,6 +222,12 @@ const startConfirmTitle = computed(() => {
 });
 
 const startConfirmMessage = computed(() => {
+  if (pendingStartProgress.value?.posttestStage && pendingStartProgress.value.posttestStage !== 'not_started') {
+    return '點選「是」繼續本輪後測';
+  }
+  if (pendingStartProgress.value?.status === 'completed') {
+    return '點選「是」完成對話收尾並進入本輪後測';
+  }
   if (pendingStartProgress.value?.conversationId) {
     return '點選「是」繼續上一階段 [CHAT]';
   }
@@ -199,25 +237,38 @@ const startConfirmMessage = computed(() => {
   return '點選「是」進入下一階段 [TASK]';
 });
 
-// 保留未來 avatar 顯示規則；目前首頁 UI 暫時不使用 persona 頭像。
+const reloadSessionContext = async () => {
+  detailEvent.value = null;
+  cancelStartCondition();
+  await resetForAuthScope();
+  if (isParticipantPreview.value) {
+    if (previewParticipantId.value) {
+      await loadAdminParticipantPreview(storedAdminKey(), previewParticipantId.value);
+    }
+  } else if (user.value?.id && !isAdminMode.value) {
+    await loadParticipantForAuthUser(user.value.id);
+  }
+};
+
 onMounted(async () => {
   initAdminMode();
   await initializeAuth();
   await loadEventLibrary(isAdminMode.value ? storedAdminKey() : null);
-  if (user.value?.id && !isAdminMode.value) {
-    await loadParticipantForAuthUser(user.value.id);
-  }
+  await reloadSessionContext();
+  pageReady.value = true;
 });
 
 watch(authStorageScope, async (nextScope, previousScope) => {
+  if (!pageReady.value) return;
   if (shouldExitAdminModeForAuthTransition(previousScope, nextScope)) {
     await handleExitAdminMode(false);
   }
-  detailEvent.value = null;
-  await resetForAuthScope();
-  if (user.value?.id && !isAdminMode.value) {
-    await loadParticipantForAuthUser(user.value.id);
-  }
+  await reloadSessionContext();
+});
+
+watch([isAdminMode, adminViewMode, previewParticipantId], async () => {
+  if (!pageReady.value) return;
+  await reloadSessionContext();
 });
 
 watch(isAuthenticated, (authenticated) => {
@@ -265,6 +316,13 @@ const refreshEventLibrary = async () => {
   if (detailEvent.value) {
     detailEvent.value = findEvent(detailEvent.value.id);
   }
+  if (isParticipantPreview.value) {
+    if (previewParticipantId.value) {
+      await loadAdminParticipantPreview(storedAdminKey(), previewParticipantId.value);
+    }
+  } else if (!isAdminMode.value && user.value?.id) {
+    await loadParticipantForAuthUser(user.value.id);
+  }
 };
 
 // 建立或重用歷史事件素材；首頁建立時不直接跳 task。
@@ -286,14 +344,18 @@ const handleCreateEvent = async () => {
 // 啟動指定 condition；若本機已有對話紀錄，直接回到該 conversation。
 const startCondition = async (condition: ExperimentCondition) => {
   if (!detailEvent.value) return;
+  if (isParticipantPreview.value && (!participant.value || isParticipantLoading.value || !previewTestUserId.value)) {
+    alert(participantError.value || '請先選擇要模擬的受測者。');
+    return;
+  }
   if (!isAdminMode.value && !participant.value) {
     alert(participantError.value || '請先登入已設定的受測者帳號。');
     await navigateTo('/auth/login');
     return;
   }
   if (
-    !isAdminMode.value
-    && Object.values(detailConditionProgress.value).some((progress) => progress?.status === 'completed')
+    !canManageEvents.value
+    && Object.values(detailConditionProgress.value).some((progress) => progress?.status === 'completed' && progress.posttestStage === 'completed')
   ) {
     alert('此歷史事件已完成，無法再次進行。');
     return;
@@ -315,7 +377,14 @@ const confirmStartCondition = async () => {
   await startExperimentCondition(
     detailEvent.value,
     condition,
-    isAdminMode.value
+    isParticipantPreview.value
+      ? {
+          userId: previewTestUserId.value || undefined,
+          reuseProgress: true,
+          adminKey: storedAdminKey(),
+          previewParticipantId: previewParticipantId.value || undefined,
+        }
+      : canManageEvents.value
       ? {
           userId: adminTestUserId.value,
           reuseProgress: false,
@@ -327,6 +396,7 @@ const confirmStartCondition = async () => {
 
 // 開啟事件詳情，讓主頁維持單純的輸入與列表。
 const openEventDetail = (event: EventWithPersonas) => {
+  initializeError.value = null;
   detailEvent.value = event;
 };
 

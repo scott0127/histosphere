@@ -50,7 +50,9 @@ from app.schemas.requests import (
 )
 from app.schemas.responses import (
     AdminAuthUserSummary,
+    AdminLLMUsageResponse,
     AdminAuthUsersResponse,
+    AdminParticipantPreviewResponse,
     AdminPromptDryRunResponse,
     AdminPromptPreviewResponse,
     AdminSessionResearchResponse,
@@ -61,7 +63,11 @@ from app.schemas.responses import (
 )
 from app.services import ChatService, PersonaService, PromptService, RagPipelineService, SessionService
 from app.services.research_export_service import ResearchExportService
+from app.services.llm_generation_audit import llm_usage_path
+from app.services.llm_usage_summary import ledger_summary
 from app.services.material_lock_service import assert_event_materials_editable, set_event_material_lock
+from app.services.participant_preview import active_preview_participant, preview_user_id
+from app.services.participant_assignments import prepare_assignment_updates
 from app.core.task_payload_validator import validate_task_authoring_payload
 
 router = APIRouter(
@@ -100,6 +106,14 @@ def admin_snapshot(repository: RepositoryProtocol = Depends(get_repository)) -> 
         sessions=repository.list_sessions(),
         research_logs=repository.list_research_logs(),
     )
+
+
+@router.get("/llm-usage", response_model=AdminLLMUsageResponse)
+def admin_llm_usage() -> AdminLLMUsageResponse:
+    try:
+        return ledger_summary(llm_usage_path())
+    except (OSError, UnicodeError) as exc:
+        raise HTTPException(status_code=503, detail="目前無法讀取用量帳本，請稍後重試。") from exc
 
 
 @router.get("/auth-users", response_model=AdminAuthUsersResponse)
@@ -292,7 +306,7 @@ async def prompt_dry_run(
         interaction_runtime=interaction_runtime,
     )
     prompt = prompt_service.render_modules(modules)
-    generation, interaction_metadata, _final_prompt = await chat_service.generate_validated_response(
+    generation, interaction_metadata, final_prompt = await chat_service.generate_validated_response(
         event=event,
         selected=persona,
         condition=condition,
@@ -302,6 +316,13 @@ async def prompt_dry_run(
         rag_sources=rag_sources,
         interaction_runtime=interaction_runtime,
     )
+    delivery_outcome = interaction_metadata.get("answer_delivery", {}).get("outcome")
+    if delivery_outcome == "system_fallback":
+        final_prompt_kind = "system_fallback"
+    elif delivery_outcome == "constrained":
+        final_prompt_kind = "constrained"
+    else:
+        final_prompt_kind = "repair" if final_prompt != prompt else "base"
     return AdminPromptDryRunResponse(
         event=event,
         condition=condition,
@@ -309,6 +330,10 @@ async def prompt_dry_run(
         sample_user_message=request.sample_user_message,
         modules=[PromptPreviewModule(name=module.name, content=module.content) for module in modules],
         prompt=prompt,
+        final_prompt=final_prompt,
+        final_prompt_kind=final_prompt_kind,
+        final_messages=generation.request_messages,
+        schema_repair_count=generation.llm_metadata.get("llm_call", {}).get("schema_repair_count", 0),
         response=generation.response,
         annotations=generation.annotations,
         related_events=generation.related_events,
@@ -488,7 +513,7 @@ def update_task(
     ]
     if required_field_issues:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "Task authoring payload failed validation.",
                 "issues": required_field_issues,
@@ -503,7 +528,7 @@ def update_task(
     )
     if validation_issues:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "Task authoring payload failed validation.",
                 "issues": validation_issues,
@@ -555,6 +580,22 @@ def update_admin_persona(
     return service.update_persona(persona_id, request)
 
 
+@router.get("/participants/{participant_id}/preview", response_model=AdminParticipantPreviewResponse)
+def participant_preview(
+    participant_id: str,
+    repository: RepositoryProtocol = Depends(get_repository),
+    session_service: SessionService = Depends(get_session_service),
+) -> AdminParticipantPreviewResponse:
+    """Preview assigned conditions using separate admin test progress."""
+    participant = active_preview_participant(repository, participant_id)
+    test_user_id = preview_user_id(participant.id)
+    return AdminParticipantPreviewResponse(
+        participant=participant,
+        test_user_id=test_user_id,
+        progress=session_service.user_progress(test_user_id, admin_test=True).progress,
+    )
+
+
 @router.post("/participants", response_model=Participant, status_code=status.HTTP_201_CREATED)
 def create_participant(
     request: ParticipantCreateRequest,
@@ -564,7 +605,7 @@ def create_participant(
     code = request.code.strip().upper()
     if not code:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Participant code is required",
         )
     if any(participant.code.upper() == code for participant in repository.list_participants()):
@@ -582,15 +623,16 @@ def create_participant(
                 detail=f"Auth user already bound to participant {existing.code}",
             )
 
+    assignment_updates = prepare_assignment_updates(repository, request.model_dump(exclude_unset=True))
     participant = Participant(
         code=code,
         auth_user_id=auth_user_id,
         display_name=request.display_name,
         cohort=request.cohort,
-        condition_list=normalize_condition_sequence(request.condition_list),
+        condition_list=normalize_condition_sequence(assignment_updates.get("condition_list", request.condition_list)),
         status="active",
         notes=request.notes,
-        metadata=request.metadata,
+        metadata=assignment_updates.get("metadata", request.metadata),
     )
     saved = repository.save_participant(participant)
     repository.log_research(
@@ -698,7 +740,7 @@ def update_participant(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
 
     before = participant.model_copy(deep=True)
-    updates = request.model_dump(exclude_unset=True)
+    updates = prepare_assignment_updates(repository, request.model_dump(exclude_unset=True), participant)
     if "auth_user_id" in updates:
         raw_auth_user_id = updates["auth_user_id"]
         next_auth_user_id = raw_auth_user_id.strip() if isinstance(raw_auth_user_id, str) else None
@@ -783,7 +825,7 @@ def update_condition(
         validated = ExperimentCondition.model_validate({**condition.model_dump(), **updates})
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Condition behavior must match its fixed 01-04 experiment mapping",
         ) from exc
     saved = repository.save_condition(validated)

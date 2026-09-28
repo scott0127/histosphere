@@ -691,6 +691,19 @@ def test_learner_must_follow_admin_assigned_condition_order(client):
     completed_session.completion_reason = "timer_elapsed"
     repository.save_session(completed_session)
 
+    pending_posttest = learner_initialize(
+        client,
+        second_material["event"]["canonical_name"],
+        "no_ebl_roleplay",
+    )
+    assert pending_posttest.status_code == 409
+    from app.models.domain import SessionPosttest
+    repository.create_posttest(SessionPosttest(
+        session_id=completed_session.id, stage="completed", submitted_at=utc_now(),
+        engagement_answers={"engagement_1": 3, "engagement_2": 3, "engagement_3": 3},
+        hat_answers={"hat_1": "示範答案", "hat_2": "示範理由"},
+    ))
+
     second = learner_initialize(
         client,
         second_material["event"]["canonical_name"],

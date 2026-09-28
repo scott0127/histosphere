@@ -1,7 +1,7 @@
 <template>
-  <!-- 首頁頂部導覽：只放品牌、重新整理與 admin 入口，避免混入事件流程邏輯。 -->
+  <!-- 管理工具只在已驗證的管理員模式顯示；管理員由 /admin 進入。 -->
   <header class="relative z-20 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.92)] shadow-sm backdrop-blur-sm">
-    <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3">
       <NuxtLink to="/" class="flex items-center gap-3">
         <span class="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[var(--admin-line)] bg-[var(--admin-surface)] text-[var(--admin-coffee)] shadow-[0_3px_0_rgba(47,41,36,0.18)]">
           <Icon name="mdi:book-open-page-variant" class="h-5 w-5" />
@@ -12,8 +12,9 @@
         </span>
       </NuxtLink>
 
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <AdminModeSwitch
+          v-if="isAdminMode"
           :is-admin-mode="isAdminMode"
           :view-mode="adminViewMode"
           :display-name="displayName"

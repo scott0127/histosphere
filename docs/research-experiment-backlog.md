@@ -1,101 +1,102 @@
 # Research Experiment Backlog
 
-更新日期：2026-09-04
+更新日期：2026-09-23。
 
-## 文件用途
+本文件是唯一詳細研究待辦。已完成工程與操作規格分別見 [System Map](histosphere-system-map.html)、[介入規格](ebl-historical-roleplay-intervention-design.md)及[技術架構](architecture.md)。以下不把已完成實作重列為待開發。
 
-本文件是 Histosphere 唯一的詳細待辦清單，只保存尚未定案、暫緩或已接受風險的事項。
+## 正式收案前必要
 
-- 已確認的長期原則寫入根目錄 `記憶.md`。
-- 子系統完成狀態寫入 `docs/histosphere-system-map.html`。
-- 已完成項目不在本文件重複維護。
-- 系統是研究者現場控制的碩士實驗，不依公開 SaaS 的威脅與規模過度設計。
+### 1. 正式事件、材料與跨事件等值性｜最高優先
 
-## 正式收案前必須定案
+- 目前系統有霧社、鴉片戰爭、黑船到明治維新、法國大革命。早期簡報提過甲午戰爭；正式清單仍需研究者確認，不由工程自行替換。
+- 四事件閱讀題組已建立，最新素材版本為 `reading-materials-20260905-v3`，仍標 `awaiting_researcher_acceptance`。能載入、可判題不等於研究內容已驗收。
+- 逐題審查真實史料、適當改寫、圖片與小標年代、答案、修正解說及 `reasoning_criteria`；避免本文直接暗示判分規則。
+- **不同事件使用相同類型、數量與呈現方式的史料素材** 是最高優先研究控制；難度、閱讀量與先備知識也需 pilot。UI 共用不代表材料已等值。
+- 四組已能查看固定材料，並非只有 EBL 組獲得素材。最多幾份、是否同時顯示及閱讀暴露量，需在正式程序中凍結。
+- Pilot 通過後由 Admin 鎖定素材；不要改寫已完成 Session 的凍結題組。
 
-### 1. 正式事件與素材內容
+### 2. 人物時間與史料素材的界線｜最高優先待討論
 
-- 確認正式事件清單。目前簡報列出霧社事件、甲午戰爭、黑船事件到明治維新、法國大革命；系統現有素材包含鴉片戰爭，兩者尚未對齊。
-- 完成每個事件的前置 Task 文本、題目、參考答案、rubric 與必要史實審查。
-- 確認每個事件唯一啟用的歷史人物、人物知識邊界與肖像。
-- Pilot 後鎖定正式素材，確保同一批受測者使用相同內容。
+目前人物仍受事件當下可知資訊限制。不能因 private context 含後來材料，就聲稱人物當年讀過該出版品或見證未來。
 
-### 2. Historical Thinking outcome 測量
+需區分「後來整理／翻譯較早紀錄」與「內容本身描述人物當下尚未發生的事」。例如 2010 年翻譯 1930 年文件，不等於文件都在 2010 年才形成；但仍不能讓人物自稱讀過該翻譯集。
 
-前置 Task 只建立後續對話的錯誤，不是前測、後測或 outcome score。正式成效測量仍需與教授確認：
+待確認：是否允許人物把學習者帶來的後世材料當作對話中收到的資訊、可討論到什麼程度，或應改材料／人物時間點。**尚未核准此放寬方案，本次僅記錄問題，不更改 Persona 政策。**
 
-- 是否採 HAT 式短史料建構題，並使用同事件的新史料。
-- rubric 要評哪些 Historical Thinking 能力，以及史實知識是否分開計分。
-- 專家審查、少量 think-aloud pilot、盲評與抽樣複評方式。
-- 施測時點、題數、時間、評分者訓練與評分者一致性。
+### 3. Error-Elicitation Judge 的研究驗收｜必要
 
-### 3. Historical EBL 完成與錯誤切換規則
+已完成：選擇／是非規則判答案，填空及所有理由在一次 LLM 呼叫中判定；答案與理由都對才通過，具體 feedback 供後續 AI 使用，HT tags 不計分。
 
-- `RESOLVED` 是否一律要求正確答案、至少一項證據或理由，以及反思；或依題型設定不同 success criteria。
-- 正確但缺乏論證時應停在哪個 EBL state。
-- `unanswered` 題目應依原順序處理、排到最後，或不進入錯誤佇列。
-- D4 後 learner 主動略過所產生的 `unresolved_after_max_support` 是否可返回，以及實驗結束時如何呈現。
+仍需：
+- 研究者逐題確認合理的通過標準，不窮舉所有措辭，但清楚區分可接受推理與關鍵錯誤。
+- 以少量人工審過的真實／模擬作答覆核假錯誤、假正確、同義表述與理由含糊；包括答案正確但理由不正確。
+- 留下 Judge 錯判修訂與版本處理規則，避免錯判變成 EBL 的假學習目標。
+- 新版四判例通過只是局部驗證，不是正式信效度。LLM 失敗不算學習者答錯；漏答必須補齊才能提交，中途退出另作缺失資料處理。
 
-### 4. 正式實驗程序
+### 4. 正解公布與輔助收尾的測量影響｜最高優先
 
-- 每位 participant 的 rounds、Condition 配對、事件配對與 counterbalancing 表。
-- Task 與 Chat 是否各自計時；目前程式只將 Chat 的五分鐘倒數視為正式階段計時。
-- 輪間休息、後測、訪談與整體實驗時長。
-- Participant 排除、缺漏資料與中途中止的處理規則。
+目前已依使用者決定實作：
+- 獨立修正後可確認正解。
+- D4 尚未修正：先修正回饋，再給一次自己的話重述機會，之後切下一題，不強求完美。
+- 五分鐘到期：只對已談到的未完成目前題目顯示正解與修正理由，重述一次；不延長 Chat、不公布未談過的答案。
 
-### 5. Engagement 與質性資料
+需與教授確認：此**後測前**答案暴露是否符合目標測量、四組暴露差異如何解釋、收尾額外時間如何控制。獨立修正與看答案後的 assisted restatement 必須分開分析。舊的 D4 無限等待／手動略過規則不再是現行方案。
 
-- Role-play engagement／interaction experience 的量表或訪談題綱。
-- 是否記錄沉浸感、人物可信度、認知投入與互動負荷。
-- 量化結果、完整對話與訪談資料如何以 participant code 合併。
+### 5. Historical Thinking outcome 與正式程序
+
+Error-Elicitation Task 不是前測或後測。HAT 式短史料建構題是討論方向，不是已凍結量表。
+
+- 正式題目／史料、維度、rubric、題數、時間及測量時點。
+- 專家審查、少量 think-aloud pilot、評分者訓練、盲評與抽樣複評。
+- Participant 的 Condition／事件配對、counterbalancing、rounds 與輪間休息。
+- Task 是否另外計時、到期收尾、後測／訪談總時長，以及排除、缺漏和中止規則。
+- 沒有 learner error 時第三方 probe 的內容及曝光一致性；不能默認它與自身錯誤具有相同效果。
+
+### 6. Engagement 與質性資料
+
+確認沉浸感、人物可信度、認知投入或互動負荷的量表／訪談題綱，以及如何用 participant code 合併對話與後測。
+
+### 7. 四組共通的自我修正判定與題目進度｜最高優先待處理
+
+**2026-09-23 已查證，尚未修正。** 使用者預期四個 Condition 都能知道受測者是否已修正，避免處理完同一錯誤後仍缺乏下一題的銜接；EBL 的差異是主動引導反思與修正，不應把「沒有 EBL 鷹架」直接等同於「不觀察修正」。目前程式仍採 Standard Chat 自然對話、EBL 逐題處理的不同流程，與此預期有落差。本次只核對並記錄，不更改功能或凍結新的互動規格。
+
+| 核對項目 | 01／03：Standard Chat | 02／04：EBL |
+| --- | --- | --- |
+| 開場與當前題目 | 事件相關的自然開場；沒有指定目前錯誤或下一題 | 選定當前待處理題目，依序處理 |
+| 修正完成判定 | 正式進展為未評估；完成狀態持續為 continue，修正完成條件不啟用 | 依三項完成條件記錄獨立修正，另處理輔助重述 |
+| 判定後的下一輪 | 沒有已完成／待處理題目進度可供選擇下一題 | 已完成題目移出待處理範圍，轉向下一個目標 |
+| 每輪原作答資訊 | 全部初始判題結果繼續作為背景；沒有額外的逐題修正狀態 | 目前題目的評估配合已存的完成進度 |
+| 學習者介面 | 全部題目與原作答；沒有目前題目或「已完成修正 → 下一題」提示 | 顯示目前題目、修正完成與下一題提示 |
+
+**確認的問題是缺少共同的修正判定與進度管理，不能據此宣稱 AI 必定永遠重複同一錯誤。** 01／03 會收到先前對話及最新發言，仍可能自然承認修正、接受學生改談另一題；它們不是被程式鎖在第一錯題。前端也不是 first-wrong fallback 卡住，而是沒有討論題目的追蹤與選擇控制。切換閱讀／作答頁籤不會把正在看的題目送給 AI。
+
+原作答保留「答錯」是初始作答紀錄，不應直接覆寫成修正後成績；需要補的是獨立的修正進度。Standard Chat 偶爾可保留模型填入的 `learner_revision_status` 字串，但沒有共同判準驗證或題目對應，不能拿它當正式 self-correction 結果。背景答案審查只服務 EBL 的答案揭露與銜接檢查，沒有替 01／03 另外判定修正；研究匯出也只整理既有紀錄。
+
+核對依據：
+
+- [開場與每輪資訊](../backend/app/services/prompt_service.py)：`_turn_intent`、`_error_elicitation_context`、`assemble_chat_modules`。
+- [進度與完成狀態](../backend/app/core/interaction_contract.py)：`build_interaction_runtime`、`resolve_interaction_metadata`；[前端焦點](../backend/app/services/learning_focus.py)：非 EBL 回傳 None。
+- [模型輸出要求](../backend/app/providers/llm/litellm_provider.py)：Standard Chat 的進展為 not_assessed，三項 resolution 條件要求 false；[背景審查](../backend/app/services/answer_review_service.py)沒有另一條 Standard Chat 修正判定路徑。
+- [作答側欄](../components/task-student/TaskAttemptReview.vue)、[完成提示](../components/task-student/TaskProgressNotice.vue)、[聊天請求](../utils/histosphereApi.ts)。
+
+驗證：四組使用同一份兩題待處理的測試作答，模擬模型傳回第 1 題已修正、三項條件皆成立。01／03 仍為「未評估、繼續」，前後目標皆空；02／04 記錄 resolved 並從 q01 進到 q02。原作答 context 在 01／03 前後相同，EBL 則切換到 q02。另執行互動契約及 learning focus 的相關既有測試，**20 passed**。以上是程式與狀態測試，沒有呼叫真實 LLM，也沒有證明或量化實際重複糾正的頻率。
+
+後續需處理：將四組共同的修正觀察／題目進度，與僅 EBL 使用的主動鷹架及 Disclosure 分開。還需明確訂出 01／03 完成後如何銜接、是否顯示共同進度，以及只有新答案、答案與理由完整修正、接受答案後重述等情況如何記錄。不能只對 01／03 開啟 `ebl_enabled`，也不能在簡報上把現況說成四組已共用完成判定。
 
 ## 重要但暫緩
 
-### 受控 AI 歷史錯誤與 Debrief
+- **受控 AI 歷史錯誤與 Debrief**：仍停用；若日後納入，先凍結錯誤、測量、揭露與說明，不把模型 hallucination 當成預設操弄。
+- **Learner 事件介紹**：首頁／詳情保持隱藏，年代、插圖、人物與 Task 狀態保留。是否提供介紹、是否影響受測仍待確認；不等於隱藏 Task 正式閱讀材料。
 
-目前正式功能保持停用。未來若作為共同後測，需要先定義：
+## 本研究目前不需要
 
-- 研究者撰寫並審查的錯誤內容與版本。
-- learner 要進行 detection、correction 還是 evidence-based rebuttal。
-- 計分方式、錯誤暴露紀錄與結束後 Debrief。
-- 不允許模型自行臨時捏造待測錯誤。
+- 人物動態情緒圖片：固定肖像已支援；語言上的人物情緒不在此暫緩範圍。
+- RAG／向量檢索／related-event 推薦：固定、研究者審查的材料已可呈現，不為此建檢索平台。
+- 完整 Publish／跨版本視覺比較：先使用 material lock 與快照 hash。
+- 多機 queue／worker claim：目前單機受測，持久化狀態與恢復即可。
+- 多管理員角色／逐人撤權：目前使用 shared Admin key。
+- 把 HT tags 當分數、每題多呼叫一次 Judge、窮舉所有填空答案：不採用。
 
-### Learner 是否顯示事件介紹
+## 已接受但仍需觀察的技術風險
 
-目前 learner 首頁與事件詳情只顯示事件名稱、年代、插圖、人物及 Task 狀態，不顯示事件介紹。正式收案前需確認背景介紹是否會改變先備知識與 Task 作答。
-
-### 中性史料卡
-
-尚需定義史料卡的來源、引用、evidence ID、可見時機與互動方式。RAG 未啟用前，可先由研究者管理少量固定史料。
-
-### Persona 多狀態肖像
-
-固定人物肖像已支援；同一人物的聆聽、回顧或追問等多狀態圖片暫緩。若實作，必須維持同一人物外貌，不增加新的實驗操弄。
-
-## 技術性暫緩
-
-### RAG
-
-暫不實作。未來需先決定來源授權、chunking、retrieval scope、citation UI、無證據行為，以及與 persona knowledge boundary 的關係。
-
-### 進階 Material Version Schema
-
-目前使用 material lock、研究 metadata 與 prompt/material hash 已足以支援單一批次實驗。只有多批次收案、素材修改後重跑或需要視覺化版本比較時，才建立完整版本表。
-
-### 多機背景工作佇列
-
-目前單機、單一受測者環境以資料庫 operation 狀態、polling 與 process-local worker 恢復即可。Redis、Celery、Kafka 或多 instance claim 暫不需要。
-
-### Multi-admin Roles
-
-目前研究者與指導教授共用一組 Admin key。只有需要個別撤銷、角色權限或逐人 audit 時才重新評估。
-
-## 已採暫行方案
-
-### Disclosure D0／D1 私有資訊邊界
-
-單次 structured completion 可在 private context 讀取 `correct_answer`、`source_text` 與 evidence IDs 來判斷 learner progress，但 learner-visible 回覆必須遵守 Disclosure Level。D0 不新增史實；D1 只指出檢查位置。正解洩漏時後端拒絕候選並重生，同時保存 audit 紀錄。
-
-### Task Judge
-
-正式 Error-Elicitation Task 只使用填空、選擇與是非；每題同時要求答案與理由。Backend 以固定規則判答案，LLM 在一次 structured call 中判所有理由。只有兩者都正確才記為 `correct`，其他情況皆為 `incorrect`。Judge 只以 `factual_error`／`reasoning_error` 說明問題；Big Six tags 為描述性 metadata，不參與對錯，也不是 outcome 測量。
+答案語意審查可能誤判；不是零洩漏保證或全面史實裁判。D0/D1 可讀 private 正解／材料；限制的是提前完成解題，不是史實字詞。審查模式、有限修正與系統備援見技術架構，不在本文件維護第二套流程。

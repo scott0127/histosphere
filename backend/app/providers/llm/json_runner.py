@@ -66,6 +66,7 @@ class LLMCompletion:
     total_tokens: int | None = None
     estimated_cost_usd: float | None = None
     finish_reason: str | None = None
+    request_messages: list[dict[str, str]] = field(default_factory=list, repr=False)
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,9 @@ class LLMCallMetadata:
     finish_reason: str | None = None
 
     audit_write_failures: list[str] = field(default_factory=list)
+    usage_reported_attempts: int = 0
+    cost_reported_attempts: int = 0
+    estimated_known_cost_usd: float | None = None
 
     def as_dict(self) -> dict:
         """轉成可直接寫入 Supabase JSON 欄位的資料。"""
@@ -107,6 +111,7 @@ class LLMRunResult(Generic[PayloadT]):
 
     payload: PayloadT
     metadata: LLMCallMetadata
+    request_messages: list[dict[str, str]] = field(default_factory=list, repr=False)
 
 
 class LLMRunError(RuntimeError):
@@ -178,7 +183,10 @@ class LLMJsonRunner:
         token_usage_seen = False
         estimated_cost_usd = 0.0
         cost_seen = False
+        usage_reported_attempts = 0
+        cost_reported_attempts = 0
         audit_write_failures: list[str] = []
+        request_messages: list[dict[str, str]] = []
 
         def audit(writer, **record) -> None:
             try:
@@ -215,15 +223,20 @@ class LLMJsonRunner:
                 completion_tokens=token_totals["completion_tokens"] if token_usage_seen else None,
                 reasoning_tokens=token_totals["reasoning_tokens"] if token_usage_seen else None,
                 total_tokens=token_totals["total_tokens"] if token_usage_seen else None,
-                estimated_cost_usd=estimated_cost_usd if cost_seen else None,
+                estimated_cost_usd=estimated_cost_usd if cost_seen and cost_reported_attempts == attempt_count else None,
                 finish_reason=finish_reason,
                 audit_write_failures=list(audit_write_failures),
+                usage_reported_attempts=usage_reported_attempts,
+                cost_reported_attempts=cost_reported_attempts,
+                estimated_known_cost_usd=estimated_cost_usd if cost_seen else None,
             )
 
         async def complete(current_user_prompt: str) -> str:
             nonlocal attempt_count, finish_reason, retry_reason
             nonlocal token_usage_seen, transient_retry_count
             nonlocal estimated_cost_usd, cost_seen
+            nonlocal usage_reported_attempts, cost_reported_attempts
+            nonlocal request_messages
 
             for retry_index in range(MAX_TRANSIENT_RETRIES + 1):
                 attempt_count += 1
@@ -248,20 +261,26 @@ class LLMJsonRunner:
                     transient_retry_count += 1
                     retry_reason = self._failure_category(exc)
                     continue
+                request_messages = completion.request_messages
+                # 先保留已付費用量；額外帳本寫入失敗時，錯誤 metadata 仍可帶回它。
+                if completion.total_tokens is not None:
+                    usage_reported_attempts += 1
+                if completion.estimated_cost_usd is not None:
+                    cost_reported_attempts += 1
+                for field_name in token_totals:
+                    value = getattr(completion, field_name)
+                    if value is not None:
+                        token_totals[field_name] += value
+                        token_usage_seen = True
+                if completion.estimated_cost_usd is not None:
+                    estimated_cost_usd += completion.estimated_cost_usd
+                    cost_seen = True
+                finish_reason = completion.finish_reason
                 # 寫入失敗不應觸發模型重試；空回覆仍可能有付費推理 tokens。
                 audit(record_llm_usage, **usage_record, status="completed" if completion.content else "empty_response",
                                  usage_known=completion.total_tokens is not None,
-                                 **{k: v for k, v in asdict(completion).items() if k != "content"})
+                                 **{k: v for k, v in asdict(completion).items() if k not in {"content", "request_messages"}})
                 try:
-                    for field_name in token_totals:
-                        value = getattr(completion, field_name)
-                        if value is not None:
-                            token_totals[field_name] += value
-                            token_usage_seen = True
-                    if completion.estimated_cost_usd is not None:
-                        estimated_cost_usd += completion.estimated_cost_usd
-                        cost_seen = True
-                    finish_reason = completion.finish_reason
                     if not completion.content:
                         raise RuntimeError(f"LLM returned empty content (finish_reason={finish_reason or 'unknown'})")
                     return completion.content
@@ -279,7 +298,7 @@ class LLMJsonRunner:
                 payload = self._parse(schema, first_text)
                 if payload_validator is not None:
                     payload_validator(payload)
-                return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"))
+                return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"), request_messages=request_messages)
             except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
                 audit(record_rejected_generation,
                     stage="schema_validation_initial",
@@ -321,7 +340,7 @@ class LLMJsonRunner:
                         },
                     )
                     raise
-                return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"))
+                return LLMRunResult(payload=payload, metadata=build_metadata(status="completed"), request_messages=request_messages)
         except Exception as exc:
             failure_category = self._failure_category(exc)
             metadata = build_metadata(status="failed", failure_category=failure_category)
@@ -384,6 +403,9 @@ class LLMJsonRunner:
         if candidate.provider in {"gemini", "cohere", "openai"}:
             kwargs["response_format"] = {"type": "json_object"}
 
+        # Preserve precisely the messages submitted by this attempt, including schema repair.
+        # Keep this snapshot out of the usage ledger and persisted research metadata.
+        request_messages = [dict(message) for message in kwargs["messages"]]
         response = await acompletion(**kwargs)
         content = response.choices[0].message.content
         usage = getattr(response, "usage", None)
@@ -404,6 +426,7 @@ class LLMJsonRunner:
             total_tokens=self._usage_value(usage, "total_tokens"),
             estimated_cost_usd=self._estimated_response_cost(response),
             finish_reason=self._finish_reason(response),
+            request_messages=request_messages,
         )
 
     @staticmethod
@@ -462,8 +485,9 @@ class LLMJsonRunner:
         if normalized.startswith("gpt-"):
             return LLMCallCandidate(
                 provider="openai",
-                model=normalized,
-                display_model=normalized,
+                # 新模型名稱可能尚未在 LiteLLM 清單內，明確指定 provider，不能依賴名稱推測。
+                model=f"openai/{normalized}",
+                display_model=model,
                 api_base=self.settings.llm_api_base,
                 api_key=self.settings.openai_api_key or self.settings.llm_api_key,
                 reasoning_effort=self.settings.openai_reasoning_effort,

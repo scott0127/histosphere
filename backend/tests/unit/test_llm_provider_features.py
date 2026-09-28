@@ -103,7 +103,7 @@ def test_all_six_provider_features_use_their_structured_contract_and_keep_usage(
             ),
             "generate_task": _generated_task_payload(),
             "judge_task_attempt": ErrorElicitationJudgementPayload(
-                judge_contract_version="error_elicitation_judge_v3",
+                judge_contract_version="error_elicitation_judge_v4",
                 question_results=[
                     {
                         "question_id": "q01",

@@ -111,6 +111,6 @@ test('admin editor takes complete private task data from snapshot, never initial
   const editable = state.buildAdminEditableJson({ events: [{ ...sampleEvent, personas: [], latest_task: { ...sampleTask, evaluation_payload: privatePayload } }] });
   assert.deepEqual(JSON.parse(editable.taskJson[sampleTask.id]), privatePayload);
   const workspace = await readFile('composables/useAdminWorkspace.ts', 'utf8');
-  assert.match(workspace, /await fetchAdminSnapshot\(adminKey\.value\)/);
+  assert.match(workspace, /await fetchAdminSnapshot\((?:adminKey\.value|key)\)/);
   assert.doesNotMatch(workspace, /initializeEventMaterial|\/event\/initialize/);
 });

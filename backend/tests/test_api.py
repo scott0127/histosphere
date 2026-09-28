@@ -418,11 +418,10 @@ def test_chat_policy_matrix(client):
             assert payload["message"]["metadata"]["dialogue_state"] == "STANDARD_CHAT"
             assert payload["message"]["metadata"]["dialogue_move"] == "natural_response"
             assert payload["message"]["metadata"]["disclosure_level"] is None
-            assert payload["message"]["metadata"]["target_question_id"] is None
+            assert payload["message"]["metadata"]["primary_ebl_move"] == "none"
 
         assert payload["message"]["metadata"]["interaction_policy_version"] == INTERACTION_POLICY_VERSION
-        if initialized["condition"]["response_policy"] == "scaffold":
-            assert payload["message"]["metadata"]["target_question_id"] == "q01"
+        assert payload["message"]["metadata"]["target_question_id"] == "q01"
         assert "interaction_runtime" in payload["message"]["metadata"]["prompt_modules"]
         assert "fidelity_flags" not in payload["message"]["metadata"]
         assert client.app.state.repository.get_message(payload["message"]["id"]).metadata["fidelity_flags"] == []
@@ -542,13 +541,14 @@ def test_d4_gives_feedback_then_waits_for_one_restatement(client, condition_key)
     assert metadata["completion_status"] == "feedback_completed"
     assert metadata["resolution_self_corrected"] is False
     assert "corrective_feedback_revealed_answer" not in metadata
-    assert metadata["next_target_started"] is True
+    # 此測試停用獨立審查：前題照常完成，但不能宣稱已確認下一題銜接。
+    assert metadata["next_target_started"] is False
     assert feedback.json()["response"] == valid_feedback
     messages = repository.list_messages(submitted["conversation_id"])
     assert any(message.content == valid_feedback for message in messages)
     resumed = build_interaction_runtime(condition, stored_attempt, messages)
     assert resumed.target.question_id == "q02"
-    assert resumed.previous_disclosure_level == "D0"
+    assert resumed.previous_disclosure_level is None
     # 重送最後答案只回讀已儲存回饋，不多生成、不再切換一次 target。
     replay = client.post("/api/chat", json=final_payload)
     assert replay.status_code == 200

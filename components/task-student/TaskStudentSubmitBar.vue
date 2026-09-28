@@ -10,7 +10,7 @@
       {{ error }}
     </p>
 
-    <div class="mt-5 flex justify-end">
+    <div class="flex justify-end" :class="compact ? '' : 'mt-5'">
       <button
         type="submit"
         :disabled="isSubmitting || !canSubmit"
@@ -31,6 +31,7 @@ defineProps<{
   isSubmitting: boolean;
   error: string | null;
   judgement: Record<string, unknown> | null;
+  compact?: boolean;
 }>();
 
 </script>

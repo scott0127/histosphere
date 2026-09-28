@@ -1,6 +1,6 @@
 # Local Development And Supabase Ports
 
-最後更新：2026-07-11
+最後更新：2026-09-06（補充持久用量紀錄的保留規則；本次未重啟服務）。
 
 ## 標準啟動
 
@@ -78,6 +78,8 @@ pnpm dev:cleanup:supabase
 ```
 
 停止 Supabase 時保留 CLI database backup。不要用 `supabase db reset` 當成一般啟動修復手段，因為它會重建 local database；本專案的日常 port/程序清理不應刪除研究資料。
+
+`.dev-logs/llm-usage.jsonl` 是 Admin Token／費用統計的持久帳本，不是用完可刪的暫存。啟動腳本清空的是指定的前後端程序 log，不是整個 `.dev-logs`。也不要隨手刪除 LLM 審查／失敗 audit；換部署主機時需保留所需紀錄。統計範圍見 [研究資料與用量](research-data-export.md)。
 
 ## 品質檢查
 

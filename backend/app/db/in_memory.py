@@ -7,6 +7,8 @@
 初始化時會自動 seed 四組 2x2 實驗條件。
 """
 
+from threading import Lock
+
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS, condition_sort_index
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import (
@@ -20,6 +22,7 @@ from app.models.domain import (
     Participant,
     Persona,
     ResearchLog,
+    SessionPosttest,
     TaskAttempt,
     WikiSource,
     utc_now,
@@ -58,6 +61,8 @@ class InMemoryRepository(RepositoryProtocol):
         self.conditions: dict[str, ExperimentCondition] = {}
         self.condition_keys: dict[str, str] = {}
         self.sessions: dict[str, ExperimentSession] = {}
+        self.posttests: dict[str, SessionPosttest] = {}
+        self._posttest_lock = Lock()
         self.participants: dict[str, Participant] = {}
         self.event_tasks: dict[str, EventTask] = {}
         self.task_attempts: dict[str, TaskAttempt] = {}
@@ -310,6 +315,23 @@ class InMemoryRepository(RepositoryProtocol):
         """
         sessions = [session for session in self.sessions.values() if session.user_id == user_id]
         return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
+
+    def get_posttest(self, session_id: str) -> SessionPosttest | None:
+        stored = self.posttests.get(session_id)
+        return stored.model_copy(deep=True) if stored else None
+
+    def create_posttest(self, posttest: SessionPosttest) -> SessionPosttest:
+        with self._posttest_lock:
+            self.posttests.setdefault(posttest.session_id, posttest.model_copy(deep=True))
+            return self.get_posttest(posttest.session_id)
+
+    def update_posttest(self, posttest: SessionPosttest, expected_revision: int) -> SessionPosttest | None:
+        with self._posttest_lock:
+            stored = self.posttests.get(posttest.session_id)
+            if not stored or stored.revision != expected_revision or stored.stage == "completed":
+                return None
+            self.posttests[posttest.session_id] = posttest.model_copy(deep=True)
+            return self.get_posttest(posttest.session_id)
 
     def list_participants(self) -> list[Participant]:
         """列出所有受測者，依 code 排序。"""

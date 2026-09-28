@@ -100,7 +100,11 @@ def test_reasoning_gap_can_restate_the_already_correct_answer_without_revealing_
 
 
 def test_reasoning_feedback_reaches_private_prompt_but_not_public_metadata():
-    runtime = build_interaction_runtime(_condition(), _attempt(), [])
+    attempt = _attempt()
+    attempt.judgement_payload["question_results"][0].update(
+        question_type="cloze", answer_feedback="PRIVATE answer feedback",
+    )
+    runtime = build_interaction_runtime(_condition(), attempt, [])
     prompt = runtime.prompt_block()
     payload = json.loads(prompt.split("Current target: ", 1)[1].split("\n", 1)[0])
     assert payload["learner_rationale"] == RAW_RATIONALE
@@ -108,7 +112,9 @@ def test_reasoning_feedback_reaches_private_prompt_but_not_public_metadata():
     assert payload["historical_thinking_tags"] == ["evidence"]
     assert payload["reasoning_feedback"] == "PRIVATE feedback"
     assert payload["reasoning_criteria"] == "PRIVATE criteria"
-    assert "Use reasoning_feedback to locate the concrete factual or inferential deficiency" in prompt
+    assert payload["answer_feedback"] == "PRIVATE answer feedback"
+    assert "Use answer_feedback for a cloze answer mismatch and reasoning_feedback for a reasoning gap" in prompt
+    assert "answer_feedback" not in learner_view(attempt).judgement_payload["question_results"][0]
     metadata = resolve_interaction_metadata(runtime, {
         "dialogue_state": "NOTICE_ERROR",
         "dialogue_move": "error_awareness_prompt",
@@ -120,6 +126,7 @@ def test_reasoning_feedback_reaches_private_prompt_but_not_public_metadata():
     assert metadata["historical_thinking_tags"] == ["evidence"]
     assert metadata["completion_status"] == "continue"
     assert "reasoning_feedback" not in metadata
+    assert "answer_feedback" not in metadata
     assert "reasoning_criteria" not in metadata
 
 
@@ -127,6 +134,9 @@ def test_reasoning_feedback_reaches_private_prompt_but_not_public_metadata():
 @pytest.mark.parametrize("opening", [True, False])
 def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
     attempt = _attempt()
+    attempt.judgement_payload["question_results"][0].update(
+        question_type="cloze", answer_feedback="PRIVATE answer feedback",
+    )
     attempt.judgement_payload["question_results"].append({
         **attempt.judgement_payload["question_results"][0],
         "question_id": "q02",
@@ -154,6 +164,7 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
     assert "does not bypass Disclosure" in rendered
     assert attempt.model_dump() == before
     assert context["question_results"][0]["learner_rationale"] == RAW_RATIONALE
+    assert context["question_results"][0]["answer_feedback"] == "PRIVATE answer feedback"
     assert "prompt" not in context["question_results"][0]
     assert "not automatically a factual misconception" in learner_task
     general = next(module.content for module in modules if module.name == "general_prompt")
@@ -169,8 +180,9 @@ def test_hidden_prompt_preserves_fulltext_and_original_rationale(code, opening):
         assert "Target historical-thinking focus:" not in rendered
         assert "resolution_evidence_used" not in rendered
     else:
-        assert len(context["question_results"]) == 2
-        assert "Standard chat has no mandated error target" in learner_task
+        assert len(context["question_results"]) == 1
+        assert "OTHER TARGET feedback" not in rendered
+        assert "Standard Chat tracks completion without an EBL sequence" in learner_task
 
 
 def test_resumed_target_retains_rationale_and_advances_only_after_existing_resolution():

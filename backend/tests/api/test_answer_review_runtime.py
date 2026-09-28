@@ -90,7 +90,11 @@ def test_delivery_repairs_unseen_draft_once_and_scope_is_correct(client, deliver
         stream = client.post("/api/chat/stream", json=request)
         assert "PRIVATE BAD" not in stream.text and "answer_delivery" not in stream.text
         assert len(calls) == count_before
-        assert client.get(review_url, headers={"x-admin-key": "test-admin"}).json()["stats"] == records["stats"]
+        reloaded_stats = client.get(review_url, headers={"x-admin-key": "test-admin"}).json()["stats"]
+        # Active elapsed learning time advances when read; persisted usage/counts must not.
+        assert {k: v for k, v in reloaded_stats.items() if k != "learning"} == {
+            k: v for k, v in records["stats"].items() if k != "learning"
+        }
         client.post("/api/chat", json={**request, "client_request_id": "next"})
         assert "PRIVATE BAD" not in generated[-1] and "PRIVATE FINDING" not in generated[-1]
 
@@ -136,6 +140,7 @@ def test_delivery_fallback_never_advances_ebl_or_impersonates_a_persona(client, 
         response = client.post("/api/chat", json={"conversation_id": cid, "user_message": "仍不清楚", "client_request_id": "fallback"})
         assert response.status_code == 200, response.text
         data = response.json()
+        assert data["learning_focus"] == submitted["learning_focus"]
         system = scenario != "constrained"
         if system:
             assert data["response"] == SYSTEM_FALLBACK
@@ -170,7 +175,7 @@ def test_delivery_fallback_never_advances_ebl_or_impersonates_a_persona(client, 
 
 
 @pytest.mark.parametrize("change", ["none", "delete", "expire"])
-def test_pending_review_is_not_public_and_late_response_cannot_restore_activity(client, delivery, monkeypatch, change):
+def test_pending_review_is_private_and_final_delivery_does_not_reopen_activity(client, delivery, monkeypatch, change):
     provider, calls = delivery
     with client:
         init = initialize_event(client)
@@ -192,6 +197,7 @@ def test_pending_review_is_not_public_and_late_response_cannot_restore_activity(
             try:
                 loaded = client.get(f"/api/conversations/{cid}")
                 assert loaded.status_code == 200, loaded.text
+                assert loaded.json()["learning_focus"] == submitted["learning_focus"]
                 assert len(loaded.json()["messages"]) == 2  # opening + durable learner, no candidate
                 assert not future.done()
                 assert "answer_delivery" not in loaded.text
@@ -207,11 +213,14 @@ def test_pending_review_is_not_public_and_late_response_cannot_restore_activity(
             finally:
                 release.set()
             result = future.result(5)
-            assert result.status_code == (200 if change == "none" else 409), result.text
+            assert result.status_code == (409 if change == "delete" else 200), result.text
         if change == "delete":
             assert repo.get_conversation(cid) is None and repo.list_messages(cid) == []
         elif change == "expire":
-            assert len(repo.list_messages(cid)) == 2
+            assert len(repo.list_messages(cid)) == 3
+            assert result.json()["message"]["metadata"]["delivered_after_deadline"] is True
+            assert repo.get_session(sid).status == "completed"
+            assert client.post("/api/chat", json={**request, "client_request_id": "new-after-end"}).status_code == 409
 
 
 def test_slow_review_does_not_block_chat_or_repeat_on_reload_and_admin_usage_is_deduplicated(client, monkeypatch):
@@ -289,11 +298,16 @@ def test_slow_review_does_not_block_chat_or_repeat_on_reload_and_admin_usage_is_
         assert records["stats"]["llm_calls_total"] == 7
         assert records["stats"]["total_tokens"] == 4 * 18 + 3 * 12
         assert records["stats"]["estimated_cost_usd"] == 0.0007
+        review_row = next(row for row in records["stats"]["usage_breakdown"] if row["stage"] == "review_answer")
+        assert review_row["requests"] == 3 and review_row["total_tokens"] == 36
+        assert review_row["estimated_known_cost_usd"] == 0.0003
         review_call = records["messages"][0]["metadata"]["answer_review"]["llm_call"]
         repository.log_research(ResearchLog(session_id=sid, event_id=initialized["event_id"],
             action_type="response_generation_failed", payload={"llm_call": review_call}))
         reloaded = client.get(records_url, headers={"x-admin-key": "test-admin"}).json()
-        assert reloaded["stats"] == records["stats"]
+        assert {k: v for k, v in reloaded["stats"].items() if k != "learning"} == {
+            k: v for k, v in records["stats"].items() if k != "learning"
+        }
         assert "PRIVATE REVIEW EXPLANATION" in json.dumps(records)
         assert "PRIVATE REVIEW" not in client.get(f"/api/conversations/{cid}").text
         assert all("answer_review" not in record["prompt"] for record in records["prompt_records"])

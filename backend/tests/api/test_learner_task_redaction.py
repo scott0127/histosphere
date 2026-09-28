@@ -87,6 +87,10 @@ def _seed(client, admin_test=False):
             "historical_thinking_tags": ["evidence"],
             "llm_call": {"total_tokens": 18},
             "answer_review": {"status": "completed", "findings": ["PRIVATE_ANSWER_REVIEW"]},
+            "prompt_preview": "PRIVATE_CRITERIA", "disclosure_reason": "PRIVATE_EXPECTED",
+            "expected_answer": "PRIVATE_EXPECTED", "source_text": "PRIVATE_SOURCE",
+            "reasoning_criteria": "PRIVATE_CRITERIA",
+            "learning_focus": {"claim": "PRIVATE_EXPECTED"},
             "nested": {"judgement": attempt.judgement_payload, "keep": "runtime"},
         },
     ))
@@ -124,6 +128,7 @@ def _assert_public_message(message):
     assert metadata["completion_status"] == "continue"
     assert metadata["target_count"] == 1
     assert metadata["llm_call"] == {"total_tokens": 18}
+    assert "learning_focus" not in metadata
     _assert_private_absent(message)
 
 
@@ -148,10 +153,13 @@ def test_learner_initialize_resume_submission_and_conversation_redact_but_admin_
     _assert_public_task(resumed.json()["task"])
     _assert_private_absent(resumed.json())
     assert resumed.json()["attempt"]["response_payload"]["answers"][0]["rationale"] == RATIONALE
+    expected_focus = {"question_id": "q01", "status": "active", "origin": "learner", "claim": None}
+    assert resumed.json()["learning_focus"] == expected_focus
 
     submitted = client.get(f"/api/tasks/attempts/{attempt.id}", headers=headers)
     assert submitted.status_code == 200, submitted.text
     result = submitted.json()["result"]
+    assert result["learning_focus"] == expected_focus
     _assert_public_task(result["task"])
     _assert_private_absent(submitted.json())
     public_result = result["judgement"]["question_results"][0]
@@ -166,11 +174,13 @@ def test_learner_initialize_resume_submission_and_conversation_redact_but_admin_
     _assert_public_task(loaded.json()["task"])
     _assert_public_message(loaded.json()["messages"][0])
     _assert_private_absent(loaded.json())
+    assert loaded.json()["learning_focus"] == expected_focus
 
     created = client.post("/api/conversations", headers=headers, json={
         "event_id": event.id, "task_attempt_id": attempt.id, "session_id": session.id, "user_id": session.user_id,
     })
     assert created.status_code == 200, created.text
+    assert created.json()["learning_focus"] == expected_focus
     _assert_public_message(created.json()["history"][0])
 
     listed = client.get("/api/events", headers=headers)

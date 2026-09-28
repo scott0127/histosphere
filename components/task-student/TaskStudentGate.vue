@@ -1,6 +1,6 @@
 <template>
   <!-- TaskStudentGate 只負責任務頁畫面；資料載入與送出由 useTaskGate 控制。 -->
-  <TaskStudentShell>
+  <TaskStudentShell :workspace="splitWorkspace">
     <div v-if="isLoading" class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-6 text-[var(--admin-copy)] shadow-[var(--admin-shadow-soft)]">
       正在載入任務資料...
     </div>
@@ -9,9 +9,15 @@
       {{ error || '找不到活動資料。請回首頁重新建立流程。' }}
     </div>
 
-    <section v-else class="space-y-7">
-      <SessionTimerBanner :session="session" />
-      <section class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-1.5 shadow-[var(--admin-shadow-soft)]">
+    <section v-else :class="splitWorkspace ? 'flex min-h-0 flex-1 flex-col gap-3' : 'space-y-7'">
+      <div class="shrink-0"><SessionTimerBanner :session="session" /></div>
+      <header v-if="splitWorkspace" class="flex shrink-0 items-center justify-between gap-3 px-1">
+        <h1 class="min-w-0 font-serif text-xl font-bold md:text-2xl">{{ taskData.event.canonical_name }}</h1>
+        <p class="shrink-0 text-xs text-[var(--admin-copy)] md:text-sm">
+          {{ studentActivityTitle(taskData.condition) }}<span v-if="taskData.personas[0]" class="ml-2">{{ taskData.personas[0].name }}</span>
+        </p>
+      </header>
+      <section v-else class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-1.5 shadow-[var(--admin-shadow-soft)]">
         <div class="rounded-[10px] border border-[var(--admin-border-soft)] p-5 md:p-6">
           <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div class="max-w-3xl">
@@ -35,8 +41,13 @@
         </div>
       </section>
 
-      <p v-if="configurationError" role="alert" class="text-sm font-semibold text-[var(--admin-danger)]">{{ configurationError }}</p>
-      <fieldset :disabled="sessionClosed || isSubmitting || Boolean(configurationError)" class="min-w-0 space-y-7 disabled:opacity-70">
+      <p v-if="configurationError" role="alert" class="shrink-0 text-sm font-semibold text-[var(--admin-danger)]">{{ configurationError }}</p>
+      <TaskStudentWorkspace v-if="splitWorkspace" :task="taskData.task" :model-value="modelValue"
+        :event-description="showEventIntroduction ? taskData.event.description || '' : ''"
+        :can-submit="submissionReady" :disabled="sessionClosed || isSubmitting || Boolean(configurationError)"
+        :is-submitting="isSubmitting" :error="error" :judgement="judgement"
+        @update:model-value="emit('update:modelValue', $event)" @submit="openSubmitConfirm" />
+      <fieldset v-else :disabled="sessionClosed || isSubmitting || Boolean(configurationError)" class="min-w-0 space-y-7 disabled:opacity-70">
       <TaskStudentStory :model-value="modelValue" :task="taskData.task" @update:model-value="emit('update:modelValue', $event)" />
 
       <form class="rounded-xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-5 shadow-md" @submit.prevent="openSubmitConfirm">
@@ -82,6 +93,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import TaskTransitionOverlay from '~/components/task-student/TaskTransitionOverlay.vue';
+import TaskStudentWorkspace from '~/components/task-student/TaskStudentWorkspace.vue';
 import type { EventInitializeResponse, ExperimentSession, TaskStudentAnswer } from '~/types';
 import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
 import { hasInlineTaskBlanks, isErrorElicitationTask, isTaskAnswerComplete, normalizeTaskQuestions, studentActivityTitle, taskConfigurationError } from '~/composables/useStudentTask';
@@ -105,6 +117,7 @@ const emit = defineEmits<{
 }>();
 
 const showSubmitConfirmDialog = ref(false);
+const splitWorkspace = computed(() => isErrorElicitationTask(props.taskData?.task));
 const showEventIntroduction = computed(() => shouldShowEventIntroduction(props.activityMode || 'learner'));
 const configurationError = computed(() => props.taskData ? taskConfigurationError(props.taskData.task) : null);
 const submissionReady = computed(() => Boolean(props.canSubmit && props.taskData

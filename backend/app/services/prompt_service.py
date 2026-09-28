@@ -89,7 +89,9 @@ RETRY_REMEDIATION: dict[str, str] = {
         "Reassess learner_progress and regenerate the complete response; do not silently clamp the previous value."
     ),
     "next_target_transition_missing": (
-        "After resolving the current item, explicitly bridge to the next unresolved item without revealing its answer."
+        "After resolving the current item, naturally introduce the specific backend-selected next target's "
+        "historical issue or original learner claim without revealing its answer. No fixed transition phrase "
+        "is required; a vague promise to continue or revisiting the current item is insufficient."
     ),
     "incomplete_resolution_criteria": (
         "Do not claim learner resolution unless error recognition, reflection, and a correct revision are demonstrated. "
@@ -310,7 +312,9 @@ class PromptService:
             "Interaction mode: standard historical chat. Answer the learner's event-related request as a normal conversational "
             "assistant and ask a natural clarification or follow-up only when useful. Maintain terminology and continuity. Do "
             "not run an EBL sequence, deliberately withhold an answer, or force reflection and self-correction. Do not announce "
-            "a task answer merely because it exists in private context."
+            "a task answer merely because it exists in private context. Follow the shared current-question progress: "
+            "observe learner revisions using the common criteria, acknowledge completed correction and naturally "
+            "introduce the next question. Progress tracking must not become a scaffold or a repeated demand to reflect."
         )
 
     @staticmethod
@@ -335,24 +339,6 @@ class PromptService:
         question_results = judgement.get("question_results")
         if judgement.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
             return PromptService._error_elicitation_context(judgement, runtime)
-        if runtime.interaction_mode == "standard_chat":
-            compact_results = [
-                {
-                    "question_id": result.get("question_id"),
-                    "prompt": result.get("prompt"),
-                    "source_text": result.get("source_text"),
-                    "learner_answer": result.get("learner_answer"),
-                    "correctness": result.get("correctness"),
-                }
-                for result in question_results or []
-                if isinstance(result, dict)
-            ]
-            return (
-                "The learner has already seen the inline right/wrong review. Treat these results only as conversational "
-                "background. Standard chat has no mandated error target and must not start an EBL sequence or recite a "
-                "task-answer summary.\n"
-                f"Task results: {json.dumps(compact_results, ensure_ascii=False)}"
-            )
         target_id = runtime.target.question_id if runtime.target else None
         selected_results = []
         for result in question_results or []:
@@ -383,18 +369,17 @@ class PromptService:
 
     @staticmethod
     def _error_elicitation_context(judgement: dict, runtime: InteractionRuntime) -> str:
-        standard_chat = runtime.interaction_mode == "standard_chat"
         target_id = runtime.target.question_id if runtime.target else None
         results = []
         for result in judgement.get("question_results") or []:
-            if not isinstance(result, dict) or (not standard_chat and result.get("question_id") != target_id):
+            if not isinstance(result, dict) or result.get("question_id") != target_id:
                 continue
             results.append({
                 key: result.get(key)
                 for key in (
                     "question_id", "blank_id", "question_type", "question_text", "source_text",
                     "learner_answer", "learner_rationale", "answer_correct", "reasoning_correct",
-                    "historical_thinking_tags", "reasoning_feedback", "reasoning_criteria", "expected_answer",
+                    "historical_thinking_tags", "answer_feedback", "reasoning_feedback", "reasoning_criteria", "expected_answer",
                     "evidence_ids",
                 )
             })
@@ -417,11 +402,11 @@ class PromptService:
             "question_results": results,
         }
         mode = (
-            "Use these results only as conversational background. Standard chat has no mandated error target; "
-            "do not start an EBL sequence or announce a task-answer summary. "
-            if standard_chat else
             "Only the runtime-selected item's evaluation is included. The shared full text supplies context, "
-            "not permission to move to another error. interaction_runtime is authoritative for target selection. "
+            "not permission to reopen completed errors. interaction_runtime is authoritative for current and next "
+            "question selection in all conditions. Original answers remain a fixed record, not the learner's "
+            "latest understanding; use learner dialogue for revision assessment. Standard Chat tracks completion "
+            "without an EBL sequence or Disclosure ladder. "
         )
         return (
             "The shared full text is the authored task; question_text is an extracted locator, not a separately "
@@ -433,11 +418,12 @@ class PromptService:
             "image pixels: do not claim visual details beyond the supplied text, caption, or image_alt. "
             f"{mode}"
             "Preserve learner_rationale as submitted. A correct answer with incorrect reasoning remains a learning "
-            "target. Use reasoning_feedback to understand the concrete weakness and choose a relevant response, but do "
+            "target. Use answer_feedback for a cloze answer mismatch and reasoning_feedback for a reasoning gap to "
+            "understand the concrete weakness and choose a relevant response, but do "
             "not quote it as learner-facing feedback or bypass Disclosure. An inadequate rationale is not automatically "
             "a factual misconception: do not invent beliefs or call a correct answer wrong. Historical Thinking tags "
             "are descriptive context, not a learner score or a mandate "
-            "to name or teach a dimension. Criteria, source_text, expected_answer, and reasoning_feedback are "
+            "to name or teach a dimension. Criteria, source_text, expected_answer, answer_feedback, and reasoning_feedback are "
             "private evaluation context, not learner-visible feedback or authorization to bypass Disclosure.\n"
             f"Task context: {json.dumps(context, ensure_ascii=False)}"
         )
@@ -528,7 +514,10 @@ class PromptService:
         return (
             "Generate the first substantive AI turn after task review. "
             f"{persona_entry}establish a concise event-relevant conversation "
-            "entry and end with one natural, open invitation to discuss the event. Do not disclose task answers merely "
+            "entry around the runtime-selected question's historical claim and end with one natural, open invitation "
+            "to discuss it. If the target is a third-party claim, never present it as the learner's mistake. If no "
+            "target remains, invite ordinary event discussion instead. Do not use reflection scaffolds or "
+            "declare a learner correction before they have replied. Do not disclose task answers merely "
             "because this is the opening turn."
         )
 

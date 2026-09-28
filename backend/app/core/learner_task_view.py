@@ -22,6 +22,9 @@ PUBLIC_RESULT_FIELDS = {
     "learner_answer", "learner_rationale", "correctness", "answer_correct", "reasoning_correct",
 }
 PRIVATE_MESSAGE_FIELDS = {
+    "prompt_preview", "disclosure_reason", "learning_focus",
+    "expected_answer", "correct_answer", "source_text", "reasoning_criteria", "correct_interpretation",
+    "answer_feedback",
     "answer_delivery",
     "judgement", "judgement_payload", "answer_review", "provider_fidelity_flags",
     "fidelity_flags", "persona_fidelity_flags", "content_validation_mode",

@@ -24,12 +24,14 @@ class EventInitializeRequest(BaseModel):
         condition_key: 實驗條件鍵值，預設 ``"ebl_roleplay"``。
         rebuild: 若為 True，強制重建已存在的事件。
         user_id: 受測者識別（可選）。
+        preview_participant_id: 管理員依指定受測者的分派進行隔離測試（可選）。
     """
 
     event_name: str = Field(..., min_length=1)
     condition_key: ConditionKey = "ebl_roleplay"
     rebuild: bool = False
     user_id: str | None = None
+    preview_participant_id: str | None = Field(default=None, min_length=1)
 
 
 class EventCheckRequest(BaseModel):
@@ -266,6 +268,15 @@ class ExperimentConditionUpdateRequest(BaseModel):
     active: bool | None = None
 
 
+class ParticipantActivityAssignment(BaseModel):
+    """One ordered participant round, binding an event to its condition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=1)
+    condition_code: Literal["01", "02", "03", "04"]
+
+
 class ParticipantCreateRequest(BaseModel):
     """建立受測者 registry 紀錄；Auth 帳號可稍後再綁定。"""
 
@@ -274,6 +285,7 @@ class ParticipantCreateRequest(BaseModel):
     display_name: str | None = None
     cohort: str | None = None
     condition_list: list[Literal["01", "02", "03", "04"]] = Field(default_factory=list)
+    activity_assignments: list[ParticipantActivityAssignment] | None = Field(default=None, max_length=4)
     notes: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -289,6 +301,7 @@ class ParticipantUpdateRequest(BaseModel):
     display_name: str | None = None
     cohort: str | None = None
     condition_list: list[Literal["01", "02", "03", "04"]] | None = None
+    activity_assignments: list[ParticipantActivityAssignment] | None = Field(default=None, max_length=4)
     status: Literal["active", "completed", "excluded", "archived"] | None = None
     notes: str | None = None
     metadata: dict[str, Any] | None = None

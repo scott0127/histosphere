@@ -291,6 +291,22 @@ class ExperimentSession(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class SessionPosttest(BaseModel):
+    """One fixed, explicitly nonvalidated placeholder instrument per session."""
+
+    id: str = Field(default_factory=new_id)
+    session_id: str
+    instrument_version: Literal["posttest_placeholder_v1"] = "posttest_placeholder_v1"
+    is_placeholder: Literal[True] = True
+    stage: Literal["engagement", "hat", "completed"] = "engagement"
+    engagement_answers: dict[str, int] = Field(default_factory=dict)
+    hat_answers: dict[str, str] = Field(default_factory=dict)
+    revision: int = 0
+    started_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    submitted_at: datetime | None = None
+
+
 class EventTask(BaseModel):
     """事件學習任務。
 

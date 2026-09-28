@@ -1,8 +1,7 @@
-"""Session progress service.
+"""恢復實驗進度、處理到期收尾，以及管理員的倒數重置與活動重開。
 
-本模組把既有 experiment_sessions、task_attempts 與 conversations
-組合成前端可恢復的學習進度。它不建立新的實驗資料，只讀取與整理
-已存在的正式資料來源。
+一般載入沿用已保存的活動、作答和對話，不重新開始倒數。
+收尾重述另外存研究紀錄；管理員重置／重開則走各自明確的操作，並非單純讀取。
 """
 
 from datetime import timedelta
@@ -18,21 +17,23 @@ from app.models.domain import EventTask, ExperimentSession, ResearchLog, utc_now
 from app.schemas.responses import (
     SessionRestartResponse,
     SessionClosureResponse,
+    SessionFinalExchange,
     SessionStateResponse,
     UserProgressItem,
     UserProgressResponse,
 )
 from app.services.session_runtime import EXPERIMENT_CHAT_DURATION_MINUTES, expire_session_if_due
+from app.services.learning_focus import build_learning_focus
 
 
 class SessionService:
-    """讀取 learner session 狀態，供首頁、task 頁與重新整理後恢復流程。"""
+    """整理受測者進度與收尾狀態，並提供管理員專用的重置操作。"""
 
     def __init__(self, repository: RepositoryProtocol) -> None:
         self.repository = repository
 
     def load_state(self, session_id: str) -> SessionStateResponse:
-        """載入單一 session 的完整狀態。"""
+        """載入單一活動；若期限已過，先標記結束，再提供可恢復的畫面資料。"""
         session = self.repository.get_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
@@ -46,6 +47,13 @@ class SessionService:
         task = get_session_task(self.repository, session, attempt)
         condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
         conversation = self.repository.get_conversation_by_session(session.id)
+        posttest = self.repository.get_posttest(session.id)
+        pending_final_response = bool(
+            session.status == "completed" and conversation
+            and self.repository.get_active_chat_operation(conversation.id)
+        )
+        # 先看是否仍在處理，再讀訊息；反過來會漏掉恰在兩次查詢之間完成的最後回覆。
+        history = self.repository.list_messages(conversation.id) if conversation else []
 
         return SessionStateResponse(
             session=session,
@@ -55,31 +63,76 @@ class SessionService:
             condition=condition,
             attempt=attempt,
             conversation_id=conversation.id if conversation else None,
-            closure=self._closure(session, attempt, condition, conversation),
+            closure=None if pending_final_response else self._closure(session, attempt, condition, conversation, history),
+            pending_final_response=pending_final_response,
+            final_exchange=self._final_exchange(history) if session.status == "completed" else None,
+            learning_focus=build_learning_focus(
+                condition, attempt, history,
+            ),
+            posttest_stage=posttest.stage if posttest else ("not_started" if session.status == "completed" else None),
         )
 
-    def _closure(self, session, attempt, condition, conversation) -> SessionClosureResponse | None:
-        # 正解只在計時已結束的 EBL 活動提供；不改動對話、不公布尚未談到的其他題目。
-        if not (session.status == "completed" and session.completion_reason == "timer_elapsed"
-                and condition and condition.ebl_enabled and attempt and conversation):
+    @staticmethod
+    def _final_exchange(history) -> SessionFinalExchange | None:
+        learner = next((m for m in reversed(history) if m.speaker_type == "learner"), None)
+        if not learner:
             return None
-        history = self.repository.list_messages(conversation.id)
-        spoken = [m for m in history if m.speaker_type != "learner"
-                  and not m.metadata.get("system_fallback")
-                  and not m.metadata.get("answer_delivery", {}).get("state_held")]
+        assistant = next((m for m in history if m.id == learner.metadata.get("response_message_id")), None)
+        return SessionFinalExchange(
+            learner_message=learner.content,
+            assistant_name=assistant.speaker_name if assistant else None,
+            assistant_message=assistant.content if assistant else None,
+            delivered_after_deadline=bool(assistant and assistant.metadata.get("delivered_after_deadline")),
+            failed=learner.operation_status == "failed",
+        )
+
+    def _closure(self, session, attempt, condition, conversation, history) -> SessionClosureResponse | None:
+        """只為到期時正在處理的那題準備正解與重述畫面，不順便公布其他題答案。"""
+        # 正解只在計時已結束的 EBL 活動提供；不改動對話、不公布尚未談到的其他題目。
+        if not (
+            session.status == "completed"
+            and session.completion_reason == "timer_elapsed"
+            and condition
+            and condition.ebl_enabled
+            and attempt
+            and conversation
+        ):
+            return None
+        late_messages = [m for m in history if m.metadata.get("delivered_after_deadline")]
+        # 收尾只整理倒數期間已討論的題目；最後送達的文字不額外開啟一題。
+        history = [m for m in history if not m.metadata.get("delivered_after_deadline")]
+        # 系統備援或保留原進度的回覆，不算 AI 已正式引入下一題。
+        spoken = [
+            m for m in history
+            if m.speaker_type != "learner"
+            and not m.metadata.get("system_fallback")
+            and not m.metadata.get("answer_delivery", {}).get("state_held")
+        ]
         if not spoken:
             return None
         runtime = build_interaction_runtime(condition, attempt, history)
         target = runtime.target
         if not target:
             return None
+        if any(
+            m.metadata.get("target_question_id") == target.question_id
+            and m.metadata.get("completion_status") in {"resolved", "feedback_completed"}
+            and not m.metadata.get("answer_delivery", {}).get("state_held")
+            for m in late_messages
+        ):
+            return None
         last = spoken[-1].metadata
         if last.get("target_question_id") != target.question_id and not (
             last.get("next_target_started") and last.get("next_target_question_id") == target.question_id
         ):
             return None
-        result = next((r for r in attempt.judgement_payload.get("question_results", [])
-                       if r.get("question_id") == target.question_id), {})
+        result = next(
+            (
+                r for r in attempt.judgement_payload.get("question_results", [])
+                if r.get("question_id") == target.question_id
+            ),
+            {},
+        )
         answer = target.expected_answer
         if isinstance(answer, bool):
             answer_text = "是" if answer else "否"
@@ -89,10 +142,24 @@ class SessionService:
             answer_text = "" if answer is None else str(answer)
         options = result.get("options") or []
         if not options:
-            snapshot = next((log for log in self.repository.list_research_logs_for_session(session.id)
-                             if log.action_type == "session_material_snapshot"), None)
-            questions = snapshot.payload.get("materials", {}).get("task", {}).get("evaluation_payload", {}).get("questions", []) if snapshot else []
-            options = next((q.get("options", []) for q in questions if q.get("id") == target.question_id), [])
+            snapshot = next(
+                (
+                    log for log in self.repository.list_research_logs_for_session(session.id)
+                    if log.action_type == "session_material_snapshot"
+                ),
+                None,
+            )
+            questions = (
+                snapshot.payload.get("materials", {})
+                .get("task", {})
+                .get("evaluation_payload", {})
+                .get("questions", [])
+                if snapshot else []
+            )
+            options = next(
+                (q.get("options", []) for q in questions if q.get("id") == target.question_id),
+                [],
+            )
         for option in options:
             if isinstance(option, dict) and str(option.get("value")) == answer_text:
                 answer_text = f"{answer_text}：{option.get('label', answer_text)}"
@@ -101,12 +168,18 @@ class SessionService:
         explanation = str(target.source_text or "").strip()
         if not answer_text or not explanation:
             raise HTTPException(status_code=409, detail="本題缺少完整修正說明，請研究人員協助收尾。")
+        # 相同到期時間與題目會得到同一個識別碼，重新整理後能找回已送出的重述。
         closure_id = stable_hash([session.id, session.timer_ends_at, target.question_id, answer_text, explanation])
         for log in self.repository.list_research_logs_for_session(session.id):
             if log.action_type == "session_closure_restatement" and log.payload.get("closure_id") == closure_id:
                 return SessionClosureResponse.model_validate(log.payload)
-        return SessionClosureResponse(closure_id=closure_id, question_id=target.question_id,
-                                      question=target.prompt, answer=answer_text, explanation=explanation)
+        return SessionClosureResponse(
+            closure_id=closure_id,
+            question_id=target.question_id,
+            question=target.prompt,
+            answer=answer_text,
+            explanation=explanation,
+        )
 
     def submit_closure(self, session_id: str, closure_id: str, reflection: str) -> SessionClosureResponse:
         """重述保存於研究紀錄，不新增聊天回合，也不把閱讀正解後的重述當作獨立學會。"""
@@ -119,24 +192,42 @@ class SessionService:
         if not reflection.strip():
             raise HTTPException(status_code=422, detail="請先用自己的話寫下修正後的想法。")
         saved = closure.model_copy(update={"reflection": reflection.strip(), "completed_at": utc_now().isoformat()})
-        self.repository.log_research(ResearchLog(
-            id=str(uuid5(NAMESPACE_URL, f"histosphere:closure:{closure_id}")),
-            user_id=state.session.user_id, session_id=session_id, event_id=state.session.event_id,
-            task_id=state.attempt.task_id, attempt_id=state.attempt.id, conversation_id=state.conversation_id,
-            action_type="session_closure_restatement", payload={**saved.model_dump(),
-                "phase": "post_timer_closure", "outcome": "assisted_restatement_recorded",
-                "independent_mastery": False},
-        ))
+        self.repository.log_research(
+            ResearchLog(
+                id=str(uuid5(NAMESPACE_URL, f"histosphere:closure:{closure_id}")),
+                user_id=state.session.user_id,
+                session_id=session_id,
+                event_id=state.session.event_id,
+                task_id=state.attempt.task_id,
+                attempt_id=state.attempt.id,
+                conversation_id=state.conversation_id,
+                action_type="session_closure_restatement",
+                payload={
+                    **saved.model_dump(),
+                    "phase": "post_timer_closure",
+                    "outcome": "assisted_restatement_recorded",
+                    "independent_mastery": False,
+                },
+            )
+        )
         return saved
 
-    def user_progress(self, user_id: str, participant_id: str | None = None) -> UserProgressResponse:
+    def user_progress(
+        self,
+        user_id: str,
+        participant_id: str | None = None,
+        *,
+        admin_test: bool = False,
+    ) -> UserProgressResponse:
         """列出某位受測者在各事件與 condition 下的最新進度。"""
         if not user_id.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
 
         progress: list[UserProgressItem] = []
         for stored_session in self.repository.list_sessions_for_user(user_id.strip()):
-            if stored_session.is_admin_test:
+            if stored_session.is_admin_test != admin_test:
+                continue
+            if admin_test and stored_session.status == "archived":
                 continue
             if participant_id and stored_session.participant_id != participant_id:
                 continue
@@ -144,6 +235,7 @@ class SessionService:
             attempt = self.repository.get_task_attempt_for_session(session.id)
             task = get_session_task(self.repository, session, attempt)
             conversation = self.repository.get_conversation_by_session(session.id)
+            posttest = self.repository.get_posttest(session.id)
             progress.append(
                 UserProgressItem(
                     event_id=session.event_id,
@@ -158,6 +250,7 @@ class SessionService:
                         conversation is not None,
                     ),
                     updated_at=session.updated_at.isoformat(),
+                    posttest_stage=posttest.stage if posttest else ("not_started" if session.status == "completed" else None),
                 )
             )
         return UserProgressResponse(progress=progress)
@@ -169,6 +262,8 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
         if session.status == "archived":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archived session cannot be resumed")
+        if self.repository.get_posttest(session_id):
+            raise HTTPException(status_code=409, detail="後測已開始，不能重開本輪對話；請另建測試活動。")
         if session.status == "completed" and session.completion_reason != "timer_elapsed":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

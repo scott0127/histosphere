@@ -1,6 +1,6 @@
 // useAdminWorkspace 管理 admin 頁的 snapshot 載入、JSON 編輯狀態與保存流程。
 // Page 保留登入畫面與折疊 UI；這裡負責 admin API 的狀態一致性。
-import { computed, ref, watch } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import { taskControlQuestions } from '~/composables/useTaskControl';
 import type {
   AdminPromptPreviewResponse,
@@ -83,6 +83,22 @@ export const useAdminWorkspace = () => {
   const promptPreviewMessage = ref('請說明這個事件的重要性。');
   const selectedResearchSession = ref<AdminSessionResearchResponse | null>(null);
   const researchSessionLoading = ref(false);
+  let snapshotRequest = 0;
+  let authUsersRequest = 0;
+  let researchRequest = 0;
+  let disposed = false;
+
+  const cancelPendingLoads = () => {
+    snapshotRequest += 1;
+    authUsersRequest += 1;
+    researchRequest += 1;
+    researchSessionLoading.value = false;
+  };
+
+  onScopeDispose(() => {
+    disposed = true;
+    cancelPendingLoads();
+  });
 
   const selectedEvent = computed<EventWithPersonas | null>(() => {
     if (!snapshot.value || !selectedEventId.value) return null;
@@ -113,6 +129,7 @@ export const useAdminWorkspace = () => {
   });
 
   const resetWorkspace = (clearStoredKey = true) => {
+    cancelPendingLoads();
     adminKey.value = '';
     snapshot.value = null;
     authUsers.value = [];
@@ -142,11 +159,17 @@ export const useAdminWorkspace = () => {
   };
 
   const loadAuthUsers = async () => {
+    if (disposed || !adminKey.value) return;
+    const request = ++authUsersRequest;
+    const key = adminKey.value;
+    const isCurrent = () => !disposed && request === authUsersRequest && adminKey.value === key;
     authUsersError.value = null;
     try {
-      const response = await fetchAdminAuthUsers(adminKey.value);
+      const response = await fetchAdminAuthUsers(key);
+      if (!isCurrent()) return;
       authUsers.value = response.users || [];
     } catch (e: any) {
+      if (!isCurrent()) return;
       authUsers.value = [];
       authUsersError.value = formatAdminApiError(e, 'Auth users 載入失敗。');
     }
@@ -176,13 +199,19 @@ export const useAdminWorkspace = () => {
     preserveUnsavedTaskDrafts?: boolean;
     exceptTaskId?: string;
   } = {}) => {
+    if (disposed || !adminKey.value) return false;
+    const request = ++snapshotRequest;
+    authUsersRequest += 1;
+    const key = adminKey.value;
+    const isCurrent = () => !disposed && request === snapshotRequest && adminKey.value === key;
     error.value = null;
     const drafts = options.preserveUnsavedTaskDrafts
       ? captureUnsavedTaskDrafts(options.exceptTaskId)
       : {};
     try {
-      const data = await fetchAdminSnapshot(adminKey.value);
-      setAdminSessionKey(adminKey.value);
+      const data = await fetchAdminSnapshot(key);
+      if (!isCurrent()) return false;
+      setAdminSessionKey(key);
       const editable = buildAdminEditableJson(data);
       const nextBaselines: Record<string, string> = {};
 
@@ -210,8 +239,9 @@ export const useAdminWorkspace = () => {
         selectedConditionId.value = sortPromptConditions(data.conditions)[0]?.id || null;
       }
       await loadAuthUsers();
-      return true;
+      return isCurrent();
     } catch (e: any) {
+      if (!isCurrent()) return false;
       clearAdminSessionKey();
       error.value = formatAdminApiError(e, '後台資料載入失敗，請確認 admin key。');
       return false;
@@ -462,19 +492,27 @@ export const useAdminWorkspace = () => {
   };
 
   const loadSessionResearch = async (sessionId: string) => {
+    if (disposed || !adminKey.value) return;
+    const request = ++researchRequest;
+    const key = adminKey.value;
+    const isCurrent = () => !disposed && request === researchRequest && adminKey.value === key;
     researchSessionLoading.value = true;
     error.value = null;
     try {
-      selectedResearchSession.value = await fetchAdminSessionResearch(adminKey.value, sessionId);
+      const research = await fetchAdminSessionResearch(key, sessionId);
+      if (isCurrent()) selectedResearchSession.value = research;
     } catch (e: any) {
+      if (!isCurrent()) return;
       selectedResearchSession.value = null;
       error.value = formatAdminApiError(e, 'Session 研究紀錄載入失敗。');
     } finally {
-      researchSessionLoading.value = false;
+      if (!disposed && request === researchRequest) researchSessionLoading.value = false;
     }
   };
 
   const closeSessionResearch = () => {
+    researchRequest += 1;
+    researchSessionLoading.value = false;
     selectedResearchSession.value = null;
   };
 

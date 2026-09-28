@@ -1,4 +1,8 @@
-"""Normalize task judgement into a stable per-question error profile."""
+"""把作答與 Judge 結果整理成後續對話可使用的逐題錯誤資料。
+
+現行題組：選擇／是非的答案用規則判，填空答案與所有理由由 LLM 判。
+舊格式活動仍走相容分支，不把新判準偷偷套回既有研究紀錄。
+"""
 
 from __future__ import annotations
 
@@ -20,22 +24,33 @@ QUESTION_CORRECTNESS_VALUES = frozenset({"correct", "partial", "incorrect", "una
 
 
 def _normalized_text(value: Any) -> str:
-    return " ".join(unicodedata.normalize("NFKC", str(value if value is not None else "")).strip().casefold().split())
+    return " ".join(
+        unicodedata.normalize("NFKC", str(value if value is not None else ""))
+        .strip().casefold().split()
+    )
 
 
-def _answers_match(answer: Any, expected: Any) -> bool:
+def _normalized_cloze_text(value: Any) -> str:
+    # 舊格式填空比對才使用：忽略句尾句號，不刪掉答案內部的標點或文字。
+    return _normalized_text(value).rstrip(" .。")
+
+
+def _answers_match(answer: Any, expected: Any, *, question_type: str | None = None) -> bool:
     if isinstance(expected, bool):
         if isinstance(answer, bool):
             return answer is expected
         normalized = _normalized_text(answer)
         return normalized in ({"true", "是"} if expected else {"false", "否"})
+    normalize = _normalized_cloze_text if question_type == "cloze" else _normalized_text
+    if question_type == "cloze" and not normalize(answer):
+        return False
     if isinstance(expected, list):
         if isinstance(answer, list):
-            actual_values = sorted(_normalized_text(item) for item in answer)
-            expected_values = sorted(_normalized_text(item) for item in expected)
+            actual_values = sorted(normalize(item) for item in answer)
+            expected_values = sorted(normalize(item) for item in expected)
             return actual_values == expected_values
-        return any(_normalized_text(answer) == _normalized_text(item) for item in expected)
-    return _normalized_text(answer) == _normalized_text(expected)
+        return any(normalize(answer) == normalize(item) for item in expected)
+    return normalize(answer) == normalize(expected)
 
 
 def _has_value(value: Any) -> bool:
@@ -93,10 +108,11 @@ def enrich_task_judgement(
     response_payload: dict[str, Any],
     judgement: dict[str, Any],
 ) -> dict[str, Any]:
-    """建立逐題診斷結果；新版 Task 由規則判答案、LLM 判每題理由。"""
+    """依題組版本選擇整理方式；現行格式中，填空答案也使用 LLM 的判定。"""
     evaluation_payload = getattr(task, "evaluation_payload", {})
     if evaluation_payload.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
         return _enrich_error_elicitation(task, response_payload, judgement)
+    # 以下保留舊活動的 partial／unanswered 等語意，不是現行二分判定流程。
     raw_questions = evaluation_payload.get("questions") if isinstance(evaluation_payload, dict) else []
     questions = [item for item in raw_questions or [] if isinstance(item, dict)]
     all_correct_fallback = (
@@ -139,7 +155,11 @@ def enrich_task_judgement(
         elif question_type in OBJECTIVE_QUESTION_TYPES:
             if expected_answer is None:
                 raise ValueError(f"Objective question {question_id} has no correct_answer")
-            correctness = "correct" if _answers_match(learner_answer, expected_answer) else "incorrect"
+            correctness = (
+                "correct"
+                if _answers_match(learner_answer, expected_answer, question_type=question_type)
+                else "incorrect"
+            )
         else:
             provider_correctness = provider_result.get("correctness")
             if provider_correctness not in QUESTION_CORRECTNESS_VALUES - {"unanswered"}:
@@ -210,13 +230,16 @@ def enrich_task_judgement(
 
 
 def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dict:
-    """模型只負責理由；漏題或不合法輸出是處理失敗，不是學生答錯。"""
+    """合併規則與模型判定；漏題或格式錯誤要報處理失敗，不能算成學生答錯。"""
     evaluation = task.evaluation_payload
     validate_task_answers(evaluation, response, complete=True)
-    parsed = ErrorElicitationJudgementPayload.model_validate({
-        "judge_contract_version": judgement.get("judge_contract_version"),
-        "question_results": judgement.get("question_results"),
-    })
+    parsed = ErrorElicitationJudgementPayload.model_validate(
+        {
+            "judge_contract_version": judgement.get("judge_contract_version"),
+            "question_results": judgement.get("question_results"),
+        }
+    )
+    # 先核對題號完全一致，再逐題合併；不能靠位置配對，也不能默默漏掉某一題。
     reasoning = {result.question_id: result for result in parsed.question_results}
     questions = evaluation["questions"]
     if set(reasoning) != {question["id"] for question in questions}:
@@ -225,33 +248,51 @@ def _enrich_error_elicitation(task: Any, response: dict, judgement: dict) -> dic
     # 只由完整題文抽取顯示片段，不接受前端自填的題目文字或評分標準。
     text_by_id = {}
     previous_end = 0
-    for match in re.finditer(r"\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}", task.error_elicitation_task_full_text):
-        text_by_id[match.group(1)] = task.error_elicitation_task_full_text[previous_end:match.start()].strip()
+    for match in re.finditer(
+        r"\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}", task.error_elicitation_task_full_text
+    ):
+        text_by_id[match.group(1)] = (
+            task.error_elicitation_task_full_text[previous_end:match.start()].strip()
+        )
         previous_end = match.end()
     results = []
     for question in questions:
         qid = question["id"]
         answer = answers[qid]
         rationale = reasoning[qid]
-        answer_correct = _answers_match(answer["value"], question["correct_answer"])
+        if question["type"] == "cloze":
+            # 填空可有合理同義說法，不能再用字串相等覆蓋 LLM 的答案判定。
+            if rationale.answer_correct is None or not rationale.answer_feedback:
+                raise ValueError(f"{qid}: cloze answer judgement and feedback are required")
+            answer_correct = rationale.answer_correct
+            answer_feedback = rationale.answer_feedback
+        else:
+            # 選擇與是非仍由後端核對，LLM 不能改寫這兩種題目的答案對錯。
+            answer_correct = _answers_match(answer["value"], question["correct_answer"])
+            answer_feedback = None
+        # 答案與理由都正確才算通過；歷史思考標籤只做描述，不參與這個判斷。
         result = ErrorElicitationQuestionResult(
-            **rationale.model_dump(),
+            **rationale.model_dump(exclude={"answer_correct", "answer_feedback"}),
             answer_correct=answer_correct,
+            answer_feedback=answer_feedback,
             correctness="correct" if answer_correct and rationale.reasoning_correct else "incorrect",
         )
-        results.append({
-            **result.model_dump(),
-            "blank_id": qid,
-            "question_type": question["type"],
-            "question_text": text_by_id.get(qid, ""),
-            "options": question.get("options", []),
-            "learner_answer": answer["value"],
-            "learner_rationale": answer["rationale"],
-            "expected_answer": question["correct_answer"],
-            "reasoning_criteria": question["reasoning_criteria"],
-            "source_text": question.get("source_text"),
-            "evidence_ids": question.get("accepted_evidence_ids", []),
-        })
+        # 留下判題當時的題目、標準與作答，後續 AI 才能針對原本的錯誤引導。
+        results.append(
+            {
+                **result.model_dump(),
+                "blank_id": qid,
+                "question_type": question["type"],
+                "question_text": text_by_id.get(qid, ""),
+                "options": question.get("options", []),
+                "learner_answer": answer["value"],
+                "learner_rationale": answer["rationale"],
+                "expected_answer": question["correct_answer"],
+                "reasoning_criteria": question["reasoning_criteria"],
+                "source_text": question.get("source_text"),
+                "evidence_ids": question.get("accepted_evidence_ids", []),
+            }
+        )
     enriched = {
         **{key: value for key, value in judgement.items() if key not in {"score", "question_results"}},
         "contract_version": ERROR_ELICITATION_CONTRACT_VERSION,

@@ -114,6 +114,38 @@ export const buildTaskReadingLayout = (task: EventTask) => {
   };
 };
 
+export const buildTaskQuestionLayout = (task: EventTask) => {
+  const { introduction, segments } = buildTaskReadingLayout(task);
+  const questions: { question: TaskQuestion; text: string; index: number }[] = [];
+  let precedingText = '';
+
+  for (const segment of segments) {
+    if (segment.type === 'text') {
+      precedingText += segment.text;
+      continue;
+    }
+    const question = segment.question;
+    questions.push({
+      question: {
+        id: question.id,
+        blank_id: question.blank_id,
+        type: question.type,
+        required: question.required,
+        options: question.options?.map(({ id, label, value }) => ({ id, label, value })),
+        ...(question.prompt === undefined ? {} : { prompt: question.prompt }),
+        ...(question.placeholder === undefined ? {} : { placeholder: question.placeholder }),
+        ...(question.source_text === undefined ? {} : { source_text: question.source_text }),
+      },
+      // 顯示序號依本文順序；只移除開頭的題號，保留題目內其他文字。
+      text: precedingText.replace(/^\s*Q\d{2,}[｜|]\s*/i, '').trim(),
+      index: questions.length,
+    });
+    precedingText = '';
+  }
+
+  return { introduction, questions, trailingText: precedingText.trim() };
+};
+
 const hasTaskAnswerValue = (value: TaskAnswerValue) => {
   if (typeof value === 'string') return value.trim().length > 0;
   if (Array.isArray(value)) return value.length > 0;
@@ -214,7 +246,7 @@ export const taskAnswerValueToText = (value: TaskAnswerValue) => {
 export type TaskAnswerReviewStatus = 'correct' | 'incorrect' | 'unanswered' | 'pending' | 'failed';
 
 export type TaskAnswerReview = {
-  question: Pick<TaskQuestion, 'id' | 'type'>;
+  question: Pick<TaskQuestion, 'id' | 'type' | 'options'>;
   label: string;
   value: TaskAnswerValue;
   questionText: string;
@@ -225,6 +257,7 @@ export type TaskAnswerReview = {
 
 export const buildTaskAnswerReviews = (task: EventTask, attempt: TaskAttempt): TaskAnswerReview[] => {
   const answers = restoreTaskAnswers(task, attempt.response_payload);
+  const segments = buildTaskReadingLayout(task).segments;
   const rawResults = attempt.judgement_payload?.question_results;
   const judgementByQuestionId = new Map(
     (Array.isArray(rawResults) ? rawResults : [])
@@ -247,11 +280,17 @@ export const buildTaskAnswerReviews = (task: EventTask, attempt: TaskAttempt): T
       && (backendStatus === 'correct' || backendStatus === 'incorrect')) status = backendStatus;
 
     const selectedOption = question.options?.find((option) => option.value === value);
+    const segmentIndex = segments.findIndex((segment) => segment.type === 'blank' && segment.question.id === question.id);
+    const preceding = segments[segmentIndex - 1];
+    // 舊作答未保存題幹時，沿用本文的題號段落，不以答案或判定說明代替題目。
+    const questionText = typeof result?.question_text === 'string' && result.question_text.trim()
+      ? result.question_text
+      : question.prompt || (preceding?.type === 'text' ? preceding.text.trim() : '');
     return {
-      question: { id: question.id, type: question.type },
+      question: { id: question.id, type: question.type, options: question.options },
       label: isErrorElicitationTask(task) ? question.id : `Q${String(index + 1).padStart(2, '0')}`,
       value,
-      questionText: typeof result?.question_text === 'string' ? result.question_text : '',
+      questionText: questionText.match(/(?:^|\n)\s*Q\d{2,}[｜|]\s*([\s\S]*)$/i)?.[1] || questionText,
       answerText: selectedOption?.label || taskAnswerValueToText(value) || '未作答',
       rationale: typeof result?.learner_rationale === 'string' ? result.learner_rationale : answer?.rationale ?? '',
       status,

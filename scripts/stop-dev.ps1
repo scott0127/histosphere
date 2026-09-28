@@ -17,16 +17,27 @@ function Stop-ProcessTree {
     return
   }
 
+  # Guard before walking descendants: PID 4 is the parent of critical Windows processes.
+  if ($ProcessId -le 4) {
+    Write-Warning "Skipping Windows system PID $ProcessId; it must not be terminated."
+    return
+  }
+  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if (-not $Process) {
+    return
+  }
+  if ($Process.SessionId -eq 0) {
+    Write-Warning "Skipping service/system process $ProcessId ($($Process.ProcessName)). Choose another port."
+    return
+  }
+
   $Children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue
   foreach ($Child in $Children) {
     Stop-ProcessTree -ProcessId $Child.ProcessId
   }
 
-  $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-  if ($Process) {
-    Write-CleanupLog "Stopping PID $ProcessId ($($Process.ProcessName))"
-    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
-  }
+  Write-CleanupLog "Stopping PID $ProcessId ($($Process.ProcessName))"
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
 foreach ($Port in $Ports) {

@@ -22,6 +22,7 @@ from app.models.domain import (
     RagSource,
     RelatedEvent,
     ResearchLog,
+    SessionPosttest,
     TaskAttempt,
 )
 
@@ -63,6 +64,15 @@ class EventListItem(Event):
     latest_task: EventTask | None = None
 
 
+class LearningFocus(BaseModel):
+    """受測者可見的目前題目；不包含正解、判準或內部診斷。"""
+
+    question_id: str | None = None
+    status: Literal["active", "completed", "none"]
+    origin: Literal["learner", "third_party"] | None = None
+    claim: str | None = None
+
+
 class TaskSubmitResponse(BaseModel):
     """Task 提交回應。
 
@@ -92,6 +102,7 @@ class TaskSubmitResponse(BaseModel):
     judgement: dict[str, Any] = Field(default_factory=dict)
     greeting: str
     history: list[ChatMessage] = Field(default_factory=list)
+    learning_focus: LearningFocus | None = None
 
 
 class TaskSubmissionAcceptedResponse(BaseModel):
@@ -138,6 +149,7 @@ class ConversationCreateResponse(BaseModel):
     condition: ExperimentCondition | None = None
     greeting: str
     history: list[ChatMessage] = Field(default_factory=list)
+    learning_focus: LearningFocus | None = None
 
 
 class ConversationLoadResponse(BaseModel):
@@ -165,6 +177,7 @@ class ConversationLoadResponse(BaseModel):
     task: EventTask | None = None
     task_attempt: TaskAttempt | None = None
     related_events: list[RelatedEvent] = Field(default_factory=list)
+    learning_focus: LearningFocus | None = None
 
 
 class ChatResponse(BaseModel):
@@ -189,6 +202,7 @@ class ChatResponse(BaseModel):
     related_events: list[RelatedEvent] = Field(default_factory=list)
     dynamic_context: str = ""
     rag_sources: list[RagSource] = Field(default_factory=list)
+    learning_focus: LearningFocus | None = None
 
 
 class ChatOperationStatusResponse(BaseModel):
@@ -275,6 +289,11 @@ class AdminPromptPreviewResponse(BaseModel):
 class AdminPromptDryRunResponse(AdminPromptPreviewResponse):
     """Prompt preview plus an LLM response that is never stored as a message."""
 
+    # prompt/modules remain the initial assembly; recovery may use a different prompt.
+    final_prompt: str
+    final_prompt_kind: Literal["base", "repair", "constrained", "system_fallback"]
+    final_messages: list[dict[str, str]] = Field(default_factory=list)
+    schema_repair_count: int = 0
     response: str
     annotations: list[Annotation] = Field(default_factory=list)
     related_events: list[RelatedEvent] = Field(default_factory=list)
@@ -292,6 +311,15 @@ class SessionClosureResponse(BaseModel):
     explanation: str
     reflection: str | None = None
     completed_at: str | None = None
+
+
+class SessionFinalExchange(BaseModel):
+    """只公開最後一輪文字，保留內部 prompt 與判定 metadata。"""
+    learner_message: str
+    assistant_name: str | None = None
+    assistant_message: str | None = None
+    delivered_after_deadline: bool = False
+    failed: bool = False
 
 
 class SessionStateResponse(BaseModel):
@@ -317,6 +345,10 @@ class SessionStateResponse(BaseModel):
     attempt: TaskAttempt | None = None
     conversation_id: str | None = None
     closure: SessionClosureResponse | None = None
+    pending_final_response: bool = False
+    final_exchange: SessionFinalExchange | None = None
+    learning_focus: LearningFocus | None = None
+    posttest_stage: Literal["not_started", "engagement", "hat", "completed"] | None = None
 
 
 class SessionRestartResponse(BaseModel):
@@ -348,6 +380,7 @@ class UserProgressItem(BaseModel):
     conversation_id: str | None = None
     status: str
     updated_at: str
+    posttest_stage: Literal["not_started", "engagement", "hat", "completed"] | None = None
 
 
 class UserProgressResponse(BaseModel):
@@ -372,6 +405,84 @@ class ParticipantMeResponse(BaseModel):
     progress: list[UserProgressItem] = Field(default_factory=list)
 
 
+class AdminParticipantPreviewResponse(BaseModel):
+    """An assigned participant's isolated admin test identity and progress."""
+
+    participant: Participant
+    test_user_id: str
+    progress: list[UserProgressItem] = Field(default_factory=list)
+
+
+class AdminLLMUsageRow(BaseModel):
+    stage: str
+    provider: str
+    model: str
+    requests: int = 0
+    token_reported_requests: int = 0
+    cost_reported_requests: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_known_cost_usd: float = 0
+
+
+class AdminLLMUsageResponse(BaseModel):
+    rows: list[AdminLLMUsageRow] = Field(default_factory=list)
+    log_available: bool
+    malformed_lines: int = 0
+    first_recorded_at: str | None = None
+    last_recorded_at: str | None = None
+
+
+class AdminMessageMetrics(BaseModel):
+    message_id: str
+    characters: int = 0
+    total_tokens: int | None = None
+    completion_tokens: int | None = None
+    token_usage_complete: bool = False
+
+
+class AdminRoundTripMetrics(BaseModel):
+    index: int
+    learner_message_id: str
+    assistant_message_id: str | None = None
+    question_id: str | None = None
+    status: Literal["completed", "failed", "pending", "unmatched"]
+    started_at: str
+    response_at: str | None = None
+    thinking_seconds: float | None = None
+    response_seconds: float | None = None
+    generation_seconds: float | None = None
+    elapsed_seconds: float | None = None
+    timing_source: Literal["recorded", "message_timestamps", "unavailable"]
+
+
+class AdminQuestionLearningMetrics(BaseModel):
+    question_id: str
+    origin: Literal["learner", "third_party"] = "learner"
+    started_at: str
+    ended_at: str | None = None
+    duration_seconds: float | None = None
+    outcome: Literal["corrected", "feedback_completed", "unresolved", "in_progress"]
+    completed_exchanges: int = 0
+    timing_source: Literal["recorded", "message_timestamps"]
+
+
+class AdminLearningMetrics(BaseModel):
+    applicable: bool = False
+    interaction_mode: Literal["scaffold", "standard_chat"] | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    observed_at: str | None = None
+    duration_seconds: float | None = None
+    corrected_questions: int = 0
+    denominator: int = 1
+    average_seconds_per_question: float | None = None
+    timing_source: Literal["session_timer", "message_timestamps", "unavailable"] = "unavailable"
+    is_complete: bool = False
+    questions: list[AdminQuestionLearningMetrics] = Field(default_factory=list)
+
+
 class AdminConversationStats(BaseModel):
     """單一 Session 對話的可驗證統計。"""
 
@@ -379,6 +490,16 @@ class AdminConversationStats(BaseModel):
     learner_messages: int = 0
     assistant_messages: int = 0
     completed_exchanges: int = 0
+    total_characters: int = 0
+    learner_characters: int = 0
+    assistant_characters: int = 0
+    system_characters: int = 0
+    assistant_total_tokens: int | None = None
+    assistant_average_tokens: float | None = None
+    assistant_token_usage_complete: bool = False
+    message_metrics: list[AdminMessageMetrics] = Field(default_factory=list)
+    round_trips: list[AdminRoundTripMetrics] = Field(default_factory=list)
+    learning: AdminLearningMetrics = Field(default_factory=AdminLearningMetrics)
     prompt_tokens: int = 0
     cached_prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -395,6 +516,7 @@ class AdminConversationStats(BaseModel):
     first_message_at: str | None = None
     last_message_at: str | None = None
     duration_seconds: int | None = None
+    usage_breakdown: list[AdminLLMUsageRow] = Field(default_factory=list)
 
 
 class AdminMaterialSnapshot(BaseModel):
@@ -436,3 +558,4 @@ class AdminSessionResearchResponse(BaseModel):
     material_snapshot: AdminMaterialSnapshot
     prompt_records: list[AdminPromptRecord] = Field(default_factory=list)
     research_logs: list[ResearchLog] = Field(default_factory=list)
+    posttest: SessionPosttest | None = None

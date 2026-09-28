@@ -13,6 +13,7 @@ from app.core.research_reproducibility import prompt_text_hash, record_prompt_sn
 from app.schemas.responses import ConversationCreateResponse, ConversationLoadResponse
 from app.crud.protocols import RepositoryProtocol
 from app.services.conversation_opening_service import ConversationOpeningService
+from app.services.learning_focus import build_learning_focus
 from app.services.session_runtime import expire_session_if_due
 
 
@@ -71,6 +72,7 @@ class ConversationService:
                 condition=condition,
                 greeting=existing_history[0].content,
                 history=existing_history,
+                learning_focus=build_learning_focus(condition, attempt, existing_history),
             )
 
         opening = await self.opening_service.generate(
@@ -145,6 +147,7 @@ class ConversationService:
             condition=condition,
             greeting=greeting,
             history=[greeting_message],
+            learning_focus=build_learning_focus(condition, attempt, [greeting_message]),
         )
 
     def load_conversation(self, conversation_id: str) -> ConversationLoadResponse:
@@ -193,4 +196,5 @@ class ConversationService:
             task=task,
             task_attempt=task_attempt,
             related_events=[],
+            learning_focus=build_learning_focus(condition, task_attempt, messages),
         )

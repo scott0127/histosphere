@@ -1,16 +1,23 @@
+import { readFileSync } from 'node:fs';
+
+// This handler must run before Nuxt's module entry, including when that entry cannot load.
+const clientStartupScript = readFileSync(new URL('./scripts/client-startup.js', import.meta.url), 'utf8');
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 const mdiClientIcons = [
   'mdi:account',
   'mdi:account-circle-outline',
-  'mdi:account-details',
   'mdi:account-edit-outline',
   'mdi:account-group',
   'mdi:account-group-outline',
+  'mdi:account-multiple-outline',
   'mdi:account-outline',
   'mdi:account-plus',
   'mdi:account-plus-outline',
   'mdi:account-voice',
   'mdi:archive-arrow-down-outline',
+  'mdi:arrow-collapse-down',
+  'mdi:arrow-collapse-up',
   'mdi:arrow-down',
   'mdi:arrow-left',
   'mdi:arrow-right',
@@ -19,10 +26,12 @@ const mdiClientIcons = [
   'mdi:bank',
   'mdi:book-open-blank-variant',
   'mdi:book-open-page-variant',
+  'mdi:chart-box-outline',
   'mdi:check',
   'mdi:check-circle',
   'mdi:check-circle-outline',
   'mdi:chevron-down',
+  'mdi:chevron-up',
   'mdi:clipboard-text-outline',
   'mdi:clock-time-eight-outline',
   'mdi:close',
@@ -36,8 +45,11 @@ const mdiClientIcons = [
   'mdi:email-check-outline',
   'mdi:email-outline',
   'mdi:eye',
+  'mdi:eye-outline',
   'mdi:eye-off',
   'mdi:feather',
+  'mdi:file-document-outline',
+  'mdi:format-list-bulleted',
   'mdi:history',
   'mdi:incognito',
   'mdi:information-outline',
@@ -52,11 +64,13 @@ const mdiClientIcons = [
   'mdi:login',
   'mdi:logout',
   'mdi:magnify',
+  'mdi:magnify-plus-outline',
   'mdi:map-legend',
   'mdi:map-marker-radius',
   'mdi:message-processing-outline',
   'mdi:message-text',
   'mdi:palette',
+  'mdi:pencil-outline',
   'mdi:pillar',
   'mdi:play-circle-outline',
   'mdi:plus',
@@ -73,11 +87,13 @@ const mdiClientIcons = [
   'mdi:timer-check-outline',
   'mdi:timer-outline',
   'mdi:timer-refresh-outline',
+  'mdi:tray-arrow-down',
   'mdi:trash-can-outline',
   'mdi:trophy',
   'mdi:unicorn-variant',
   'mdi:undo-variant',
   'mdi:redo-variant',
+  'mdi:view-grid-outline',
 ];
 
 export default defineNuxtConfig({
@@ -130,6 +146,14 @@ export default defineNuxtConfig({
       htmlAttrs: {
         lang: 'zh-TW'
       },
+      script: [
+        {
+          key: 'client-startup-recovery',
+          innerHTML: clientStartupScript,
+          tagPosition: 'head',
+          tagPriority: 'critical'
+        }
+      ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },

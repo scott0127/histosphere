@@ -1,4 +1,8 @@
-"""受管理的單機背景觀察；回覆先保存，審查不影響文字、狀態或倒數。"""
+"""準備答案審查資料，並管理背景觀察工作的生命週期。
+
+送出前審查由 answer_delivery_service 執行，這裡提供相同的題目與作答快照。
+只有背景觀察模式才在回覆存好後排程；背景結果不改寫對話或推進 EBL。
+"""
 
 import asyncio
 from copy import deepcopy
@@ -23,14 +27,32 @@ class AnswerReviewService:
         self.tasks: dict[str, asyncio.Task] = {}
 
     def prepare(
-        self, message: ChatMessage, *, runtime: InteractionRuntime, event: Event,
-        attempt: TaskAttempt | None, history: list[ChatMessage], learner_message: str,
+        self,
+        message: ChatMessage,
+        *,
+        runtime: InteractionRuntime,
+        event: Event,
+        attempt: TaskAttempt | None,
+        history: list[ChatMessage],
+        learner_message: str,
     ) -> dict | None:
-        if message.metadata.get("answer_delivery") or not get_settings().llm_answer_review_enabled or runtime.interaction_mode != "scaffold" or not runtime.target:
+        """標記需要背景觀察的新訊息；已做送出前審查的訊息不再付費審一次。"""
+        if (
+            message.metadata.get("answer_delivery")
+            or not get_settings().llm_answer_review_enabled
+            or runtime.interaction_mode != "scaffold"
+            or not runtime.target
+        ):
             return None
         try:
-            context = self.build_context(message, runtime=runtime, event=event, attempt=attempt,
-                                         history=history, learner_message=learner_message)
+            context = self.build_context(
+                message,
+                runtime=runtime,
+                event=event,
+                attempt=attempt,
+                history=history,
+                learner_message=learner_message,
+            )
             message.metadata["answer_review"] = pending_answer_review(context)
             return context
         except Exception as exc:
@@ -42,14 +64,24 @@ class AnswerReviewService:
 
     @staticmethod
     def before_delivery(runtime: InteractionRuntime) -> bool:
+        """只有啟用送出前審查、且有待處理錯誤的 EBL 對話才走先審再送。"""
         settings = get_settings()
-        return bool(settings.llm_answer_review_enabled
-                    and settings.llm_answer_review_mode == "before_delivery"
-                    and runtime.interaction_mode == "scaffold" and runtime.target)
+        return bool(
+            settings.llm_answer_review_enabled
+            and settings.llm_answer_review_mode == "before_delivery"
+            and runtime.interaction_mode == "scaffold"
+            and runtime.target
+        )
 
     def build_context(
-        self, message: ChatMessage, *, runtime: InteractionRuntime, event: Event,
-        attempt: TaskAttempt | None, history: list[ChatMessage], learner_message: str,
+        self,
+        message: ChatMessage,
+        *,
+        runtime: InteractionRuntime,
+        event: Event,
+        attempt: TaskAttempt | None,
+        history: list[ChatMessage],
+        learner_message: str,
     ) -> dict:
         """送出前與背景審查共用凍結證據，不能把生成模型自評當作授權。"""
         if runtime.target:
@@ -57,13 +89,29 @@ class AnswerReviewService:
             if runtime.next_target:
                 target_ids.add(runtime.next_target.question_id)
             judgement = attempt.judgement_payload if attempt else {}
-            results = deepcopy([r for r in judgement.get("question_results", [])
-                if isinstance(r, dict) and r.get("question_id") in target_ids])
+            results = deepcopy([
+                r for r in judgement.get("question_results", [])
+                if isinstance(r, dict) and r.get("question_id") in target_ids
+            ])
             # 舊判定未複製選項時，只讀原活動快照，不用已被管理員修改的新題目。
-            if attempt and any(r.get("question_type") == "multiple_choice" and "options" not in r for r in results):
-                snapshot = next((log for log in self.repository.list_research_logs_for_session(attempt.session_id)
-                    if log.action_type == "session_material_snapshot" and log.task_id == attempt.task_id), None)
-                questions = snapshot.payload.get("materials", {}).get("task", {}).get("evaluation_payload", {}).get("questions", []) if snapshot else []
+            if attempt and any(
+                r.get("question_type") == "multiple_choice" and "options" not in r
+                for r in results
+            ):
+                snapshot = next(
+                    (
+                        log for log in self.repository.list_research_logs_for_session(attempt.session_id)
+                        if log.action_type == "session_material_snapshot" and log.task_id == attempt.task_id
+                    ),
+                    None,
+                )
+                questions = (
+                    snapshot.payload.get("materials", {})
+                    .get("task", {})
+                    .get("evaluation_payload", {})
+                    .get("questions", [])
+                    if snapshot else []
+                )
                 options = {q["id"]: q.get("options", []) for q in questions}
                 for result in results:
                     result.setdefault("options", options.get(result.get("question_id")))
@@ -74,13 +122,19 @@ class AnswerReviewService:
                 "question_results": results,
                 "materials": judgement.get("materials", []),
                 "task_full_text": judgement.get("error_elicitation_task_full_text"),
-                "history": [{"speaker": m.speaker_type, "content": m.content} for m in history
-                            if not m.metadata.get("system_fallback")],
+                # 不傳上一輪審查 metadata，避免審查者被先前結論帶著走。
+                "history": [
+                    {"speaker": m.speaker_type, "content": m.content}
+                    for m in history if not m.metadata.get("system_fallback")
+                ],
                 "learner_message": learner_message,
                 "runtime": {
                     "corrective_feedback_required": runtime.corrective_feedback_required,
                     "restatement_required": runtime.restatement_required,
                     "disclosure_level": message.metadata.get("disclosure_level"),
+                    "next_target_transition_required": bool(
+                        runtime.next_target and message.metadata.get("next_target_transition_required")
+                    ),
                 },
                 "candidate": {"response": message.content},
             })
@@ -109,7 +163,12 @@ class AnswerReviewService:
         base = message.metadata["answer_review"]
         try:
             current = await asyncio.to_thread(self.repository.get_message, message.id)
-            if not current or current.metadata.get("answer_review") != base or current.content != message.content:
+            # 排隊期間訊息可能被刪除或改過；不再花錢審查已經失效的快照。
+            if (
+                not current
+                or current.metadata.get("answer_review") != base
+                or current.content != message.content
+            ):
                 return
             result = await self.provider.review_answer(context)
             report = {**base, **result, "status": "completed"}
@@ -117,10 +176,15 @@ class AnswerReviewService:
             report = {**base, "status": "unavailable", "failure_type": "interrupted"}
         except Exception as exc:
             call = getattr(exc, "metadata", None)
-            report = {**base, "status": "unavailable", "failure_type": type(exc).__name__,
-                      "llm_call": call.as_dict() if hasattr(call, "as_dict") else None}
+            report = {
+                **base,
+                "status": "unavailable",
+                "failure_type": type(exc).__name__,
+                "llm_call": call.as_dict() if hasattr(call, "as_dict") else None,
+            }
         report["finished_at"] = utc_now().isoformat()
         try:
+            # 審查途中也可能刪除活動；資料庫會再核對原文與待審版本，不能重建舊訊息。
             saved = await asyncio.to_thread(self.repository.finish_answer_review, message.id, base, report)
         except Exception as exc:
             saved = False
@@ -129,11 +193,16 @@ class AnswerReviewService:
         if report.get("findings") or report["status"] == "unavailable" or not saved:
             try:
                 call = report.get("llm_call") or {}
-                await asyncio.to_thread(record_rejected_generation,
-                    stage="answer_review_observation", provider=str(call.get("provider", "unknown")),
-                    model=str(call.get("model", "unknown")), task_name="review_answer",
-                    raw_output=message.content, reasons=[f["category"] for f in report.get("findings", [])],
-                    context={"delivery_blocked": False, "message_id": message.id, "review": report})
+                await asyncio.to_thread(
+                    record_rejected_generation,
+                    stage="answer_review_observation",
+                    provider=str(call.get("provider", "unknown")),
+                    model=str(call.get("model", "unknown")),
+                    task_name="review_answer",
+                    raw_output=message.content,
+                    reasons=[f["category"] for f in report.get("findings", [])],
+                    context={"delivery_blocked": False, "message_id": message.id, "review": report},
+                )
             except Exception as exc:
                 logger.warning("Answer review audit copy failed: %s", type(exc).__name__)
 
@@ -154,6 +223,7 @@ class AnswerReviewService:
             })
 
     async def close(self) -> None:
+        """關機時等背景工作完成取消處理，避免把未完成的審查記成成功。"""
         tasks = list(self.tasks.values())
         for task in tasks:
             task.cancel()

@@ -2,7 +2,7 @@
   <div
     v-if="session?.timer_ends_at && !expired"
     :class="[
-      'flex min-h-14 flex-wrap items-center justify-between gap-3 border text-sm font-bold',
+      'session-timer-banner flex min-h-14 flex-wrap items-center justify-between gap-3 border text-sm font-bold',
       flush ? 'rounded-none border-x-0 border-t-0 px-5 py-4' : 'rounded-lg px-4 py-3',
       'border-[var(--admin-border)] bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]',
     ]"
@@ -14,9 +14,9 @@
         name="mdi:timer-outline"
         class="h-5 w-5 shrink-0"
       />
-      <p>本階段剩餘時間</p>
+      <p class="session-timer-label">本階段剩餘時間</p>
     </div>
-    <span class="font-mono text-base tabular-nums">{{ formattedRemaining }}</span>
+    <span class="session-timer-value font-mono text-base tabular-nums">{{ formattedRemaining }}</span>
   </div>
 
   <SessionClosureDialog
@@ -64,3 +64,39 @@ onBeforeUnmount(() => {
   if (intervalId) clearInterval(intervalId);
 });
 </script>
+
+<style scoped>
+.chat-workspace .session-timer-banner {
+  min-height: 58px;
+  padding: 12px 20px;
+  border-color: var(--chat-border-soft, var(--admin-border-soft));
+  background: var(--chat-surface-muted, #f7f5f1);
+  color: var(--chat-coffee, var(--admin-coffee));
+  box-shadow: var(--chat-edge, inset 0 1px 0 rgb(255 255 255 / 88%));
+}
+
+.chat-workspace .session-timer-label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.chat-workspace .session-timer-value {
+  min-width: 76px;
+  padding: 4px 12px;
+  border: 1px solid var(--chat-border, var(--admin-border));
+  border-radius: 10px;
+  background: var(--chat-surface, var(--admin-surface));
+  box-shadow: var(--chat-edge, inset 0 1px 0 rgb(255 255 255 / 88%));
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .chat-workspace .session-timer-banner { padding-inline: 16px; }
+}
+</style>

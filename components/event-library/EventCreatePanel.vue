@@ -15,7 +15,8 @@
         </div>
 
         <h1 class="mt-5 font-serif text-3xl font-bold uppercase leading-[1.15] tracking-[0.14em] text-[var(--admin-text)]">
-          USER<br>LOGIN
+          <template v-if="previewMode">受測者<br>測試</template>
+          <template v-else>USER<br>LOGIN</template>
         </h1>
         <div class="my-4 flex items-center justify-center gap-2">
           <span class="h-[1px] w-8 bg-[var(--admin-border)]"></span>
@@ -23,10 +24,15 @@
           <span class="h-[1px] w-8 bg-[var(--admin-border)]"></span>
         </div>
         <p class="text-xs font-semibold tracking-[0.08em] text-[var(--admin-copy)]">
-          登入後管理你的歷史學習紀錄
+          {{ previewMode ? '依分派順序體驗學習流程' : '登入後管理你的歷史學習紀錄' }}
         </p>
 
-        <div v-if="isAuthenticated" class="mt-7 rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)] p-5 text-left shadow-inner">
+        <div v-if="previewMode" class="mt-7 rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)] p-5 text-left">
+          <p class="text-xs font-bold text-[var(--admin-coffee)]">目前模擬</p>
+          <p class="mt-1 text-xl font-black text-[var(--admin-text)]">{{ previewCode || '尚未選擇受測者' }}</p>
+          <p class="mt-3 text-sm leading-6 text-[var(--admin-copy)]">測試作答與對話會獨立保存，不影響受測者的正式紀錄。</p>
+        </div>
+        <div v-else-if="hasMounted && isAuthenticated" class="mt-7 rounded-[10px] border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)] p-5 text-left shadow-inner">
           <div class="flex items-center gap-3">
             <span class="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--admin-border)] bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]">
               <Icon name="mdi:account" class="h-5 w-5" />
@@ -89,10 +95,14 @@
 
           <button
             type="submit"
-            :disabled="authLoading || !email.trim() || !password.trim()"
+            :disabled="!hasMounted || authLoading || isSigningIn || !email.trim() || !password.trim()"
             class="inline-flex w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--admin-coffee)] bg-[var(--admin-coffee)] py-3 text-base font-bold text-[var(--admin-surface)] shadow-md transition-all duration-300 hover:bg-[var(--admin-coffee-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
-            <Icon v-if="authLoading" name="mdi:loading" class="h-5 w-5 animate-spin" />
+            <span v-if="isSigningIn" class="flex items-center gap-2">
+              <Icon name="mdi:loading" class="h-5 w-5 animate-spin" />
+              登入中…
+            </span>
+            <span v-else-if="!hasMounted || authLoading">正在確認登入狀態…</span>
             <span v-else class="flex items-center gap-2">
               登入
               <Icon name="mdi:login" class="h-5 w-5" />
@@ -119,25 +129,36 @@
 // EventCreatePanel 專注於首頁左側登入表單；事件建立由 EventLibraryList 觸發。
 import { onMounted, ref } from 'vue';
 
-const { user, displayName, isAuthenticated, loading: authLoading, initialize, signIn, signOut } = useAuth();
+defineProps<{ previewMode?: boolean; previewCode?: string | null }>();
 
+const { user, displayName, isAuthenticated, loading: authLoading, signIn, signOut } = useAuth();
+
+// Match the server's initial form until hydration finishes, even when the auth plugin restores a session first.
+const hasMounted = ref(false);
+const isSigningIn = ref(false);
 const email = ref('');
 const password = ref('');
 const showPassword = ref(false);
 const loginError = ref<string | null>(null);
 
-onMounted(async () => {
-  await initialize();
+onMounted(() => {
+  hasMounted.value = true;
 });
 
 const handleSignIn = async () => {
+  if (authLoading.value || isSigningIn.value) return;
   loginError.value = null;
-  const result = await signIn(email.value.trim(), password.value);
-  if (!result.success) {
-    loginError.value = translateAuthError(result.error || '登入失敗，請稍後再試。');
-    return;
+  isSigningIn.value = true;
+  try {
+    const result = await signIn(email.value.trim(), password.value);
+    if (!result.success) {
+      loginError.value = translateAuthError(result.error || '登入失敗，請稍後再試。');
+      return;
+    }
+    password.value = '';
+  } finally {
+    isSigningIn.value = false;
   }
-  password.value = '';
 };
 
 const handleSignOut = async () => {

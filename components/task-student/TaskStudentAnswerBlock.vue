@@ -1,7 +1,7 @@
 <template>
-  <fieldset class="my-5 min-w-0 border-y border-[var(--admin-border-soft)] py-4 text-base leading-7" :aria-label="`${question.id} 作答`">
-    <legend class="px-1 font-mono text-sm font-bold text-[var(--admin-coffee)]">{{ question.id }}</legend>
-    <div class="grid min-w-0 gap-4 md:grid-cols-2">
+  <fieldset class="relative my-5 min-w-0 border-y border-[var(--admin-border-soft)] py-4 text-base leading-7" :aria-label="`${question.id} 作答`">
+    <legend class="px-1 text-sm font-bold text-[var(--admin-coffee)]" :class="hideLegend ? 'sr-only' : 'font-mono'">{{ question.id }}</legend>
+    <div class="grid min-w-0 gap-4" :class="stacked ? '' : 'md:grid-cols-2'">
       <div class="min-w-0">
         <label v-if="question.type === 'cloze'" class="block text-sm font-bold text-[var(--admin-text)]">
           答案
@@ -17,7 +17,7 @@
           <legend class="text-sm font-bold text-[var(--admin-text)]">答案</legend>
           <div class="mt-2 grid gap-2" :class="question.type === 'true_false' ? 'grid-cols-2' : ''">
             <label
-              v-for="option in options"
+              v-for="(option, optionIndex) in options"
               :key="option.id"
               class="flex min-w-0 cursor-pointer items-start gap-3 rounded-md border border-[var(--admin-border)] px-3 py-2 text-base text-[var(--admin-text)] hover:bg-[var(--admin-surface-muted)]"
               :class="modelValue === option.value ? 'bg-[var(--admin-coffee-soft)]' : 'bg-[var(--admin-surface)]'"
@@ -31,6 +31,7 @@
                 class="mt-1.5 h-4 w-4 shrink-0 accent-[var(--admin-coffee)]"
                 @change="emit('update:modelValue', option.value)"
               />
+              <span v-if="showOptionLabels && question.type === 'multiple_choice'" class="shrink-0 font-semibold">{{ String.fromCharCode(65 + optionIndex) }}.</span>
               <span class="min-w-0 whitespace-pre-wrap break-words">{{ option.label }}</span>
             </label>
           </div>
@@ -59,6 +60,9 @@ const props = defineProps<{
   question: TaskQuestion;
   modelValue: TaskAnswerValue;
   rationale: string;
+  stacked?: boolean;
+  hideLegend?: boolean;
+  showOptionLabels?: boolean;
 }>();
 
 const emit = defineEmits<{

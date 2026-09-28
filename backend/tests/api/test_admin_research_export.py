@@ -1,5 +1,7 @@
 """Admin 研究資料重播與匯出的整合測試。"""
 
+import csv
+import io
 import json
 
 from app.core.experiment_conditions import condition_code_for_key
@@ -115,6 +117,10 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
         "cost_usage_complete": True,
     }
     assert payload["material_snapshot"]["status"] == "captured"
+    rows = payload["stats"]["usage_breakdown"]
+    assert {row["stage"] for row in rows} == {"judge_task_attempt", "generate_greeting", "generate_chat_response"}
+    assert sum(row["total_tokens"] for row in rows) == 54
+    assert sum(row["requests"] for row in rows) == 3
     assert payload["material_snapshot"]["hash_verified"] is True
     assert len(payload["prompt_records"]) == 2
     assert all(record["hash_verified"] for record in payload["prompt_records"])
@@ -122,6 +128,18 @@ def test_admin_can_replay_session_with_tokens_prompts_and_material_snapshot(clie
         "conversation_opening",
         "chat_response",
     }
+    stats = payload["stats"]
+    assert stats["total_characters"] == sum(
+        sum(not char.isspace() for char in message["content"]) for message in payload["messages"]
+    )
+    assert stats["assistant_total_tokens"] == 36
+    assert stats["assistant_average_tokens"] == 18
+    assert stats["assistant_token_usage_complete"] is True
+    assert len(stats["message_metrics"]) == 3
+    assert stats["round_trips"][0]["learner_message_id"] == payload["messages"][1]["id"]
+    assert stats["round_trips"][0]["assistant_message_id"] == payload["messages"][2]["id"]
+    assert stats["round_trips"][0]["response_seconds"] >= 0
+    assert stats["learning"]["denominator"] == max(stats["learning"]["corrected_questions"], 1)
 
 
 def test_session_usage_includes_failed_calls_without_counting_audit_duplicates(client):
@@ -130,6 +148,11 @@ def test_session_usage_includes_failed_calls_without_counting_audit_duplicates(c
     failed_chat_call = {
         **client.app.state.llm_provider._llm_metadata("failed_chat")["llm_call"],
         "correlation_id": "failed-chat-call",
+        "attempt_count": 2,
+        "usage_reported_attempts": 1,
+        "cost_reported_attempts": 1,
+        "estimated_cost_usd": None,
+        "estimated_known_cost_usd": 0.0001,
     }
     repository.add_message(
         ChatMessage(
@@ -172,8 +195,15 @@ def test_session_usage_includes_failed_calls_without_counting_audit_duplicates(c
     assert stats["llm_calls_total"] == 5
     assert stats["llm_calls_with_usage"] == 5
     assert stats["total_tokens"] == 90
-    assert stats["estimated_cost_usd"] == 0.0005
-    assert stats["cost_usage_complete"] is True
+    assert stats["estimated_cost_usd"] is None
+    assert stats["cost_usage_complete"] is False
+    assert stats["token_usage_complete"] is False
+    assert stats["token_usage_coverage"] == 0.8333
+    rows = stats["usage_breakdown"]
+    assert sum(row["requests"] for row in rows) == 6
+    assert sum(row["total_tokens"] for row in rows) == 90
+    assert round(sum(row["estimated_known_cost_usd"] for row in rows), 6) == 0.0005
+    assert sum(row["cost_reported_requests"] for row in rows) == 5
 
 
 def test_session_export_keeps_the_participant_bound_when_auth_mapping_changes(client):
@@ -222,6 +252,19 @@ def test_admin_research_export_is_anonymized_and_supports_json_and_csv(client):
     assert "請說明這個事件的背景。" in exported_csv.text
     assert "0.0003" in exported_csv.text
     assert "participant-001" not in exported_csv.text
+    rows = list(csv.DictReader(io.StringIO(exported_csv.text.lstrip("\ufeff"))))
+    target_rows = [row for row in rows if row["session_id"] == initialized["session_id"]]
+    assert len(target_rows) == 3
+    assert target_rows[1]["round_trip_index"] == "1"
+    assert target_rows[2]["round_trip_status"] == "completed"
+    assert target_rows[1]["round_trip_response_seconds"] != ""
+    assert target_rows[2]["assistant_average_tokens"] == "18.0"
+    assert int(target_rows[1]["message_characters"]) == len("請說明這個事件的背景。")
+    assert json.loads(target_rows[2]["learning_questions_json"]) == target["stats"]["learning"]["questions"] or (
+        # A still-running question's observed duration can advance between exports.
+        [q["question_id"] for q in json.loads(target_rows[2]["learning_questions_json"])]
+        == [q["question_id"] for q in target["stats"]["learning"]["questions"]]
+    )
 
 
 def test_admin_test_session_is_replayable_but_excluded_from_formal_export(client):

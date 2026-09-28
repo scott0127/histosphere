@@ -82,6 +82,90 @@ test('reading introduction moves before materials without losing question wordin
   assert.deepEqual(taskLogic.buildTaskReadingLayout(legacyTask), { introduction: '', segments: taskLogic.buildTaskStorySegments(legacyTask) });
 });
 
+test('question layout supports five and eight questions in authored marker order without exposing grading data', () => {
+  const ids = ['q42', 'q07', 'q90', 'q14', 'q101', 'q03', 'q25', 'q68'];
+  for (const count of [5, 8]) {
+    const authoredIds = ids.slice(0, count);
+    const texts = authoredIds.map((id, index) => `Question for ${id}.\nEvidence paragraph ${index + 1}. Mention Q88｜inside the text.`);
+    const task = {
+      ...errorElicitationTask,
+      error_elicitation_task_full_text: `Shared reading context.\n\n${authoredIds.map((id, index) => `${id.toUpperCase()}｜${texts[index]}\n{{blank:${id}}}`).join('\n\n')}\nClosing instructions.`,
+      evaluation_payload: {
+        ...errorElicitationTask.evaluation_payload,
+        questions: [...authoredIds].reverse().map((id) => ({
+          id, type: 'multiple_choice', correct_answer: 'INTERNAL_KEY',
+          reasoning_criteria: 'INTERNAL_CRITERIA', explanation: 'INTERNAL_EXPLANATION',
+          prompt: 'INTERNAL_UNUSED_PROMPT',
+          options: [{ id: 'a', label: 'A visible option', value: 'a', grading_note: 'INTERNAL_OPTION_NOTE' }],
+        })),
+      },
+    };
+    const original = structuredClone(task);
+    const layout = taskLogic.buildTaskQuestionLayout(task);
+    assert.equal(layout.introduction, 'Shared reading context.');
+    assert.equal(layout.questions.length, count);
+    assert.deepEqual(layout.questions.map(({ question }) => question.id), authoredIds);
+    assert.deepEqual(layout.questions.map(({ index }) => index), authoredIds.map((_, index) => index));
+    assert.deepEqual(layout.questions.map(({ text }) => text), texts);
+    assert.equal(layout.trailingText, 'Closing instructions.');
+    assert.doesNotMatch(JSON.stringify(layout), /INTERNAL_|correct_answer|reasoning_criteria|grading_note/);
+    assert.equal(taskLogic.taskConfigurationError(task), null);
+    assert.deepEqual(task, original);
+  }
+});
+
+test('question layout keeps all preceding prose when there is no standard heading and preserves trailing prose', () => {
+  const task = {
+    ...errorElicitationTask,
+    error_elicitation_task_full_text: 'Opening context belongs with the first question.\nFirst question. {{blank:q01}}\nSecond question.\nAn extra paragraph. {{blank:q02}}\nThird question. {{blank:q03}}\nClosing paragraph one.\nClosing paragraph two.',
+  };
+  const layout = taskLogic.buildTaskQuestionLayout(task);
+  assert.equal(layout.introduction, '');
+  assert.deepEqual(layout.questions.map(({ text }) => text), [
+    'Opening context belongs with the first question.\nFirst question.',
+    'Second question.\nAn extra paragraph.',
+    'Third question.',
+  ]);
+  assert.equal(layout.trailingText, 'Closing paragraph one.\nClosing paragraph two.');
+  assert.deepEqual(taskLogic.buildTaskQuestionLayout({ ...task, error_elicitation_task_full_text: 'Unbound reading prose.' }), {
+    introduction: '', questions: [], trailingText: 'Unbound reading prose.',
+  });
+});
+
+test('question layout preserves arbitrary legacy IDs and aliases while stripping only leading display labels', () => {
+  const task = {
+    ...legacyTask,
+    error_elicitation_task_full_text: 'Opening prose.\nQ99｜Keep this non-leading label. {{blank:source-one}}\nQ21|Second prompt. {{blank:q_recheck}}\nQ88｜Keep the closing label.',
+    evaluation_payload: { questions: [
+      { id: 'q_recheck', type: 'true_false', prompt: 'Second legacy prompt', correct_answer: false },
+      { id: 'custom-source', blank_id: 'source-one', type: 'cloze', prompt: 'First legacy prompt', reasoning_criteria: 'INTERNAL_CRITERIA' },
+    ] },
+  };
+  const layout = taskLogic.buildTaskQuestionLayout(task);
+  assert.equal(layout.introduction, '');
+  assert.deepEqual(layout.questions.map(({ question }) => question.id), ['custom-source', 'q_recheck']);
+  assert.equal(layout.questions[0].question.blank_id, 'source-one');
+  assert.equal(layout.questions[0].question.prompt, 'First legacy prompt');
+  assert.equal(layout.questions[0].text, 'Opening prose.\nQ99｜Keep this non-leading label.');
+  assert.equal(layout.questions[1].text, 'Second prompt.');
+  assert.equal(layout.trailingText, 'Q88｜Keep the closing label.');
+  assert.doesNotMatch(JSON.stringify(layout), /correct_answer|reasoning_criteria|INTERNAL_/);
+});
+
+test('eight-question completion includes every answer and treats false as an answered value', () => {
+  const questions = Array.from({ length: 8 }, (_, index) => ({ id: `q${String(index + 1).padStart(2, '0')}`, type: 'true_false' }));
+  const task = {
+    ...errorElicitationTask,
+    error_elicitation_task_full_text: questions.map(({ id }) => `Question ${id}. {{blank:${id}}}`).join('\n'),
+    evaluation_payload: { ...errorElicitationTask.evaluation_payload, questions },
+  };
+  const answers = questions.map(({ id }) => ({ question_id: id, value: false, rationale: 'The source does not support this claim.' }));
+  const normalizedQuestions = taskLogic.normalizeTaskQuestions(task);
+  assert.equal(taskLogic.isTaskAnswerComplete(normalizedQuestions, answers, task), true);
+  assert.equal(taskLogic.isTaskAnswerComplete(normalizedQuestions, answers.slice(0, 7), task), false);
+  assert.equal(taskLogic.isTaskAnswerComplete(normalizedQuestions, answers.map((answer, index) => index === 7 ? { ...answer, rationale: '' } : answer), task), false);
+});
+
 test('new-format submission requires every answer and nonblank rationale, while false is valid', () => {
   const questions = taskLogic.normalizeTaskQuestions(errorElicitationTask);
   assert.equal(taskLogic.isTaskAnswerComplete(questions, completeAnswers, errorElicitationTask), true);

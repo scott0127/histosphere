@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_
 
 
 ERROR_ELICITATION_CONTRACT_VERSION = "error_elicitation_v1"
-ERROR_ELICITATION_JUDGE_CONTRACT_VERSION = "error_elicitation_judge_v3"
+ERROR_ELICITATION_JUDGE_CONTRACT_VERSION = "error_elicitation_judge_v4"
 ErrorElicitationCorrectness = Literal["correct", "incorrect"]
 HistoricalThinkingTag = Literal[
     "historical_significance",
@@ -85,27 +85,31 @@ def validate_task_answers(evaluation: dict, response: dict, *, complete: bool) -
             raise ValueError(f"{answer.question_id}: answer must be one of the options")
 
 
-class ErrorElicitationReasoningJudgement(BaseModel):
-    """LLM 只判理由；Historical Thinking 標籤不參與對錯。"""
+class ErrorElicitationItemJudgement(BaseModel):
+    """LLM 判所有理由及填空答案；Historical Thinking 標籤不參與對錯。"""
 
     model_config = ConfigDict(extra="forbid")
 
     question_id: StrictStr = Field(min_length=1)
+    answer_correct: StrictBool | None = None
+    answer_feedback: StrictStr | None = None
     reasoning_correct: StrictBool
     reasoning_feedback: StrictStr = Field(min_length=1)
     historical_thinking_tags: list[HistoricalThinkingTag] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
-    def validate_reasoning_result(self) -> "ErrorElicitationReasoningJudgement":
+    def validate_reasoning_result(self) -> "ErrorElicitationItemJudgement":
         if not self.question_id.strip() or self.question_id != self.question_id.strip() or not self.reasoning_feedback.strip():
             raise ValueError("question_id and reasoning_feedback must not be blank")
         if len(self.historical_thinking_tags) != len(set(self.historical_thinking_tags)):
             raise ValueError("historical_thinking_tags must not contain duplicates")
+        if self.answer_feedback is not None and not self.answer_feedback.strip():
+            raise ValueError("answer_feedback must not be blank")
         return self
 
 
-class ErrorElicitationQuestionResult(ErrorElicitationReasoningJudgement):
-    """後端合併規則答案與 LLM 理由結果，拒絕互相矛盾的整題判定。"""
+class ErrorElicitationQuestionResult(ErrorElicitationItemJudgement):
+    """後端合併規則或 LLM 答案與理由結果，拒絕互相矛盾的整題判定。"""
 
     answer_correct: StrictBool
     correctness: ErrorElicitationCorrectness
@@ -119,11 +123,11 @@ class ErrorElicitationQuestionResult(ErrorElicitationReasoningJudgement):
 
 
 class ErrorElicitationJudgementPayload(BaseModel):
-    """同一次模型呼叫判斷所有理由，客觀答案與最終對錯由後端決定。"""
+    """一次判所有理由及填空答案；選擇、是非與整題對錯由後端決定。"""
 
     model_config = ConfigDict(extra="forbid")
-    judge_contract_version: Literal["error_elicitation_judge_v3"]
-    question_results: list[ErrorElicitationReasoningJudgement] = Field(min_length=1)
+    judge_contract_version: Literal["error_elicitation_judge_v4"]
+    question_results: list[ErrorElicitationItemJudgement] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_unique_results(self) -> "ErrorElicitationJudgementPayload":

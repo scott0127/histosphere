@@ -19,6 +19,7 @@ from app.models.domain import (
     Participant,
     Persona,
     ResearchLog,
+    SessionPosttest,
     TaskAttempt,
     WikiSource,
 )
@@ -232,6 +233,17 @@ class RepositoryProtocol(Protocol):
         Returns:
             list[ExperimentSession]: 該使用者的 session 清單，依更新時間倒序。
         """
+        ...
+
+    def get_posttest(self, session_id: str) -> SessionPosttest | None:
+        ...
+
+    def create_posttest(self, posttest: SessionPosttest) -> SessionPosttest:
+        """Insert once per session, preserving an existing response on retry."""
+        ...
+
+    def update_posttest(self, posttest: SessionPosttest, expected_revision: int) -> SessionPosttest | None:
+        """Compare-and-swap an unsubmitted response; None means a write conflict."""
         ...
 
     # ── Participant ───────────────────────────────────────────

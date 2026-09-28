@@ -2,7 +2,7 @@
 
 from fastapi import HTTPException, status
 
-from app.core.task_payload_validator import validate_task_authoring_payload
+from app.core.task_payload_validator import validate_task_authoring_payload, validate_task_closure_payload
 from app.crud.protocols import RepositoryProtocol
 from app.models.domain import Event, utc_now
 
@@ -38,7 +38,7 @@ def set_event_material_lock(
         issues = _material_readiness_issues(repository, event)
         if issues:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "message": "Event materials are not ready to lock.",
                     "issues": issues,
@@ -80,6 +80,7 @@ def _material_readiness_issues(repository: RepositoryProtocol, event: Event) -> 
                 evaluation_payload=task.evaluation_payload,
             )
         )
+        issues.extend(validate_task_closure_payload(task.evaluation_payload))
 
     active_personas = [
         persona

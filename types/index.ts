@@ -119,6 +119,7 @@ export interface ErrorElicitationReasoningJudgement {
 }
 
 export interface ErrorElicitationQuestionResult extends ErrorElicitationReasoningJudgement {
+  answer_feedback?: string | null;
   answer_correct: boolean;
   correctness: ErrorElicitationCorrectness;
 }
@@ -151,6 +152,11 @@ export interface ExperimentCondition {
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ParticipantActivityAssignment {
+  event_id: string;
+  condition_code: '01' | '02' | '03' | '04';
 }
 
 export interface Participant {
@@ -262,6 +268,7 @@ export interface EventInitializeResponse {
 }
 
 export interface TaskSubmitResponse {
+  learning_focus?: LearningFocus | null;
   attempt_id: string;
   conversation_id: string;
   event: HistoricalEvent;
@@ -291,6 +298,7 @@ export interface TaskDraftResponse {
 }
 
 export interface ConversationLoadResponse {
+  learning_focus?: LearningFocus | null;
   conversation_id: string;
   session?: ExperimentSession | null;
   event: HistoricalEvent;
@@ -334,7 +342,16 @@ export interface SessionClosure {
   completed_at?: string | null;
 }
 
+export interface SessionFinalExchange {
+  learner_message: string;
+  assistant_name?: string | null;
+  assistant_message?: string | null;
+  delivered_after_deadline: boolean;
+  failed: boolean;
+}
+
 export interface SessionStateResponse {
+  posttest_stage?: PosttestStage | 'not_started' | null;
   session: ExperimentSession;
   event: HistoricalEvent;
   task?: EventTask | null;
@@ -343,9 +360,12 @@ export interface SessionStateResponse {
   attempt?: TaskAttempt | null;
   conversation_id?: string | null;
   closure?: SessionClosure | null;
+  pending_final_response?: boolean;
+  final_exchange?: SessionFinalExchange | null;
 }
 
 export interface UserProgressItem {
+  posttest_stage?: PosttestStage | 'not_started' | null;
   event_id: string;
   condition_key: ConditionKey;
   session_id: string;
@@ -360,12 +380,61 @@ export interface UserProgressResponse {
   progress: UserProgressItem[];
 }
 
+export type PosttestStage = 'engagement' | 'hat' | 'completed';
+
+export interface PosttestResponse {
+  id: string;
+  session_id: string;
+  instrument_version: string;
+  is_placeholder: boolean;
+  stage: PosttestStage;
+  engagement_answers: Record<string, number>;
+  hat_answers: Record<string, string>;
+  revision: number;
+  started_at: string;
+  updated_at: string;
+  submitted_at: string | null;
+}
+
+export interface PosttestStateResponse {
+  session_id: string;
+  conversation_id: string | null;
+  event_name: string;
+  eligible: boolean;
+  blocked_reason: string | null;
+  response: PosttestResponse | null;
+  instrument: {
+    version: string;
+    is_placeholder: boolean;
+    engagement: Array<{ id: string; prompt: string }>;
+    hat: Array<{ id: string; prompt: string }>;
+  };
+}
+
+export interface PosttestDraftInput {
+  revision: number;
+  engagement_answers?: Record<string, number>;
+  hat_answers?: Record<string, string>;
+}
+
 export interface ParticipantMeResponse {
   participant: Participant;
   progress: UserProgressItem[];
 }
 
+export interface AdminParticipantPreviewResponse extends ParticipantMeResponse {
+  test_user_id: string;
+}
+
+export interface LearningFocus {
+  question_id: string | null;
+  status: 'active' | 'completed' | 'none';
+  origin: 'learner' | 'third_party' | null;
+  claim?: string | null;
+}
+
 export interface ChatResponse {
+  learning_focus?: LearningFocus | null;
   response: string;
   selected_persona?: Persona | null;
   assistant_name: string;
@@ -452,14 +521,50 @@ export interface AdminPromptPreviewResponse {
 }
 
 export interface AdminPromptDryRunResponse extends AdminPromptPreviewResponse {
+  final_prompt: string;
+  final_prompt_kind: 'base' | 'repair' | 'constrained' | 'system_fallback';
+  final_messages: Array<{ role: string; content: string }>;
+  schema_repair_count: number;
   response: string;
   annotations: Annotation[];
   related_events: RelatedEvent[];
   dynamic_context: string;
+  interaction_metadata: Record<string, unknown>;
   rag_sources: RagSource[];
 }
 
+export interface AdminLLMUsageRow {
+  stage: string;
+  provider: string;
+  model: string;
+  requests: number;
+  token_reported_requests: number;
+  cost_reported_requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_known_cost_usd: number;
+}
+
+export interface AdminLLMUsageResponse {
+  rows: AdminLLMUsageRow[];
+  log_available: boolean;
+  malformed_lines: number;
+  first_recorded_at?: string | null;
+  last_recorded_at?: string | null;
+}
+
 export interface AdminConversationStats {
+  total_characters: number;
+  learner_characters: number;
+  assistant_characters: number;
+  system_characters: number;
+  assistant_total_tokens: number | null;
+  assistant_average_tokens: number | null;
+  assistant_token_usage_complete: boolean;
+  message_metrics: AdminMessageMetric[];
+  round_trips: AdminRoundTrip[];
+  learning: AdminLearningMetrics;
   total_messages: number;
   learner_messages: number;
   assistant_messages: number;
@@ -480,6 +585,54 @@ export interface AdminConversationStats {
   first_message_at?: string | null;
   last_message_at?: string | null;
   duration_seconds?: number | null;
+  usage_breakdown?: AdminLLMUsageRow[];
+}
+
+export interface AdminMessageMetric {
+  message_id: string;
+  characters: number;
+  total_tokens: number | null;
+  completion_tokens: number | null;
+  token_usage_complete: boolean;
+}
+
+export interface AdminRoundTrip {
+  index: number;
+  learner_message_id: string;
+  assistant_message_id: string | null;
+  question_id: string | null;
+  status: 'completed' | 'failed' | 'pending' | 'unmatched';
+  started_at: string;
+  response_at: string | null;
+  thinking_seconds: number | null;
+  response_seconds: number | null;
+  generation_seconds: number | null;
+  elapsed_seconds: number | null;
+  timing_source: 'recorded' | 'message_timestamps' | 'unavailable';
+}
+
+export interface AdminLearningMetrics {
+  applicable: boolean;
+  interaction_mode: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  observed_at: string;
+  duration_seconds: number | null;
+  corrected_questions: number;
+  denominator: number;
+  average_seconds_per_question: number | null;
+  timing_source: string;
+  is_complete: boolean;
+  questions: Array<{
+    question_id: string;
+    origin: 'learner' | 'third_party';
+    started_at: string | null;
+    ended_at: string | null;
+    duration_seconds: number | null;
+    outcome: 'corrected' | 'feedback_completed' | 'unresolved' | 'in_progress';
+    completed_exchanges: number;
+    timing_source: string;
+  }>;
 }
 
 export interface AdminMaterialSnapshot {

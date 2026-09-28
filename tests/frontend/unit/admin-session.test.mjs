@@ -28,11 +28,24 @@ test('admin key is stored only for the current browser tab', () => {
 test('exiting admin mode clears key, view mode, and legacy values', () => {
   adminSession.setAdminSessionKey('tab-key');
   adminSession.setAdminViewMode('admin_testmode');
+  adminSession.setAdminPreviewParticipantId('participant-test');
   window.localStorage.setItem('histosphere-admin-mode', 'true');
 
   adminSession.clearAdminSession();
 
   assert.equal(adminSession.getAdminSessionKey(), '');
   assert.equal(adminSession.getAdminViewMode(), null);
+  assert.equal(adminSession.getAdminPreviewParticipantId(), null);
   assert.equal(window.localStorage.getItem('histosphere-admin-mode'), null);
+});
+
+test('preview selection is tab-scoped and can be cleared without losing admin access', () => {
+  adminSession.setAdminSessionKey('tab-key');
+  adminSession.setAdminPreviewParticipantId(' participant-test ');
+  assert.equal(adminSession.getAdminPreviewParticipantId(), 'participant-test');
+  assert.equal(window.localStorage.getItem(adminSession.ADMIN_PREVIEW_PARTICIPANT_STORAGE_KEY), null);
+  adminSession.setAdminPreviewParticipantId(null);
+  assert.equal(adminSession.getAdminPreviewParticipantId(), null);
+  assert.equal(adminSession.getAdminSessionKey(), 'tab-key');
+  adminSession.clearAdminSession();
 });

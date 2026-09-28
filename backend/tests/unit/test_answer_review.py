@@ -158,10 +158,12 @@ def test_delivery_concern_is_not_a_violation_and_audit_failure_does_not_drop_acc
     assert metadata["answer_review"]["findings"][0]["severity"] == "concern"
 
 
+@pytest.mark.parametrize("enforce_content", [False, True])
 @pytest.mark.parametrize("code", ["01", "02", "03", "04"])
-def test_self_reported_answer_flags_never_become_independent_findings_or_retries(code):
+def test_self_reported_answer_flags_never_become_independent_findings_or_retries(code, enforce_content, monkeypatch):
+    monkeypatch.setattr(get_settings(), "llm_content_validation_enabled", enforce_content)
     runtime = build_interaction_runtime(_condition(code), _multi_error_attempt(), [])
-    flags = ["early_answer_exposure", "next_answer_exposure", "corrective_answer_missing"]
+    flags = ["early_answer_exposure", "next_answer_exposure", "corrective_answer_missing", "corrective_feedback_missing"]
     result = validate_completion_candidate(runtime=runtime, persona_context=None, is_opening=True,
         generation=ChatGenerationResult(response="按人數和按等級的差異是什麼？", interaction_metadata={
             "dialogue_state": "NOTICE_ERROR", "dialogue_move": "error_awareness_prompt",
@@ -169,6 +171,7 @@ def test_self_reported_answer_flags_never_become_independent_findings_or_retries
         }))
     assert set(result.metadata["provider_fidelity_flags"]) == set(flags)
     assert not set(flags) & set(result.metadata["fidelity_flags"])
+    assert not set(flags) & set(result.metadata["content_validation_flags"])
     assert result.retry_required is False
 
 

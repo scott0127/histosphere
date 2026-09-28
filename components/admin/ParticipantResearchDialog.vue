@@ -7,15 +7,16 @@
   >
     <div
       v-if="research"
-      class="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(47,41,36,0.55)] p-5 backdrop-blur-sm"
+      class="research-overlay fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-5"
       @click.self="$emit('close')"
     >
-      <section class="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[12px] border-2 border-[var(--admin-line)] bg-[var(--admin-page)] shadow-[0_30px_90px_rgba(47,41,36,0.32)]">
-        <header class="flex items-start justify-between gap-4 border-b border-[var(--admin-border)] px-6 py-5">
+      <section ref="dialog" role="dialog" aria-modal="true" aria-labelledby="research-title" tabindex="-1" class="research-dialog flex max-h-[calc(100dvh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[12px] border border-[var(--admin-border)] bg-[var(--admin-surface)] sm:max-h-[calc(100dvh-2.5rem)]" @keydown="handleDialogKey">
+        <header class="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--admin-border)] px-4 py-4 sm:px-6 sm:py-5">
           <div class="min-w-0 flex-1">
             <p class="admin-kicker">Session research record</p>
-            <h2 class="admin-heading mt-1 break-words font-serif text-lg font-bold sm:text-2xl">
-              {{ research.participant_code }} · {{ research.event.canonical_name }}
+            <h2 id="research-title" class="admin-heading mt-1 break-words font-serif text-lg font-bold sm:text-2xl">
+              <span>{{ research.participant_code }}</span>
+              <span class="inline-block">· {{ research.event.canonical_name }}</span>
             </h2>
             <p class="admin-caption mt-2 text-sm font-semibold">
               {{ conditionLabel }} · {{ sessionStatusLabel }} · {{ shortId(research.session.id) }}
@@ -35,33 +36,37 @@
               type="button"
               class="admin-button-secondary inline-flex h-10 w-10 shrink-0 items-center justify-center"
               title="關閉"
+              aria-label="關閉研究紀錄"
               @click="$emit('close')"
             >
               <Icon name="mdi:close" class="h-5 w-5" />
             </button>
           </div>
         </header>
-
-        <div class="overflow-y-auto px-6 py-5">
-          <div class="grid gap-px overflow-hidden rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-border)] md:grid-cols-3 xl:grid-cols-6">
-            <div v-for="item in summaryItems" :key="item.label" class="bg-[var(--admin-surface)] px-4 py-3">
-              <p class="admin-caption text-xs font-bold">{{ item.label }}</p>
-              <p class="admin-heading mt-1 text-xl font-black">{{ item.value }}</p>
-            </div>
-          </div>
+        <nav aria-label="研究紀錄分區" class="research-tabs flex shrink-0 gap-2 overflow-x-auto border-b border-[var(--admin-border)] px-3 sm:px-6">
+          <button v-for="tab in tabs" :key="tab.id" type="button" :aria-pressed="activeTab === tab.id" class="research-tab min-h-12 shrink-0 px-3 text-xs sm:text-sm" @click="activeTab = tab.id">{{ tab.label }}</button>
+        </nav>
+        <div ref="scrollBody" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          <AdminConversationMetrics v-if="activeTab === 'overview' || activeTab === 'timing'" :stats="research.stats" :view="activeTab" />
+          <template v-if="activeTab === 'technical'">
+          <h3 class="admin-heading text-lg font-black">模型用量與研究素材</h3>
           <p class="admin-caption mt-2 text-xs font-semibold">
             共 {{ research.stats.llm_calls_total }} 次 LLM 呼叫（含 Task judge、開場、聊天、答案審查與修正）；Token 覆蓋
             {{ formatPercent(research.stats.token_usage_coverage) }}。快取輸入
             {{ research.stats.cached_prompt_tokens.toLocaleString() }}；推理 Token
             {{ research.stats.reasoning_tokens.toLocaleString() }}（已包含於輸出 Token）。
             <template v-if="research.stats.cost_usage_complete && research.stats.estimated_cost_usd != null">
-              估計成本 {{ formatUsd(research.stats.estimated_cost_usd) }}。
+              估計成本 {{ formatEstimatedTwd(research.stats.estimated_cost_usd, rate) }}（{{ formatUsd(research.stats.estimated_cost_usd) }}）。
             </template>
-            <template v-else>成本資料不完整，不顯示部分估計。</template>
+            <template v-else>成本資料不完整；下表保留已知費用，不代表完整總額。</template>
           </p>
 
-          <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.75fr)]">
-            <section>
+          <section class="mt-5 border-y border-[var(--admin-border)] py-4">
+            <h3 class="admin-heading mb-3 text-base font-bold">本次活動分環節用量</h3>
+            <AdminLlmUsageTable :rows="research.stats.usage_breakdown || []" />
+          </section>
+          </template>
+            <section v-if="activeTab === 'transcript'">
               <div class="mb-3 flex items-center justify-between gap-3 border-b border-[var(--admin-border-soft)] pb-3">
                 <div>
                   <p class="admin-kicker">Transcript</p>
@@ -84,13 +89,25 @@
                     <span>{{ formatDate(message.created_at) }}</span>
                   </div>
                   <p class="mt-2 whitespace-pre-wrap break-words text-sm font-semibold leading-7">{{ message.content }}</p>
+                  <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-current/20 pt-2 text-xs leading-5 opacity-90">
+                    <span>{{ metricNumber(messageMetrics.get(message.id || '')?.characters) }} 字</span>
+                    <span v-if="message.metadata?.system_fallback">系統備援訊息</span>
+                    <template v-else-if="message.speaker_type !== 'learner'">
+                      <span>生成 Token：{{ metricNumber(messageMetrics.get(message.id || '')?.total_tokens) }}{{ messageMetrics.get(message.id || '')?.total_tokens != null && !messageMetrics.get(message.id || '')?.token_usage_complete ? '（僅已知）' : '' }}</span>
+                      <span>輸出 Token：{{ metricNumber(messageMetrics.get(message.id || '')?.completion_tokens) }}</span>
+                    </template>
+                    <template v-if="messageTurns.get(message.id || '')">
+                      <span>第 {{ messageTurns.get(message.id || '')?.index }} 輪</span>
+                      <span>回覆等待：{{ metricDuration(messageTurns.get(message.id || '')?.response_seconds) }}</span>
+                    </template>
+                  </div>
                   <AdminAnswerReviewDetails v-if="message.metadata?.answer_review || message.metadata?.answer_delivery" :review="message.metadata.answer_review" :delivery="message.metadata.answer_delivery" />
                 </article>
               </div>
               <div v-else class="admin-empty-state p-5">此 Session 尚未建立對話。</div>
             </section>
 
-            <aside class="space-y-4">
+            <aside v-if="activeTab === 'technical'" class="mt-5 space-y-4">
               <section class="border-b border-[var(--admin-border)] pb-4">
                 <p class="admin-kicker">Reproducibility</p>
                 <h3 class="admin-heading mt-1 text-lg font-black">重現性狀態</h3>
@@ -126,14 +143,15 @@
                 <dl class="mt-2 grid grid-cols-[100px_1fr] gap-y-2 text-sm">
                   <dt class="admin-caption font-bold">開始</dt>
                   <dd class="admin-copy font-semibold">{{ formatDate(research.session.timer_started_at) }}</dd>
-                  <dt class="admin-caption font-bold">結束</dt>
+                  <dt class="admin-caption font-bold">倒數截止</dt>
                   <dd class="admin-copy font-semibold">{{ formatDate(research.session.timer_ends_at) }}</dd>
+                  <dt class="admin-caption font-bold">實際完成</dt>
+                  <dd class="admin-copy font-semibold">{{ formatDate(research.session.completed_at) }}</dd>
                   <dt class="admin-caption font-bold">訊息跨度</dt>
                   <dd class="admin-copy font-semibold">{{ formatDuration(research.stats.duration_seconds) }}</dd>
                 </dl>
               </section>
             </aside>
-          </div>
         </div>
       </section>
     </div>
@@ -141,12 +159,61 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { AdminSessionResearchResponse } from '~/types';
+import { useAdminCostEstimate } from '~/composables/useAdminCostEstimate';
+import { useBodyScrollLock } from '~/composables/useBodyScrollLock';
+import { formatCallCost, formatEstimatedTwd } from '~/utils/adminLlmUsage';
 import { experimentConditionCodes, experimentConditionCodeByKey, experimentConditionLabels } from '~/utils/experimentConditions';
+import { metricDate, metricDuration, metricNumber } from '~/utils/adminConversationMetrics';
 
 const props = defineProps<{ research: AdminSessionResearchResponse | null }>();
-defineEmits<{ (event: 'close'): void; (event: 'refresh', sessionId: string): void }>();
+const { rate } = useAdminCostEstimate();
+const emit = defineEmits<{ (event: 'close'): void; (event: 'refresh', sessionId: string): void }>();
+type ResearchTab = 'overview' | 'timing' | 'transcript' | 'technical';
+const activeTab = ref<ResearchTab>('overview');
+const tabs: Array<{ id: ResearchTab; label: string }> = [
+  { id: 'overview', label: '量化摘要' }, { id: 'timing', label: '逐輪與逐題時間' },
+  { id: 'transcript', label: '完整對話' }, { id: 'technical', label: '模型與素材' },
+];
+const dialog = ref<HTMLElement | null>(null);
+const scrollBody = ref<HTMLElement | null>(null);
+let previousFocus: HTMLElement | null = null;
+let focusRequest = 0;
+useBodyScrollLock(() => Boolean(props.research));
+const restoreDialog = () => {
+  focusRequest += 1;
+  if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+  previousFocus = null;
+};
+onMounted(() => {
+  watch(() => props.research?.session.id, async (id, oldId) => {
+    if (!id) {
+      restoreDialog();
+      return;
+    }
+    const request = ++focusRequest;
+    activeTab.value = 'overview';
+    if (!oldId) previousFocus = document.activeElement as HTMLElement;
+    await nextTick();
+    if (request === focusRequest) dialog.value?.focus({ preventScroll: true });
+  }, { immediate: true });
+});
+onBeforeUnmount(restoreDialog);
+watch(activeTab, () => { scrollBody.value?.scrollTo({ top: 0 }); }, { flush: 'post' });
+const handleDialogKey = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') { event.preventDefault(); emit('close'); }
+  if (event.key !== 'Tab' || !dialog.value) return;
+  const items = [...dialog.value.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input, summary, [tabindex="0"]')].filter((item) => item.getClientRects().length);
+  const first = items[0]; const last = items[items.length - 1];
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.value)) { event.preventDefault(); last?.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+};
+const messageMetrics = computed(() => new Map((props.research?.stats.message_metrics || []).map((item) => [item.message_id, item])));
+const messageTurns = computed(() => new Map((props.research?.stats.round_trips || []).flatMap((turn) => [
+  [turn.learner_message_id, turn] as const,
+  ...(turn.assistant_message_id ? [[turn.assistant_message_id, turn] as const] : []),
+])));
 
 const conditionLabel = computed(() => {
   if (!props.research) return '';
@@ -164,19 +231,6 @@ const sessionStatusLabel = computed(() => {
   return 'Task';
 });
 
-const summaryItems = computed(() => {
-  const stats = props.research?.stats;
-  if (!stats) return [];
-  return [
-    { label: '總訊息數', value: stats.total_messages },
-    { label: '受測者 / AI', value: `${stats.learner_messages} / ${stats.assistant_messages}` },
-    { label: '完成來回', value: stats.completed_exchanges },
-    { label: '輸入 Token', value: stats.prompt_tokens.toLocaleString() },
-    { label: '輸出 Token', value: stats.completion_tokens.toLocaleString() },
-    { label: 'Session 總 Token', value: stats.total_tokens.toLocaleString() },
-  ];
-});
-
 const taskPayload = computed(() => JSON.stringify({
   response: props.research?.attempt?.response_payload || {},
   judgement: props.research?.attempt?.judgement_payload || {},
@@ -185,19 +239,12 @@ const taskPayload = computed(() => JSON.stringify({
 const shortId = (id: string) => `${id.slice(0, 8)}...${id.slice(-4)}`;
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 const formatUsd = (value: number) => `US$${value.toFixed(6)}`;
-const formatDate = (value?: string | null) => value
-  ? new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
-  : '未記錄';
-const formatDuration = (value?: number | null) => value == null
-  ? '未產生訊息'
-  : `${Math.floor(value / 60)} 分 ${value % 60} 秒`;
+const formatDate = metricDate;
+const formatDuration = metricDuration;
 const promptStageLabel = (stage: string) => stage === 'conversation_opening' ? '開場回覆' : '對話回覆';
 const llmLabel = (llmCall?: Record<string, unknown> | null) => {
   if (!llmCall) return '未記錄模型用量';
   const total = llmCall.total_tokens == null ? 'Token 未回報' : `${llmCall.total_tokens} tokens`;
-  const cost = typeof llmCall.estimated_cost_usd === 'number'
-    ? ` · ${formatUsd(llmCall.estimated_cost_usd)}`
-    : '';
-  return `${llmCall.provider || 'unknown'} / ${llmCall.model || 'unknown'} · ${total}${cost}`;
+  return `${llmCall.provider || 'unknown'} / ${llmCall.model || 'unknown'} · ${total} · ${formatCallCost(llmCall, rate.value)}`;
 };
 </script>

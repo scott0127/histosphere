@@ -60,23 +60,24 @@
                 {{ adminAccess ? '測試身分' : '受測者' }}
               </span>
               <div class="mt-2 rounded-[8px] border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 py-3">
-                <template v-if="adminAccess">
+                <p v-if="participantLoading" class="text-sm font-bold text-[var(--admin-copy)]">載入受測者資料...</p>
+                <template v-else-if="adminAccess && !participantPreview">
                   <p class="text-base font-black text-[var(--admin-text)]">
-                    {{ activityMode === 'admin' ? 'ADMIN MODE' : 'ADMIN TESTMODE' }}
+                    ADMIN MODE
                   </p>
                   <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">
-                    {{ activityMode === 'admin' ? '管理與測試全部功能' : '受測者視角，可測試全部 01–04 模式' }}
+                    管理與測試全部功能
                   </p>
                 </template>
-                <p v-else-if="participantLoading" class="text-sm font-bold text-[var(--admin-copy)]">載入受測者資料...</p>
                 <template v-else-if="participant">
-                  <p class="text-base font-black text-[var(--admin-text)]">{{ participant.code }}</p>
+                  <p class="text-base font-black text-[var(--admin-text)]">{{ participantPreview ? `模擬 ${participant.code}` : participant.code }}</p>
                   <p class="mt-1 text-xs font-bold text-[var(--admin-copy)]">
                     分派順序：{{ assignedConditionCodes.join(' → ') || '未設定' }}
                   </p>
+                  <p v-if="participantPreview" class="mt-1 text-xs leading-5 text-[var(--admin-copy)]">使用獨立測試紀錄</p>
                 </template>
                 <p v-else class="text-sm font-bold leading-6 text-[var(--admin-copy)]">
-                  {{ participantError || '請先登入已設定的受測者帳號。' }}
+                  {{ participantError || (participantPreview ? '請先在首頁選擇要模擬的受測者。' : '請先登入已設定的受測者帳號。') }}
                 </p>
               </div>
             </section>
@@ -100,6 +101,7 @@
           </aside>
         </div>
 
+        <p v-if="startError" role="alert" class="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{{ startError }}</p>
         <ActivityConditionGrid
           :conditions="conditions"
           :progress-by-condition="progressByCondition"
@@ -126,6 +128,7 @@ type LocalConditionProgress = {
   taskId?: string;
   attemptId?: string;
   conversationId?: string;
+  posttestStage?: 'not_started' | 'engagement' | 'hat' | 'completed' | null;
   updatedAt: string;
 };
 
@@ -139,6 +142,8 @@ const props = defineProps<{
   progressByCondition: Partial<Record<ConditionKey, LocalConditionProgress>>;
   activityMode: 'admin' | 'learner';
   adminAccess: boolean;
+  participantPreview?: boolean;
+  startError?: string | null;
 }>();
 
 const showEventIntroduction = computed(() => shouldShowEventIntroduction(props.activityMode));

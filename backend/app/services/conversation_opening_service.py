@@ -14,6 +14,7 @@ from app.services.completion_validation import validate_completion_candidate
 from app.services.llm_generation_audit import record_rejected_generation
 from app.services.prompt_service import PromptModule, PromptService
 from app.services.answer_delivery_service import deliver_answer
+from app.services.response_timing import finish_response_timing, start_response_timing
 
 
 MAX_OPENING_GENERATION_ATTEMPTS = 3
@@ -64,6 +65,7 @@ class ConversationOpeningService:
         condition: ExperimentCondition,
         attempt: TaskAttempt,
     ) -> ConversationOpening:
+        opening_timing, started_clock = start_response_timing()
         persona = self._select_persona(personas, condition)
         runtime = build_interaction_runtime(condition, attempt, [])
         modules = self.prompt_service.assemble_opening_modules(
@@ -83,6 +85,11 @@ class ConversationOpeningService:
                 review_service=review, generate=generate, runtime=runtime, event=event,
                 attempt=attempt, persona=persona, history=[], learner_message="",
                 base_prompt=base_prompt, is_opening=True)
+            metadata = {
+                **metadata,
+                "opening_timing": finish_response_timing(opening_timing, started_clock),
+                "learning_target_question_id": runtime.target.question_id if runtime.target else None,
+            }
             return ConversationOpening(generation=generation, metadata=metadata, persona=persona,
                                        prompt=final_prompt, modules=() if metadata.get("answer_delivery", {}).get("state_held") else tuple(modules))
         persona_context = build_persona_runtime_context(event, persona) if persona else None
@@ -109,6 +116,8 @@ class ConversationOpeningService:
                     **validation.metadata,
                     "generation_retry_count": generation_index,
                     "rejected_candidates": rejected_candidates,
+                    "opening_timing": finish_response_timing(opening_timing, started_clock),
+                    "learning_target_question_id": runtime.target.question_id if runtime.target else None,
                 }
                 return ConversationOpening(
                     generation=ChatGenerationResult(
@@ -118,6 +127,7 @@ class ConversationOpeningService:
                         dynamic_context=generation.dynamic_context,
                         interaction_metadata=metadata,
                         llm_metadata=generation.llm_metadata,
+                        request_messages=generation.request_messages,
                     ),
                     metadata=metadata,
                     persona=persona,

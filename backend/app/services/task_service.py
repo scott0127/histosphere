@@ -1,4 +1,8 @@
-"""Persistent asynchronous task submission workflow."""
+"""作答先存檔，再由背景工作完成判題與開場，前端可查詢進度。
+
+判題或開場失敗都要保留作答。重試能沿用相同輸入、相同版本的有效判題，
+不因開場失敗就重新評分；等開場存好後，才開始五分鐘對話倒數。
+"""
 
 import hashlib
 import json
@@ -8,8 +12,13 @@ from datetime import timedelta
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
-from app.core.error_elicitation_contract import validate_task_answers
+from app.core.error_elicitation_contract import (
+    ERROR_ELICITATION_CONTRACT_VERSION,
+    ERROR_ELICITATION_JUDGE_CONTRACT_VERSION,
+    validate_task_answers,
+)
 from app.core.interaction_contract import build_interaction_runtime
+from app.services.learning_focus import build_learning_focus
 from app.core.research_reproducibility import record_prompt_snapshot, stable_hash
 from app.models.domain import ChatMessage, Conversation, Event, ResearchLog, TaskAttempt, utc_now
 from app.providers.llm.base import LLMProvider
@@ -34,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 class TaskService:
-    """Persist task work first, then perform slow LLM calls out of request path."""
+    """管理草稿、提交與背景處理；慢速 LLM 呼叫不放在提交請求裡等待。"""
 
     def __init__(
         self,
@@ -47,7 +56,7 @@ class TaskService:
         self.opening_service = opening_service
 
     def save_draft(self, task_id: str, request: TaskDraftRequest) -> TaskDraftResponse:
-        """Save a recoverable learner draft without invoking the LLM."""
+        """只保存可恢復的作答草稿，不呼叫 LLM。"""
         task, session = self._task_and_session(task_id, request.session_id, request.user_id)
         self._validate_answers(task.evaluation_payload, request.response_payload, complete=False)
         attempt = self.repository.get_task_attempt_for_session(session.id, task.id)
@@ -75,12 +84,13 @@ class TaskService:
         task_id: str,
         request: TaskSubmitRequest,
     ) -> tuple[TaskSubmissionAcceptedResponse, bool]:
-        """Persist a processing attempt and return before judgement/greeting begins."""
+        """先存作答並回傳進度；回傳的布林值表示是否需要啟動新的背景工作。"""
         task, session = self._task_and_session(task_id, request.session_id, request.user_id)
         if session.status in {"completed", "archived"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Experiment session is already closed")
 
         attempt = self.repository.get_task_attempt_for_session(session.id, task.id)
+        # 重新整理或重送不能多建一份作答，也不能重複排程付費判題。
         if attempt and attempt.status == "submitted":
             return self._accepted(attempt), False
         if attempt and attempt.status == "processing":
@@ -128,7 +138,7 @@ class TaskService:
         return self._accepted(attempt), True
 
     async def process_submission(self, attempt_id: str) -> None:
-        """Perform judgement and greeting for a previously persisted processing attempt."""
+        """處理已存好的提交：取得有效判題、保存開場，最後才標記完成並啟動倒數。"""
         attempt = self.repository.get_task_attempt(attempt_id)
         if not attempt or attempt.status != "processing":
             return
@@ -151,6 +161,10 @@ class TaskService:
             })
             # 只有已驗證並持久化的判題才有此標記；開場失敗或程序中斷後可接續，不能重判污染結果。
             judgement_reused = attempt.judgement_payload.get("judgement_input_hash") == judgement_input_hash
+            if task.evaluation_payload.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
+                judgement_reused = judgement_reused and (
+                    attempt.judgement_payload.get("judge_contract_version") == ERROR_ELICITATION_JUDGE_CONTRACT_VERSION
+                )
             if judgement_reused:
                 judgement = {
                     key: value for key, value in attempt.judgement_payload.items()
@@ -174,8 +188,7 @@ class TaskService:
                     attempt.judgement_payload = {"llm_call": judgement.get("llm_call"), "judge_validation_audit_id": audit_id}
                     raise
                 judgement["judgement_input_hash"] = judgement_input_hash
-            # ``submitted`` is the polling terminal state. Keep the attempt processing
-            # until the validated opening and its conversation are both durable.
+            # 前端看到 submitted 就會進入聊天；開場尚未存好前只能保持 processing。
             attempt.judgement_payload = judgement
             attempt = self.repository.save_task_attempt(attempt)
 
@@ -348,6 +361,7 @@ class TaskService:
             judgement=attempt.judgement_payload,
             greeting=history[0].content,
             history=history,
+            learning_focus=build_learning_focus(condition, attempt, history),
         )
 
     def _task_and_session(self, task_id: str, session_id: str, user_id: str | None):
@@ -374,7 +388,7 @@ class TaskService:
             validate_task_answers(evaluation_payload, response_payload, complete=complete)
         except ValueError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(exc),
             ) from exc
 

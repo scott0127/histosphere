@@ -2,11 +2,11 @@
   <!--
     ChatScreen 是純 UI 元件：不直接呼叫 API，只透過 emit 把送出訊息交給 conversation route。
     它同時支援 generic chatbot 與 historical persona role-play，
-    由 condition.roleplay_enabled 決定是否顯示事件固定人物與人物側欄。
+    由 condition.roleplay_enabled 決定是否顯示事件固定人物。
   -->
-  <div class="flex h-dvh min-h-0 flex-col bg-[var(--admin-page)] font-sans text-[var(--admin-text)]">
-    <header class="shrink-0 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.9)] backdrop-blur-xl">
-      <div class="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
+  <div class="chat-workspace flex h-dvh min-h-0 flex-col bg-[var(--admin-page)] font-sans text-[var(--admin-text)]">
+    <header class="chat-topbar shrink-0 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.9)] backdrop-blur-xl">
+      <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-3">
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--admin-soft)]">
             <span>{{ activityTitle }}</span>
@@ -17,18 +17,20 @@
         </div>
 
         <button
-          class="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-3 py-2 text-sm font-semibold text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)]"
+          type="button"
+          title="事件素材庫"
+          class="chat-secondary-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-3 py-2 text-sm font-semibold text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)]"
           @click="showExitConfirmDialog = true"
         >
           <Icon name="mdi:library-outline" class="h-5 w-5" />
-          事件素材庫
+          <span class="sr-only md:not-sr-only">事件素材庫</span>
         </button>
       </div>
     </header>
 
-    <main class="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 gap-4 px-3 py-3 md:px-4 xl:grid-cols-[minmax(0,1fr)_220px]">
-      <section class="flex min-h-0 min-w-0 flex-col gap-3">
-        <div class="shrink-0 overflow-hidden rounded-lg border border-[var(--admin-border)]">
+    <main class="chat-main mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 gap-4 px-3 py-3 md:px-4">
+      <section class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <div class="chat-timer-shell shrink-0 overflow-hidden rounded-lg border border-[var(--admin-border)]">
         <SessionTimerBanner
           :session="session"
           flush
@@ -37,25 +39,39 @@
         </div>
         <StudySplitView>
           <template #task>
-            <TaskAttemptReview v-if="task && taskAttempt" :task="task" :attempt="taskAttempt" />
+            <TaskAttemptReview v-if="task && taskAttempt" :task="task" :attempt="taskAttempt" :history="history"
+              :learning-focus="learningFocus" />
             <p v-else class="p-5 text-sm text-[var(--admin-soft)]">目前沒有作答紀錄。</p>
           </template>
-        <div class="shrink-0 border-b border-[var(--admin-border-soft)] px-5 py-3 text-sm font-semibold">
-          {{ condition?.roleplay_enabled ? `與 ${lockedPersona?.name || '歷史人物'} 對話` : '對話' }}
+        <div class="chat-conversation-heading flex shrink-0 items-center gap-3 border-b border-[var(--admin-border-soft)] px-3 py-2 md:px-5 md:py-4">
+          <PersonaAvatar v-if="condition?.roleplay_enabled" :src="lockedPersona?.avatar_url"
+            :alt="`${lockedPersona?.name || '歷史人物'} 肖像`" class="h-12 w-12 rounded-md md:h-16 md:w-16" />
+          <span v-else class="chat-assistant-mark" aria-hidden="true"><Icon name="mdi:message-text" class="h-5 w-5" /></span>
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold text-[var(--admin-text)]">{{ condition?.roleplay_enabled ? `與 ${lockedPersona?.name || '歷史人物'} 對話` : '與 AI 對話' }}</h2>
+            <p v-if="condition?.roleplay_enabled && lockedPersona?.role" class="mt-1 break-words text-xs text-[var(--admin-soft)]">{{ lockedPersona.role }}</p>
+          </div>
         </div>
-        <div ref="chatContainerRef" class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-6 pt-7">
+        <TaskProgressNotice v-if="task" :task="task" :history="history" :learning-focus="learningFocus" />
+        <div class="relative flex min-h-0 flex-1 flex-col">
+        <div ref="chatContainerRef" class="chat-message-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-7" @scroll.passive="onChatScroll">
+          <div ref="chatContentRef" class="space-y-5">
           <!-- message.speaker_type 是新版 message contract 的核心欄位，用來區分 learner/persona/assistant。 -->
           <div
             v-for="(message, index) in history"
             :key="message.id || index"
+            :data-message-id="message.id"
+            tabindex="-1"
             :class="[
-              'flex',
+              'flex focus:outline-none',
               message.speaker_type === 'learner' ? 'justify-end' : 'justify-start'
             ]"
           >
             <div
               :class="[
-                'max-w-[94%] min-w-0 break-words rounded-lg border px-4 py-4 shadow-sm md:max-w-[92%]',
+                'chat-message max-w-[94%] min-w-0 break-words rounded-lg border px-4 py-4 shadow-sm md:max-w-[92%]',
+                message.speaker_type === 'learner' ? 'chat-message-learner' : 'chat-message-assistant',
+                highlightedMessageId === message.id ? 'ring-2 ring-[var(--admin-coffee)] ring-offset-2' : '',
                 message.speaker_type === 'learner'
                   ? 'border-[var(--admin-coffee)] bg-[var(--admin-coffee)] text-[var(--admin-surface)]'
                   : 'border-[var(--admin-border)] bg-[var(--admin-surface)] text-[var(--admin-text)]'
@@ -63,21 +79,10 @@
             >
               <div
                 v-if="message.speaker_type !== 'learner'"
-                class="mb-3 flex items-center gap-2 border-b border-[var(--admin-border-soft)] pb-3 text-xs font-semibold text-[var(--admin-soft)]"
+                class="chat-message-author mb-3 flex items-center gap-2 border-b border-[var(--admin-border-soft)] pb-3 text-xs font-semibold text-[var(--admin-soft)]"
               >
-                <span
-                  v-if="message.speaker_type === 'persona' && messagePersona(message)?.avatar_url"
-                  class="h-7 w-7 shrink-0 overflow-hidden rounded-full border border-[var(--admin-border)]"
-                >
-                  <img
-                    :src="messagePersona(message)?.avatar_url || ''"
-                    :alt="`${message.speaker_name} 肖像`"
-                    :class="[
-                      'h-full w-full object-cover',
-                      isMonaPortrait(messagePersona(message)) ? 'origin-[50%_22%] scale-[2.15]' : ''
-                    ]"
-                  />
-                </span>
+                <PersonaAvatar v-if="message.speaker_type === 'persona'" :src="messagePersona(message)?.avatar_url"
+                  :alt="`${message.speaker_name} 肖像`" class="h-9 w-9 rounded-full" />
                 <Icon
                   v-else
                   :name="message.metadata?.system_fallback ? 'mdi:information-outline' : (message.speaker_type === 'persona' ? 'mdi:account-voice' : 'mdi:school-outline')"
@@ -86,7 +91,7 @@
                 {{ message.speaker_name }}
               </div>
 
-              <div class="text-sm leading-7 md:text-base">
+              <div class="chat-message-copy text-sm leading-7 md:text-base">
                 <div
                   v-if="isPendingMessage(message)"
                   class="flex items-center gap-2 text-[var(--admin-soft)]"
@@ -115,7 +120,7 @@
               <button
                 v-if="isFailedMessage(message) && retryRequestId(message)"
                 type="button"
-                class="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 text-sm font-semibold text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)] disabled:cursor-not-allowed disabled:opacity-50"
+                class="chat-secondary-button mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface-muted)] px-4 text-sm font-semibold text-[var(--admin-coffee)] transition hover:bg-[var(--admin-coffee-soft)] disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="isReplying"
                 @click="$emit('retry-message', retryRequestId(message) || '')"
               >
@@ -124,25 +129,33 @@
               </button>
             </div>
           </div>
-          <div ref="chatEndRef" />
+          </div>
+        </div>
+        <button v-if="!followingLatest" type="button" @click="scrollToLatest"
+          :class="{ 'has-new-reply': hasNewReply }"
+          class="chat-latest-button absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-2 text-sm font-semibold text-[var(--admin-coffee)] shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--admin-coffee)]">
+          <Icon name="mdi:arrow-down" class="h-4 w-4" aria-hidden="true" />
+          {{ hasNewReply ? '有新回覆 · 回到最新' : '回到最新回覆' }}
+        </button>
         </div>
 
-        <footer class="shrink-0 border-t border-[var(--admin-border-soft)] p-5">
-          <form v-if="!sessionClosed" class="flex items-end gap-2" @submit.prevent="handleSendMessage">
+        <footer class="chat-composer shrink-0 border-t border-[var(--admin-border-soft)] p-3 md:p-5">
+          <form v-if="!sessionClosed" class="chat-composer-form flex items-end gap-2" :aria-busy="isReplying" @submit.prevent="handleSendMessage">
             <textarea
               v-model="userInput"
               rows="1"
+              aria-label="輸入訊息"
               :placeholder="inputPlaceholder"
-              class="max-h-36 min-h-12 min-w-0 flex-1 resize-y rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-3 text-sm leading-6 text-[var(--admin-text)] outline-none transition focus:border-[var(--admin-coffee-muted)] focus:ring-4 focus:ring-[var(--admin-focus)]"
+              class="chat-input max-h-36 min-h-12 min-w-0 flex-1 resize-y rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] px-4 py-3 text-sm leading-6 text-[var(--admin-text)] outline-none transition focus:border-[var(--admin-coffee-muted)] focus:ring-4 focus:ring-[var(--admin-focus)]"
               :disabled="isReplying || sessionClosed"
             />
             <button
               type="submit"
               aria-label="送出訊息"
               :disabled="isReplying || sessionClosed || !userInput.trim()"
-              class="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--admin-coffee)] text-[var(--admin-surface)] transition hover:bg-[var(--admin-coffee-hover)] disabled:cursor-not-allowed disabled:bg-[var(--admin-border)]"
+              class="chat-send-button inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--admin-coffee)] text-[var(--admin-surface)] transition hover:bg-[var(--admin-coffee-hover)] disabled:cursor-not-allowed disabled:bg-[var(--admin-border)]"
             >
-              <Icon name="mdi:send" class="h-5 w-5" />
+              <Icon :name="isReplying ? 'mdi:loading' : 'mdi:send'" class="h-5 w-5" :class="{ 'animate-spin': isReplying }" />
             </button>
           </form>
           <p v-else class="text-center text-sm font-semibold text-[var(--admin-soft)]">
@@ -152,56 +165,17 @@
         </StudySplitView>
       </section>
 
-      <aside class="hidden min-h-0 space-y-4 overflow-y-auto xl:block">
-        <!-- role-play 僅呈現後端鎖定的人物，不提供受測者任何切換控制。 -->
-        <div v-if="condition?.roleplay_enabled" class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
-          <h2 class="text-sm font-semibold text-[var(--admin-text)]">歷史人物</h2>
-          <div v-if="lockedPersona" class="mt-3">
-            <div class="overflow-hidden rounded-lg border border-[var(--admin-border-soft)] bg-[var(--admin-surface-muted)]">
-              <img
-                v-if="lockedPersona.avatar_url"
-                :src="lockedPersona.avatar_url"
-                :alt="`${lockedPersona.name} 肖像`"
-                :class="[
-                  'aspect-square w-full object-cover',
-                  isMonaPortrait(lockedPersona) ? 'origin-[50%_22%] scale-[2.15]' : ''
-                ]"
-              />
-              <div
-                v-else
-                class="flex aspect-square w-full items-center justify-center bg-[var(--admin-coffee-soft)] text-4xl font-semibold text-[var(--admin-coffee)]"
-              >
-                {{ lockedPersona.name.slice(0, 1) }}
-              </div>
-              <div class="p-3">
-                <p class="font-semibold text-[var(--admin-text)]">{{ lockedPersona.name }}</p>
-                <p class="mt-1 text-sm text-[var(--admin-soft)]">{{ lockedPersona.role || '角色資料待補' }}</p>
-                <p class="mt-2 line-clamp-4 text-xs leading-5 text-[var(--admin-copy)]">{{ lockedPersona.biography }}</p>
-              </div>
-            </div>
-          </div>
-          <div v-else class="mt-3 rounded-lg border border-dashed border-[var(--admin-border)] p-3 text-sm text-[var(--admin-soft)]">
-            此事件尚未設定可用人物。
-          </div>
-        </div>
-
-        <div v-else class="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4 shadow-[var(--admin-shadow-soft)]">
-          <h2 class="text-sm font-semibold text-[var(--admin-text)]">對話夥伴</h2>
-          <p class="mt-2 text-sm leading-6 text-[var(--admin-copy)]">
-            你可以針對 Error-Elicitation Task 與歷史事件提出問題。
-          </p>
-        </div>
-      </aside>
     </main>
 
     <ConfirmActionModal
+      class="chat-exit-overlay"
       :show="showExitConfirmDialog"
-      title="CHAT"
-      message="點選「是」返回事件素材庫"
+      title="離開對話"
+      message="要返回事件素材庫嗎？"
       eyebrow="階段確認"
       icon="mdi:library-outline"
-      confirm-label="是"
-      cancel-label="否"
+      confirm-label="返回素材庫"
+      cancel-label="繼續對話"
       @confirm="confirmExitConversation"
       @cancel="showExitConfirmDialog = false"
     />
@@ -211,14 +185,17 @@
 <script setup lang="ts">
 // ChatScreen 只管理本地輸入框、固定人物呈現與畫面捲動。
 // 對話 state、API error handling、history 替換都在 useConversationSession 處理。
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { ChatMessage, EventTask, ExperimentCondition, ExperimentSession, HistoricalEvent, Persona, TaskAttempt } from '~/types';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { ChatMessage, EventTask, ExperimentCondition, ExperimentSession, HistoricalEvent, LearningFocus, Persona, TaskAttempt } from '~/types';
 import Typewriter from './Typewriter.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import TaskAttemptReview from '~/components/task-student/TaskAttemptReview.vue';
+import TaskProgressNotice from '~/components/task-student/TaskProgressNotice.vue';
 import StudySplitView from '~/components/chat/StudySplitView.vue';
+import PersonaAvatar from '~/components/chat/PersonaAvatar.vue';
 import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
 import { studentActivityTitle } from '~/composables/useStudentTask';
+import { useChatScroll } from '~/composables/useChatScroll';
 
 const props = defineProps<{
   event: HistoricalEvent | null;
@@ -228,6 +205,7 @@ const props = defineProps<{
   condition?: ExperimentCondition | null;
   task?: EventTask | null;
   taskAttempt?: TaskAttempt | null;
+  learningFocus?: LearningFocus | null;
   dynamicContext: string;
   session?: ExperimentSession | null;
   isReplying: boolean;
@@ -243,8 +221,11 @@ const emit = defineEmits<{
 }>();
 
 const userInput = ref('');
-const chatEndRef = ref<HTMLDivElement | null>(null);
 const chatContainerRef = ref<HTMLDivElement | null>(null);
+const chatContentRef = ref<HTMLDivElement | null>(null);
+const { followingLatest, hasNewReply, highlightedMessageId, onScroll: onChatScroll, scrollToLatest } = useChatScroll(
+  chatContainerRef, chatContentRef, () => props.history, () => props.conversationId,
+);
 const showExitConfirmDialog = ref(false);
 const now = ref(Date.now());
 let sessionTimerId: ReturnType<typeof setInterval> | null = null;
@@ -326,11 +307,6 @@ const messagePersona = (message: ChatMessage) => {
   return props.personas.find((persona) => persona.id === message.persona_id) || lockedPersona.value;
 };
 
-// 莫那・魯道的現存照片為三人合影；僅用 CSS 聚焦中央人物，不修改原始史料影像。
-const isMonaPortrait = (persona: Persona | null | undefined) => {
-  return Boolean(persona?.avatar_url?.includes('/mona-rudao.'));
-};
-
 // role-play 模式依事件固定人物調整 placeholder，不提供切換入口。
 const inputPlaceholder = computed(() => {
   if (!props.condition?.roleplay_enabled) return '輸入你的問題...';
@@ -340,6 +316,7 @@ const inputPlaceholder = computed(() => {
 const handleSendMessage = () => {
   const trimmed = userInput.value.trim();
   if (!trimmed || props.isReplying) return;
+  scrollToLatest();
   emit('send-message', trimmed);
   userInput.value = '';
 };
@@ -349,13 +326,6 @@ const confirmExitConversation = () => {
   emit('reset');
 };
 
-// history 改變後自動捲到底，保留聊天室連續閱讀體驗。
-watch(
-  () => props.history,
-  async () => {
-    await nextTick();
-    chatEndRef.value?.scrollIntoView({ behavior: 'smooth' });
-  },
-  { deep: true },
-);
 </script>
+
+<style src="~/assets/css/chat-workspace.css"></style>

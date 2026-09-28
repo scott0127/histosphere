@@ -97,6 +97,7 @@ type LocalConditionProgress = {
   taskId?: string;
   attemptId?: string;
   conversationId?: string;
+  posttestStage?: 'not_started' | 'engagement' | 'hat' | 'completed' | null;
   updatedAt: string;
 };
 
@@ -145,7 +146,7 @@ const progressLabel = (conditionKey: ConditionKey) => {
   const progress = progressFor(conditionKey);
   if (!progress) return '未開始';
   if (progress.status === 'archived') return '已封存';
-  if (progress.status === 'completed') return '已完成';
+  if (progress.status === 'completed') return progress.posttestStage === 'completed' ? '已完成' : '待完成後測';
   if (progress.status === 'chat_started') return '進行中';
   if (progress.status === 'task_submitted') return '已送出';
   if (progress.status === 'task_draft') return '草稿';
@@ -157,7 +158,7 @@ const progressBadgeClass = (conditionKey: ConditionKey) => {
   const progress = progressFor(conditionKey);
   const base = 'shrink-0 rounded-full px-3 py-1 text-xs font-black';
   if (!progress) return `${base} bg-[var(--admin-coffee-soft)] text-[var(--admin-coffee)]`;
-  if (progress.status === 'completed') return `${base} bg-[#dcebd6] text-[#3f6d4a]`;
+  if (progress.status === 'completed' && progress.posttestStage === 'completed') return `${base} bg-[#dcebd6] text-[#3f6d4a]`;
   if (progress.status === 'chat_started') return `${base} bg-[#eadfcf] text-[var(--admin-coffee)]`;
   if (progress.status === 'task_submitted') return `${base} bg-[#e4dfd6] text-[var(--admin-coffee)]`;
   if (progress.status === 'task_draft') return `${base} bg-[var(--admin-coffee-soft)] text-[var(--admin-copy)]`;

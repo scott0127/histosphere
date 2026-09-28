@@ -4,24 +4,24 @@
     使用 x-admin-key 保護，用來調整 condition 設定、task 與 persona prompt_profile。
     目前不是正式 Supabase Auth/RLS 後台，請勿把它當成 production 權限模型。
   -->
-  <div class="historical-admin min-h-screen font-sans">
-    <header class="admin-topbar">
-      <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3">
+  <div class="historical-admin admin-workspace min-h-screen font-sans">
+    <header id="admin-top" class="admin-topbar">
+      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-3">
         <NuxtLink to="/" class="flex items-center gap-3">
           <span class="admin-back-button">
             <Icon name="mdi:arrow-left" class="h-5 w-5" />
           </span>
           <span>
-            <span class="admin-brand block font-serif text-lg font-bold tracking-[0.08em]">Histosphere</span>
-            <span class="admin-caption block text-xs font-semibold tracking-[0.08em]">研究者 / 老師操作端</span>
+            <span class="admin-brand block text-base font-semibold tracking-tight">Histosphere</span>
+            <span class="admin-caption block text-xs">研究管理工作台</span>
           </span>
         </NuxtLink>
         <div class="flex items-center gap-2">
           <button
-            v-if="snapshot"
+            v-if="canManageAdmin"
             type="button"
             class="admin-button-secondary inline-flex min-h-10 items-center justify-center gap-2 px-4 text-xs font-bold"
-            @click="enterAdminTestMode"
+            @click="enterAdminTestMode()"
           >
             <Icon name="mdi:eye" class="h-4 w-4" />
             受測者測試
@@ -34,28 +34,28 @@
             <Icon name="mdi:logout" class="h-4 w-4" />
             退出
           </button>
-          <span class="admin-badge">Admin mode</span>
+          <span v-if="canManageAdmin" class="admin-badge">管理員</span>
         </div>
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl space-y-6 px-5 py-10 md:py-12">
+    <main class="admin-workspace-main mx-auto w-full max-w-7xl space-y-6 px-5 py-10 pb-28 md:pt-12 lg:pr-24">
       <section class="admin-hero">
         <div class="p-5 md:p-6">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p class="admin-kicker">Admin access</p>
+              <p class="admin-kicker">Research workspace</p>
               <h1 class="admin-heading mt-1 font-serif text-3xl font-bold">
-                {{ snapshot ? '管理後台' : '需要 admin key' }}
+                {{ canManageAdmin ? '研究管理' : '管理員登入' }}
               </h1>
               <p class="admin-copy mt-2 max-w-2xl text-sm font-semibold leading-7">
-                {{ snapshot ? '先選擇歷史事件，再進入該事件的 task、事件資料與人物設定。' : '驗證成功後才會載入後台資料與管理工具。' }}
+                {{ canManageAdmin ? '選擇受測者與事件，查看紀錄與分析。' : '驗證成功後即可使用管理工具。' }}
               </p>
-              <p class="admin-caption mt-2 text-xs font-bold">
+              <p v-if="!canManageAdmin" class="admin-caption mt-2 text-xs font-bold">
                 共用研究者密碼驗證；關閉分頁或退出後會自動清除。
               </p>
             </div>
-            <div class="flex w-full flex-col gap-2 sm:flex-row lg:w-[520px]">
+            <div class="admin-access-controls flex w-full flex-col gap-2 sm:flex-row lg:w-[400px]">
               <input
                 id="admin-key"
                 v-model="adminKey"
@@ -78,12 +78,15 @@
         </div>
       </section>
 
-      <section v-if="snapshot" class="space-y-5">
-        <section class="admin-panel">
+      <section v-if="canManageAdmin && snapshot" class="space-y-5">
+        <section id="participant-research" class="admin-panel scroll-mt-24">
           <button class="admin-accordion-header" type="button" @click="toggleSection('participants')">
-            <span>
-              <span class="admin-kicker">Research dashboard</span>
-              <span class="admin-accordion-title">受測者管理</span>
+            <span class="admin-section-heading">
+              <span class="admin-section-icon admin-section-icon-sage" aria-hidden="true"><Icon name="mdi:account-group-outline" /></span>
+              <span>
+                <span class="admin-kicker">Research dashboard</span>
+                <span class="admin-accordion-title">受測者與對話數據</span>
+              </span>
             </span>
             <span class="admin-accordion-meta">
               {{ participantRows.length }} 位受測者
@@ -97,6 +100,8 @@
             </p>
             <AdminParticipantDashboard
               :rows="participantRows"
+              :events="snapshot.events"
+              :operation-error="error"
               :auth-users="authUsers"
               :creating-participant="creatingParticipant"
               :changing-participant-status-id="changingParticipantStatusId"
@@ -107,6 +112,7 @@
               @archive="(participant) => setParticipantArchived(participant, true)"
               @restore="(participant) => setParticipantArchived(participant, false)"
               @save="saveParticipant"
+              @preview="enterAdminTestMode"
               @reset-timer="resetSessionTimer"
               @restart-session="restartSession"
               @view-research="loadSessionResearch"
@@ -114,11 +120,15 @@
           </div>
         </section>
 
-        <section class="admin-panel">
+        <section id="model-usage" class="scroll-mt-24"><AdminLlmUsagePanel ref="usagePanel" :admin-key="adminKey" /></section>
+        <section id="research-exports" class="admin-panel scroll-mt-24">
           <button class="admin-accordion-header" type="button" @click="toggleSection('logs')">
-            <span>
-              <span class="admin-kicker">Audit trail</span>
-              <span class="admin-accordion-title">研究操作紀錄</span>
+            <span class="admin-section-heading">
+              <span class="admin-section-icon" aria-hidden="true"><Icon name="mdi:clipboard-text-outline" /></span>
+              <span>
+                <span class="admin-kicker">Audit trail</span>
+                <span class="admin-accordion-title">研究操作紀錄</span>
+              </span>
             </span>
             <span class="admin-accordion-meta">
               最近 {{ snapshot.research_logs.length }} 筆
@@ -135,11 +145,14 @@
           </div>
         </section>
 
-        <section v-if="!selectedEvent" class="admin-panel">
+        <section v-if="!selectedEvent" id="admin-materials" class="admin-panel scroll-mt-6">
           <div class="admin-accordion-header">
-            <span>
-              <span class="admin-kicker">Admin workspace</span>
-              <span class="admin-accordion-title">選擇要管理的歷史事件</span>
+            <span class="admin-section-heading">
+              <span class="admin-section-icon" aria-hidden="true"><Icon name="mdi:book-open-page-variant" /></span>
+              <span>
+                <span class="admin-kicker">Admin workspace</span>
+                <span class="admin-accordion-title">選擇要管理的歷史事件</span>
+              </span>
             </span>
             <span class="admin-accordion-meta">
               {{ snapshot.events.length }} 個事件
@@ -208,6 +221,7 @@
         </section>
 
         <template v-else>
+        <div id="admin-materials" class="scroll-mt-6" />
         <section class="admin-panel">
           <div class="admin-accordion-header flex-col items-stretch gap-4 md:flex-row md:items-center">
             <span>
@@ -560,10 +574,12 @@
                       rows="2"
                       class="admin-textarea mt-3 w-full px-3 py-2 text-xs leading-5"
                     />
-                    <pre
-                      v-if="promptPreview"
-                      class="admin-code-editor mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-md border border-[var(--admin-border)] bg-[var(--admin-panel)] p-3 text-xs leading-5"
-                    >{{ promptPreview.prompt }}</pre>
+                    <details v-if="promptPreview" class="mt-3" open>
+                      <summary class="admin-label cursor-pointer">基底提示詞預覽（尚未推論）</summary>
+                      <pre
+                        class="admin-code-editor mt-2 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-md border border-[var(--admin-border)] bg-[var(--admin-panel)] p-3 text-xs leading-5"
+                      >{{ promptPreview.prompt }}</pre>
+                    </details>
                     <div v-if="promptDryRun" class="mt-3 rounded-md border border-[var(--admin-border)] bg-[var(--admin-surface)] p-3">
                       <span class="admin-label block">Dry-run 回覆（未寫入對話）</span>
                       <AnnotatedText
@@ -573,6 +589,7 @@
                         class="admin-copy mt-2 text-sm leading-6"
                       />
                       <p v-else class="admin-copy mt-2 whitespace-pre-wrap text-sm leading-6">{{ promptDryRun.response }}</p>
+                      <AdminPromptExecutionDetails :result="promptDryRun" />
                     </div>
                   </div>
                 </div>
@@ -582,10 +599,13 @@
         </section>
         </template>
       </section>
+      <div id="admin-bottom" aria-hidden="true" />
     </main>
 
+    <AdminQuickNavigation v-if="canManageAdmin && !selectedResearchSession && !researchSessionLoading" @jump="jumpToAdminSection" />
+
     <div
-      v-if="researchSessionLoading"
+      v-if="canManageAdmin && researchSessionLoading"
       class="fixed inset-0 z-[65] flex items-center justify-center bg-[rgba(47,41,36,0.35)] backdrop-blur-sm"
     >
       <div class="admin-panel-inner inline-flex items-center gap-3 px-5 py-4 text-sm font-bold text-[var(--admin-copy-strong)]">
@@ -594,6 +614,7 @@
       </div>
     </div>
     <AdminParticipantResearchDialog
+      v-if="canManageAdmin"
       :research="selectedResearchSession"
       @close="closeSessionResearch"
       @refresh="loadSessionResearch"
@@ -604,14 +625,21 @@
 <script setup lang="ts">
 // 這個頁面刻意把 task/persona 的 JSON 欄位攤開給研究者編輯，
 // 方便在實驗前快速調 persona prompt_profile 與 task evaluation_payload。
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { Persona } from '~/types';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import type { Participant, Persona } from '~/types';
 import AnnotatedText from '~/components/AnnotatedText.vue';
 import { buildParticipantDashboardRows } from '~/utils/adminParticipantDashboard';
 
 definePageMeta({
   layout: false,
   name: 'admin',
+});
+
+useHead({
+  link: [{
+    rel: 'stylesheet',
+    href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap',
+  }],
 });
 
 type AdminSectionKey = 'participants' | 'logs' | 'tasks' | 'events' | 'personas';
@@ -624,7 +652,7 @@ const openSections = ref<Record<AdminSectionKey, boolean>>({
   personas: true,
 });
 
-const { enterAdminMode, exitAdminMode, initAdminMode, setAdminViewMode } = useAdminMode();
+const { isAdminMode, adminViewMode, enterAdminMode, exitAdminMode, initAdminMode, setAdminViewMode, setPreviewParticipantId } = useAdminMode();
 const {
   adminKey,
   archivePersona,
@@ -686,6 +714,35 @@ const {
   updatingTimerSessionId,
 } = useAdminWorkspace();
 
+const canManageAdmin = computed(() => Boolean(snapshot.value && isAdminMode.value && adminViewMode.value === 'admin_mode'));
+const usagePanel = ref<{ expand: () => void } | null>(null);
+
+const jumpToAdminSection = async (target: string) => {
+  if (!canManageAdmin.value) return;
+  if (target === 'model-usage') usagePanel.value?.expand();
+  if (target === 'participant-research') openSections.value.participants = true;
+  if (target === 'research-exports') openSections.value.logs = true;
+  if (target === 'admin-materials') {
+    openSections.value.tasks = true;
+    openSections.value.events = true;
+    openSections.value.personas = true;
+  }
+  await nextTick();
+  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  if (target === 'admin-bottom') {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
+    return;
+  }
+  const section = document.getElementById(target);
+  if (!section) return;
+  section.setAttribute('tabindex', '-1');
+  section.focus({ preventScroll: true });
+  section.scrollIntoView({
+    behavior,
+    block: 'start',
+  });
+};
+
 const participantRows = computed(() => {
   return snapshot.value ? buildParticipantDashboardRows(snapshot.value, authUsers.value) : [];
 });
@@ -721,16 +778,21 @@ const handleBeforeUnload = (event: BeforeUnloadEvent) => {
   event.returnValue = '';
 };
 
+let pageActive = false;
+let snapshotRequestId = 0;
+
 onMounted(async () => {
+  pageActive = true;
   window.addEventListener('beforeunload', handleBeforeUnload);
   initAdminMode();
   restoreStoredAdminKey();
-  if (adminKey.value && await loadSnapshot()) {
-    enterAdminMode();
-  }
+  if (adminKey.value) await handleLoadSnapshot();
+  else exitAdminMode();
 });
 
 onBeforeUnmount(() => {
+  pageActive = false;
+  snapshotRequestId += 1;
   window.removeEventListener('beforeunload', handleBeforeUnload);
 });
 
@@ -740,21 +802,29 @@ onBeforeRouteLeave(() => {
 });
 
 const handleLoadSnapshot = async () => {
-  if (await loadSnapshot()) {
+  const requestId = ++snapshotRequestId;
+  const loaded = await loadSnapshot();
+  if (!pageActive || requestId !== snapshotRequestId) return;
+  if (loaded) {
     enterAdminMode();
+  } else {
+    exitAdminMode();
   }
 };
 
-const enterAdminTestMode = async () => {
+const enterAdminTestMode = async (participant?: Participant) => {
   if (!confirmDiscardTaskDrafts()) return;
+  snapshotRequestId += 1;
   allowRouteLeave.value = true;
   enterAdminMode();
+  if (participant) setPreviewParticipantId(participant.id);
   setAdminViewMode('admin_testmode');
   await navigateTo('/');
 };
 
 const leaveAdminMode = async () => {
   if (!confirmDiscardTaskDrafts()) return;
+  snapshotRequestId += 1;
   allowRouteLeave.value = true;
   resetWorkspace();
   exitAdminMode();
@@ -777,3 +847,5 @@ const selectEvent = (eventId: string) => {
 };
 
 </script>
+
+<style src="~/assets/css/admin-workspace.css"></style>

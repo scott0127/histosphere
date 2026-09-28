@@ -30,6 +30,7 @@ from app.models.domain import (
     Participant,
     Persona,
     ResearchLog,
+    SessionPosttest,
     TaskAttempt,
     WikiSource,
     utc_now,
@@ -396,6 +397,29 @@ class SupabaseRepository(RepositoryProtocol):
             ExperimentSession,
             {"user_id": f"eq.{user_id}", "order": "updated_at.desc"},
         )
+
+    def get_posttest(self, session_id: str) -> SessionPosttest | None:
+        return self._select_one("session_posttests", SessionPosttest, {"session_id": f"eq.{session_id}"})
+
+    def create_posttest(self, posttest: SessionPosttest) -> SessionPosttest:
+        data = self._request(
+            "POST", "session_posttests", params={"on_conflict": "session_id"},
+            json=self._payload(posttest), prefer="resolution=ignore-duplicates,return=representation",
+        )
+        if data:
+            return SessionPosttest(**data[0])
+        stored = self.get_posttest(posttest.session_id)
+        if stored is None:
+            raise RuntimeError("Posttest was not persisted")
+        return stored
+
+    def update_posttest(self, posttest: SessionPosttest, expected_revision: int) -> SessionPosttest | None:
+        data = self._request(
+            "PATCH", "session_posttests",
+            params={"session_id": f"eq.{posttest.session_id}", "revision": f"eq.{expected_revision}", "stage": "neq.completed"},
+            json=self._payload(posttest), prefer="return=representation",
+        )
+        return SessionPosttest(**data[0]) if data else None
 
     # ── Participant ───────────────────────────────────────────
 

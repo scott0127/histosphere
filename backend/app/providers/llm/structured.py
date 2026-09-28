@@ -185,7 +185,7 @@ class ChatOutputPayload(BaseModel):
         "corrective_resolution_pending",
         "feedback_completed",
     ] | None = None
-    # 只判斷 EBL 的認知錯誤、反思與自我修正，不另評 learner 的 Historical Thinking 技能。
+    # 四組共同的修正完成判準；是否主動提供 EBL 鷹架由互動政策決定。
     resolution_error_recognized: bool = False
     resolution_error_reflected: bool = False
     resolution_self_corrected: bool = False

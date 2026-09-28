@@ -606,7 +606,7 @@
         <a href="#references">延伸文件</a>
       </nav>
       <div class="sidebar-foot">
-        現況核對：2026-09-04<br>
+        現況核對：2026-09-06<br>
         Schema source：<span class="mono">supabase/migrations/</span>
       </div>
     </aside>
@@ -714,7 +714,7 @@ pnpm dev:full</code></pre>
         </div>
         <div class="layer-stack">
           <div class="layer"><b>外部內容</b><span>Wikipedia 只在 Admin 建立新事件素材時使用；Learner 不會即時生成新 Event。</span></div>
-          <div class="layer"><b>LLM runtime</b><span>LiteLLM 依 <code>LLM_MODEL</code> 呼叫已設定的 provider；輸出需通過 Pydantic schema 與內容驗證。目前程式對 Gemini、Cohere、NVIDIA 有明確的 provider-specific 設定。</span></div>
+          <div class="layer"><b>LLM runtime</b><span>LiteLLM 依 <code>LLM_MODEL</code> 呼叫已設定的 provider，不切換模型。Pydantic 格式／狀態檢查與可配置內容／答案審查分開；不能由是否啟用內容審查推論格式檢查也停用。</span></div>
           <div class="layer"><b>研究稽核</b><span><code>research_logs</code> 保存素材快照、Prompt hash、LLM metadata、狀態變更與失敗紀錄。</span></div>
         </div>
         <div class="callout">
@@ -767,9 +767,9 @@ pnpm dev:full</code></pre>
           <li><b>讀取 participant 與進度</b><p><code>GET /api/participants/me</code> 與 <code>GET /api/sessions/progress</code> 回傳後端認定的 participant、Condition 順序與既有 Session。</p></li>
           <li><b>初始化或恢復 Event</b><p><code>POST /api/event/initialize</code> 檢查 participant assignment、執行順序、Event 封存與素材鎖定。已有未完成 Session 時直接恢復。</p></li>
           <li><b>作答 Error-Elicitation Task</b><p>草稿寫進唯一的 <code>task_attempts</code> row。送出後立即回傳 <code>202 + attempt_id</code>，前端輪詢處理狀態。</p></li>
-          <li><b>Judge 與開場持久化</b><p>後端以規則判客觀答案、LLM 判理由，建立逐題錯誤資料，再生成開場並建立唯一 Conversation。</p></li>
+          <li><b>Judge 與開場持久化</b><p>選擇／是非用規則判答案；填空答案與全部理由在原本一次 LLM Judge 中判定。保存逐題結果，再生成開場與唯一 Conversation。</p></li>
           <li><b>五分鐘 Chat</b><p>倒數只在 Conversation 與開場都可用時開始。每輪先保存 Learner 訊息，再呼叫 LLM，完成後保存 AI 訊息與 metadata。</p></li>
-          <li><b>時間到</b><p>Session 轉為 <code>completed</code>，Learner 看到「本階段已結束」並進入下一階段；沒有 Learner 手動提前完成按鈕。</p></li>
+          <li><b>時間到</b><p>Session 轉為 <code>completed</code> 並停止 Chat。02/04 若有已談到的未完成目前題目，先顯示凍結正解與修正理由、重述一次，再進下一階段；其他情況直接確認進下一階段。收尾不算五分鐘聊天，也不另呼叫 Judge。</p></li>
         </ol>
       </section>
 
@@ -809,52 +809,59 @@ pnpm dev:full</code></pre>
         <div class="grid-2">
           <article class="card">
             <h3>Authoring contract</h3>
-            <p><code>error_elicitation_task_full_text</code> 保存完整閱讀材料與 <code>{{blank:qNN}}</code> 位置；<code>evaluation_payload.questions[]</code> 保存題型、正解與理由通過標準。</p>
+            <p><code>error_elicitation_task_full_text</code> 保存完整作答情境與小題位置；<code>evaluation_payload.materials[]</code> 放文字、圖片及具體材料小標，<code>questions[]</code> 放題型、正解與理由通過標準。</p>
           </article>
           <article class="card">
             <h3>Learner response</h3>
-            <p>目前正式題型是選擇、是非與填空。每題都必須提交 <code>value</code> 與 <code>rationale</code>，漏題或格式錯誤視為處理失敗，而非自動判學生答錯。</p>
+            <p>目前正式題型是選擇、是非與填空。每題都必須提交 <code>value</code> 與 <code>rationale</code>，漏題或格式錯誤先拒絕提交，而非自動判學生答錯。</p>
           </article>
         </div>
         <div class="flow" aria-label="Task 判題流程">
           <div class="flow-step"><b>Validate</b><span>題號、題數、答案與理由格式完整</span></div>
-          <div class="flow-step"><b>Rule judge</b><span>客觀答案與 correct_answer 正規化比對</span></div>
-          <div class="flow-step"><b>LLM judge</b><span>一次 structured call 判斷每題理由</span></div>
+          <div class="flow-step"><b>Rule judge</b><span>選擇／是非依選項或 Boolean 判答案</span></div>
+          <div class="flow-step"><b>LLM judge</b><span>同次判填空語意與所有題目的理由</span></div>
           <div class="flow-step"><b>Merge</b><span>答案正確且理由正確才是 correct</span></div>
-          <div class="flow-step"><b>Persist</b><span>逐題錯誤、issue types、HT tags 與 input hash</span></div>
+          <div class="flow-step"><b>Persist</b><span>逐題答案／理由判定、feedback、HT tags、v4 與 input hash</span></div>
         </div>
         <div class="callout warn">
-          <strong>LLM 不負責改寫客觀答案</strong>
-          <p>客觀答案由規則決定；LLM 只判斷理由是否符合研究者為該題寫下的 <code>reasoning_criteria</code>，並回傳史實錯誤、推理錯誤與可選 Historical Thinking 標籤。標籤不是計分本身。</p>
+          <strong>語意判定，不改寫學生原文</strong>
+          <p><code>error_elicitation_judge_v4</code> 讓 LLM 判填空答案是否等義，參考答案不是窮舉白名單；所有理由依 <code>reasoning_criteria</code> 判定。答案與理由都正確才通過。<code>answer_feedback</code>（填空）與 <code>reasoning_feedback</code> 供後續 AI 與 Admin 使用，不給 Learner；HT tags 只描述，不再另分 factual/reasoning issue 類型。</p>
         </div>
-        <p class="lead">送出後的 Attempt 狀態為 <code>processing → submitted</code>，失敗則為 <code>failed</code> 並可重試。若判題已成功、只在開場生成失敗，<code>judgement_input_hash</code> 會讓重試沿用原判題，避免同一份答案被第二次模型判成不同結果。</p>
+        <p class="lead">送出後的 Attempt 狀態為 <code>processing → submitted</code>，失敗則為 <code>failed</code> 並可重試。若判題已成功、只在開場生成失敗，只有 <code>judgement_input_hash</code> 和 Judge v4 都一致才重用 pending 判題。缺少必要判定是 failed，不是假學生錯誤；已提交的舊作答不自動重判。</p>
       </section>
 
       <section id="llm" data-searchable>
         <div class="section-head">
           <h2>Prompt 與 LLM Runtime</h2>
-          <p>一次使用者回覆走一條 canonical prompt pipeline；邏輯上單次生成，技術上可有同模型 retry 或一次 schema repair。</p>
+          <p>主回覆一次 canonical 生成；答案審查及必要修正可額外呼叫。不是固定先寫教師稿再第二次人物改寫。</p>
         </div>
         <div class="layer-stack">
           <div class="layer"><b>general_prompt</b><span>所有 Condition 共用的安全、範圍、史實與輸出規則。</span></div>
           <div class="layer"><b>independent_2_prompt</b><span>互動方式：Standard Chat 或 EBL scaffold。</span></div>
           <div class="layer"><b>event + task</b><span>事件情境與已凍結的逐題作答／錯誤資料。</span></div>
-          <div class="layer"><b>interaction_runtime</b><span>目前錯誤、EBL 階段、Disclosure level、允許證據與 forbidden aliases。</span></div>
+          <div class="layer"><b>interaction_runtime</b><span>目前錯誤、EBL 階段、Disclosure level 與後端收尾授權；不以答案字詞出現與否判洩漏。</span></div>
           <div class="layer"><b>conversation_history</b><span>由資料庫取回，依字元預算裁切；不是只保留固定 12 則。</span></div>
           <div class="layer"><b>independent_1_prompt</b><span>呈現身分：中性 AI 或固定歷史人物第一人稱。</span></div>
-          <div class="layer"><b>runtime_policy</b><span>structured output、off-topic、答案洩漏與回覆邊界。</span></div>
-          <div class="layer"><b>user_message</b><span>只放入 canonical module 一次，不在 provider 外層重複傳遞。</span></div>
+          <div class="layer"><b>turn_intent / user_message</b><span>開場或聊天意圖；最新提問只放一次，不在 provider 外層重複。</span></div>
+          <div class="layer"><b>runtime_policy</b><span>最後附上 structured output、off-topic 與回覆邊界。</span></div>
         </div>
         <table>
           <thead><tr><th>Condition</th><th>Interaction</th><th>Renderer</th><th>研究控制</th></tr></thead>
           <tbody>
-            <tr><td><code>01</code></td><td>Standard Chat</td><td>中性 AI 歷史助教</td><td>不主動要求反思、自我修正</td></tr>
-            <tr><td><code>02</code></td><td>EBL scaffold</td><td>中性 AI 歷史助教</td><td>與 04 共用 EBL/Disclosure policy</td></tr>
+            <tr><td><code>01</code></td><td>Standard Chat</td><td>非 Role-play 普通 AI</td><td>不主動要求反思、自我修正</td></tr>
+            <tr><td><code>02</code></td><td>EBL scaffold</td><td>非 Role-play 普通 AI</td><td>與 04 共用 EBL/Disclosure policy</td></tr>
             <tr><td><code>03</code></td><td>Standard Chat</td><td>歷史人物第一人稱</td><td>不主動要求反思、自我修正</td></tr>
-            <tr><td><code>04</code></td><td>EBL scaffold</td><td>歷史人物第一人稱</td><td>只在 02 的 pedagogical act 上增加 persona 呈現</td></tr>
+            <tr><td><code>04</code></td><td>EBL scaffold</td><td>歷史人物第一人稱</td><td>人物主導自然對話並融入 EBL，共用 02 的狀態及答案邊界</td></tr>
           </tbody>
         </table>
         <p class="lead">Historical Thinking 是四組共用的歷史回應品質基礎，不是額外操弄。EBL 才是 02/04 的互動教學鷹架：發現／認知錯誤 → 分析與反思 → 自我修正 → corrective feedback/resolution。</p>
+        <div class="callout">
+          <strong>Disclosure、收尾與答案審查</strong>
+          <p>D0–D4 只限制解題協助，不限制所有史實、比較或人物敘事。授權前不代學生完成尚未修正的答案／理由；D4 仍未修正時，先給正解與理由，再請重述一次，然後切下一題。獨立修正與輔助重述分開記錄。</p>
+          <p>獨立答案審查適用有錯誤目標的 02/04；observe 先交付再觀察，before_delivery 先審查，必要時最多兩次修正、受限引導及明示系統備援。Learner 不看審查或被拒絕候選。這不是全面史實保證；人物與後世材料界線仍待討論。</p>
+          <p>實際開關以部署設定為準。精確分支見 <a href="architecture.md#答案審查與回覆交付">技術架構</a>，不要把本手冊當另一份 API schema。</p>
+        </div>
+        <p class="lead">材料／當前題目與聊天已分開，桌面可拖曳調比例；目前題目來自後端 learning_focus。圖片給學習者看，模型未使用圖片像素；小標具體說明材料作品與年代，不只放分類。</p>
         <div class="grid-3">
           <article class="card"><h3>模型鎖定</h3><p><code>LLM_MODEL</code> 是唯一正式 candidate；<code>provider_switching_enabled=false</code>。</p></article>
           <article class="card"><h3>輸出驗證</h3><p>Pydantic schema 驗證；格式失敗可再要求同模型修復一次，未通過不得入庫成正式回覆。</p></article>
@@ -978,6 +985,7 @@ pnpm dev:full</code></pre>
           <h2>研究紀錄與可重現性</h2>
           <p>正式結果不是只看 messages；需要 Session、素材、Prompt、模型與判題一起重播。</p>
         </div>
+        <p class="lead">Admin 可展開每則答案審查／交付紀錄，以及 Judge、開場、Chat、審查和修正等各階段的 Token／美元估算。台幣以管理員可調匯率換算，不是即時匯率或官方帳單。全域用量讀取持久帳本，包含隔離測試；Session 統計只包含其關聯呼叫，兩者不可相加。</p>
         <div class="grid-3">
           <article class="card"><h3>Material snapshot</h3><p>Session 建立時保存 Event、Task、Persona 與 Condition 的內容及穩定 hash，後續素材修改不應改變已發生實驗的解讀。</p></article>
           <article class="card"><h3>Prompt snapshot</h3><p>每次重要 LLM call 保存組裝後 Prompt、modules、hash、provider/model、latency、tokens 與 retry/repair metadata。</p></article>
@@ -1011,7 +1019,7 @@ pnpm dev:full</code></pre>
           <div>
             <p><code>GET /api/participants/me</code></p>
             <p><code>POST /api/event/initialize</code></p>
-            <p><code>GET /api/sessions/progress</code>、<code>GET /api/sessions/{session_id}/state</code></p>
+            <p><code>GET /api/sessions/progress</code>、<code>GET /api/sessions/{session_id}/state</code>、<code>POST /api/sessions/{session_id}/closure</code></p>
             <p><code>PATCH /api/tasks/{task_id}/draft</code>、<code>POST /api/tasks/{task_id}/submit</code>、<code>GET /api/tasks/attempts/{attempt_id}</code></p>
             <p><code>POST /api/conversations</code>、<code>GET /api/conversations/{conversation_id}</code></p>
             <p><code>POST /api/chat</code>、<code>POST /api/chat/stream</code>、<code>GET /api/chat/operations/{client_request_id}</code></p>
@@ -1020,7 +1028,7 @@ pnpm dev:full</code></pre>
         <details>
           <summary>Admin key</summary>
           <div>
-            <p><code>/api/admin/*</code>：snapshot、Auth user 清單、Prompt preview/dry-run、Event 編輯/封存/還原/素材鎖定、Task 編輯、Persona 啟停、Participant 建立/編輯/封存/還原、Condition 編輯、Session timer/restart、research logs/replay/export。</p>
+            <p><code>/api/admin/*</code>：snapshot、Auth user 清單、Prompt preview/dry-run、Event 編輯/封存/還原/素材鎖定、Task 編輯、Persona 啟停、Participant 建立/編輯/封存/還原、Condition 編輯、Session timer/restart、research logs/replay/export、<code>GET /api/admin/llm-usage</code>。</p>
             <p><code>POST/PATCH/DELETE /api/personas*</code> 是相容入口，也有 Admin key 保護；其中 DELETE 的實際語意是可恢復封存，不是 hard delete。</p>
           </div>
         </details>
@@ -1039,8 +1047,9 @@ pnpm dev:full</code></pre>
             <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td>Backend only</td><td>Repository 的高權限資料存取；不得進 frontend bundle、log 或文件。</td></tr>
             <tr><td><code>HISTOSPHERE_ADMIN_KEY</code></td><td>Backend + Admin request</td><td>共享管理門檻；沒有預設值，缺少即拒絕啟動。</td></tr>
             <tr><td><code>LLM_MODEL</code></td><td>Backend</td><td>正式實驗唯一 provider/model，使用 LiteLLM model id；換 provider 前必須先完成相同流程的實際驗證。</td></tr>
-            <tr><td><code>LLM_TEMPERATURE</code><br><code>LLM_MAX_OUTPUT_TOKENS</code><br><code>LLM_TIMEOUT_SECONDS</code></td><td>Backend</td><td>全域生成參數；目前預設 0.3、4096、60 秒。</td></tr>
-            <tr><td>Provider API keys</td><td>Backend only</td><td><code>GEMINI_API_KEY</code>、<code>COHERE_API_KEY</code>、<code>NVIDIA_API_KEY</code> 或通用 <code>LLM_API_KEY</code>，由選定模型決定。其他 LiteLLM provider 不應在未驗證前視為正式支援。</td></tr>
+            <tr><td><code>LLM_TEMPERATURE</code><br><code>LLM_MAX_OUTPUT_TOKENS</code><br><code>LLM_TIMEOUT_SECONDS</code></td><td>Backend</td><td>全域生成參數；目前預設 0.3、16384、60 秒；上限不是目標篇幅，仍須監測截斷。</td></tr>
+            <tr><td>Provider API keys</td><td>Backend only</td><td><code>OPENAI_API_KEY</code>、<code>GEMINI_API_KEY</code> 等對應 provider key 或通用 <code>LLM_API_KEY</code>，由選定模型決定。其他 LiteLLM provider 不應在未驗證前視為正式支援。</td></tr>
+            <tr><td><code>LLM_ANSWER_REVIEW_ENABLED</code><br><code>LLM_ANSWER_REVIEW_MODE</code></td><td>Backend</td><td>啟用獨立答案審查，選 observe 或 before_delivery；通用內容驗證另由 LLM_CONTENT_VALIDATION_ENABLED 管理。</td></tr>
             <tr><td><code>LLM_REJECTION_LOG_PATH</code></td><td>Backend</td><td>未通過 schema/內容驗證的模型輸出與 failure audit。</td></tr>
           </tbody>
         </table>
@@ -1129,7 +1138,7 @@ pnpm dev:full</code></pre>
         <div class="grid-2">
           <article class="card"><h3><a href="./architecture.md">architecture.md</a></h3><p>Backend、API、runtime、2×2 與測試 contract。</p></article>
           <article class="card"><h3><a href="./supabase-schema.md">supabase-schema.md</a></h3><p>14 張表的完整 columns、FK、constraints 與 indexes。</p></article>
-          <article class="card"><h3><a href="./system-design.md">system-design.md</a></h3><p>Frontend/Backend 責任與整體使用者流程。</p></article>
+          <article class="card"><h3><a href="./ebl-historical-roleplay-intervention-design.md">介入規格</a></h3><p>四組因子、人物、EBL、Disclosure 與收尾的共同操作定義；舊 system-design 已整併為導讀。</p></article>
           <article class="card"><h3><a href="./research-data-export.md">research-data-export.md</a></h3><p>Session replay、token 統計、去識別與匯出欄位。</p></article>
           <article class="card"><h3><a href="./local-development.md">local-development.md</a></h3><p>Docker、Supabase ports、啟動與清理。</p></article>
           <article class="card"><h3><a href="./histosphere-system-map.html">System Map</a></h3><p>各子系統完成度、暫緩項目與待討論研究問題。</p></article>

@@ -32,6 +32,7 @@ backend/.venv/
 !.env.example
 
 # Local indexes / generated analysis
+.agent-work/
 .gitnexus/
 .agents/
 .codex/

@@ -19,6 +19,31 @@ SUPPORTED_QUESTION_TYPES = INLINE_QUESTION_TYPES | {"short_answer"}
 BLANK_PATTERN = re.compile(r"\{\{\s*blank:([a-zA-Z0-9_-]+)\s*\}\}")
 
 
+def validate_task_closure_payload(evaluation_payload: dict[str, Any]) -> list[dict[str, str]]:
+    """草稿可以未完成；正式鎖定前必須備齊每個可能討論目標的公開解說。"""
+    issues = []
+    questions = evaluation_payload.get("questions")
+    for index, question in enumerate(questions if isinstance(questions, list) else []):
+        if isinstance(question, dict) and (
+            not isinstance(question.get("source_text"), str) or not question["source_text"].strip()
+        ):
+            issues.append(_issue(
+                f"evaluation_payload.questions[{index}].source_text",
+                "請補上可供學生收尾閱讀的正確答案解說。",
+                "missing_closure_explanation",
+            ))
+    fallback = evaluation_payload.get("all_correct_fallback")
+    if isinstance(fallback, dict) and (
+        not isinstance(fallback.get("source_text"), str) or not fallback["source_text"].strip()
+    ):
+        issues.append(_issue(
+            "evaluation_payload.all_correct_fallback.source_text",
+            "請補上全對時第三方錯誤主張的修正解說。",
+            "missing_closure_explanation",
+        ))
+    return issues
+
+
 def validate_task_authoring_payload(
     error_elicitation_task_full_text: str,
     evaluation_payload: dict[str, Any] | Any,

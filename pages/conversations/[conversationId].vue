@@ -9,6 +9,7 @@
     :condition="chatState.condition"
     :task="task"
     :task-attempt="taskAttempt"
+    :learning-focus="chatState.learning_focus"
     :dynamic-context="dynamicContext"
     :session="session"
     :is-replying="isSending"
@@ -77,8 +78,9 @@ const handleSessionExpired = async () => {
 };
 
 const handleNextStage = async () => {
-  await handleSessionExpired();
+  const sessionId = session.value?.id;
+  if (!sessionId) return;
   resetConversationState();
-  await navigateTo('/');
+  await navigateTo(`/posttest/${sessionId}`);
 };
 </script>

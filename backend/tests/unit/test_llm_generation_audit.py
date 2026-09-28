@@ -14,6 +14,7 @@ from app.providers.llm.json_runner import (
     LLMCompletion,
     LLMJsonRunner,
     LLMRunResult,
+    LLMRunError,
 )
 from app.providers.llm.litellm_provider import LiteLLMProvider
 from app.providers.llm.structured import ChatOutputPayload
@@ -161,6 +162,8 @@ def test_json_runner_counts_initial_and_schema_repair_usage(monkeypatch, tmp_pat
     assert result.metadata.reasoning_tokens == 11
     assert result.metadata.total_tokens == 190
     assert result.metadata.estimated_cost_usd == pytest.approx(0.0015)
+    assert result.metadata.estimated_known_cost_usd == pytest.approx(0.0015)
+    assert result.metadata.usage_reported_attempts == result.metadata.cost_reported_attempts == 2
     records = [json.loads(line) for line in usage_path.read_text(encoding="utf-8").splitlines()]
     assert [r["status"] for r in records] == ["started", "completed", "started", "completed"]
     assert len({r["attempt_id"] for r in records}) == 2
@@ -185,8 +188,11 @@ def test_usage_log_retains_empty_response_cost_and_unknown_timeout(monkeypatch, 
         return reply
 
     monkeypatch.setattr(runner, "_complete", fake_complete)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(LLMRunError) as failed:
         asyncio.run(runner.run_json(schema=_Payload, system_prompt="s", user_prompt="u", task_name="empty"))
+    assert failed.value.metadata.estimated_cost_usd is None
+    assert failed.value.metadata.estimated_known_cost_usd == 0.0001
+    assert failed.value.metadata.usage_reported_attempts == failed.value.metadata.cost_reported_attempts == 1
     rows = [json.loads(line) for line in usage_path.read_text(encoding="utf-8").splitlines()]
     assert [r["status"] for r in rows] == ["started", "empty_response", "started", "failed"]
     assert rows[1]["estimated_cost_usd"] == 0.0001
@@ -216,6 +222,7 @@ def test_usage_summary_deduplicates_attempts_and_retains_unknown_cost(tmp_path):
     base = dict(provider="openai", model="test", recorded_at="2026-09-05T00:00:00+00:00")
     completed = dict(base, attempt_id="one", status="completed", estimated_cost_usd=0.1, total_tokens=30)
     records = [dict(base, attempt_id="one", status="started"), completed, completed,
+               dict(base, attempt_id="one", status="started"),
                dict(base, attempt_id="two", status="started")]
     path.write_text("\n".join(json.dumps(r) for r in records) + "\ntruncated", encoding="utf-8")
     result = summarize(path)
@@ -224,6 +231,27 @@ def test_usage_summary_deduplicates_attempts_and_retains_unknown_cost(tmp_path):
     assert result["groups"][0]["unknown_cost_attempts"] == 1
     assert result["groups"][0]["total_tokens"] == 30
     assert result["groups"][0]["estimated_known_cost_usd"] == 0.1
+
+
+def test_completed_usage_survives_ledger_write_failure_without_another_request(monkeypatch):
+    runner = LLMJsonRunner(Settings(llm_model="gpt-5.6-luna", openai_api_key="test-key"))
+    requests = []
+
+    def write(**record):
+        if record["status"] == "completed":
+            raise OSError("disk full")
+
+    async def complete(*args, **kwargs):
+        requests.append(1)
+        return LLMCompletion(content='{"value":1}', total_tokens=12, estimated_cost_usd=0.0001)
+
+    monkeypatch.setattr("app.providers.llm.json_runner.record_llm_usage", write)
+    monkeypatch.setattr(runner, "_complete", complete)
+    with pytest.raises(LLMRunError) as failed:
+        asyncio.run(runner.run_json(schema=_Payload, system_prompt="s", user_prompt="u", task_name="audit"))
+    assert len(requests) == 1
+    assert failed.value.metadata.total_tokens == 12
+    assert failed.value.metadata.estimated_cost_usd == 0.0001
 
 
 def test_json_runner_repairs_payload_that_fails_dynamic_validation(monkeypatch) -> None:
@@ -285,7 +313,8 @@ def test_provider_candidates_carry_provider_specific_configuration() -> None:
         "low",
         "openai-key",
     )
-    assert openai.model == "gpt-5.6-luna"
+    assert openai.model == "openai/gpt-5.6-luna"
+    assert openai.display_model == "gpt-5.6-luna"
 
 
 def test_runtime_locks_the_configured_model_without_provider_fallback() -> None:
@@ -324,6 +353,7 @@ def test_json_runner_retries_transient_failure_on_same_model_and_records_metadat
             prompt_tokens=12,
             completion_tokens=4,
             total_tokens=16,
+            estimated_cost_usd=0.0002,
             finish_reason="stop",
         )
 
@@ -351,6 +381,9 @@ def test_json_runner_retries_transient_failure_on_same_model_and_records_metadat
     assert result.metadata.fallback_reason is None
     assert result.metadata.retry_reason == "timeout"
     assert result.metadata.total_tokens == 16
+    assert result.metadata.estimated_cost_usd is None
+    assert result.metadata.estimated_known_cost_usd == 0.0002
+    assert result.metadata.usage_reported_attempts == result.metadata.cost_reported_attempts == 1
     assert result.metadata.finish_reason == "stop"
     assert result.metadata.correlation_id
 

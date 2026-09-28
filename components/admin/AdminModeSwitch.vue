@@ -62,7 +62,7 @@
         <button
           type="button"
           :class="segmentClass('admin_testmode')"
-          title="以受測者視角測試全部流程"
+          title="依受測者分派順序模擬流程"
           @click="$emit('update:view-mode', 'admin_testmode')"
         >
           受測者測試

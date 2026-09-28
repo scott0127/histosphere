@@ -91,7 +91,7 @@ def _multi_error_attempt() -> TaskAttempt:
     return attempt
 
 
-def test_standard_chat_cells_do_not_force_task_correction():
+def test_standard_chat_cells_track_questions_without_ebl_scaffolding():
     for code in ("01", "03"):
         condition = _condition(code)
         runtime = build_interaction_runtime(condition, _attempt(), [])
@@ -107,7 +107,9 @@ def test_standard_chat_cells_do_not_force_task_correction():
         assert metadata["dialogue_state"] == "STANDARD_CHAT"
         assert metadata["dialogue_move"] == "natural_response"
         assert metadata["disclosure_level"] is None
-        assert metadata["target_question_id"] is None
+        assert metadata["target_question_id"] == "q01"
+        assert metadata["completion_status"] == "continue"
+        assert metadata["primary_ebl_move"] == "none"
         assert metadata["historical_ebl_policy_version"] == HISTORICAL_EBL_POLICY_VERSION
 
 
@@ -383,7 +385,7 @@ def test_ebl_advances_to_the_next_error_and_resets_the_scaffold():
     assert completed_runtime.allowed_states == ("RESOLVED",)
 
 
-def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
+def test_resolution_requires_transition_review_without_keyword_judgement():
     condition = _condition("02")
     attempt = _multi_error_attempt()
     reflected = ChatMessage(
@@ -418,10 +420,11 @@ def test_resolved_turn_bridges_to_the_next_error_without_exposing_its_answer():
     )
 
     assert enforced.fallback_applied is False
-    assert enforced.retry_required is True
-    assert "next_target_transition_missing" in enforced.metadata["fidelity_flags"]
+    assert enforced.retry_required is False
+    assert "next_target_transition_missing" not in enforced.metadata["fidelity_flags"]
     assert enforced.metadata["next_target_question_id"] == "q02"
-    assert enforced.metadata["next_target_started"] is True
+    assert enforced.metadata["next_target_transition_required"] is True
+    assert enforced.metadata["next_target_started"] is False
     assert enforced.response == "你已完成這一項修正，正確答案是「按人數」。"
     assert "加劇政治與社會危機" not in enforced.response
 
@@ -775,7 +778,8 @@ def test_feedback_then_restatement_order_including_legacy_final_answer(code, pen
     assert enforced.metadata["resolution_outcome"] == ("assisted_restatement_completed" if finished else "awaiting_restatement")
     assert enforced.metadata["resolution_criteria_met"] is False
     assert enforced.metadata["learner_revision_status"] == "unresolved"
-    assert enforced.metadata["next_target_started"] is finished
+    assert enforced.metadata["next_target_transition_required"] is finished
+    assert enforced.metadata["next_target_started"] is False
 
     completed = ChatMessage(
         conversation_id="conversation-1",
@@ -790,7 +794,7 @@ def test_feedback_then_restatement_order_including_legacy_final_answer(code, pen
         [corrective, completed],
     )
     assert next_runtime.target.question_id == ("q02" if finished else "q01")
-    assert next_runtime.previous_disclosure_level == ("D0" if finished else "D4")
+    assert next_runtime.previous_disclosure_level == (None if finished else "D4")
 
 
 @pytest.mark.parametrize("answer,feedback", [
@@ -822,7 +826,8 @@ def test_terminal_feedback_accepts_answer_formats_and_does_not_mistake_shared_ke
     }, feedback + "接著看下一個判斷。")
     assert result.retry_required is False
     assert result.metadata["resolution_criteria_met"] is False
-    assert result.metadata["next_target_started"] is True
+    assert result.metadata["next_target_transition_required"] is True
+    assert result.metadata["next_target_started"] is False
 
 
 def test_all_correct_attempt_uses_only_researcher_authored_fallback():

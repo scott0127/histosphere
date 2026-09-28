@@ -1,5 +1,7 @@
 import type {
   AdminAuthUsersResponse,
+  AdminParticipantPreviewResponse,
+  AdminLLMUsageResponse,
   AdminPromptDryRunResponse,
   AdminSessionResearchResponse,
   AdminSnapshotResponse,
@@ -18,6 +20,9 @@ import type {
   HistoricalEvent,
   ParticipantMeResponse,
   Participant,
+  ParticipantActivityAssignment,
+  PosttestDraftInput,
+  PosttestStateResponse,
   Persona,
   SessionRestartResponse,
   SessionClosure,
@@ -45,6 +50,7 @@ export type InitializeEventInput = {
   rebuild: boolean;
   userId?: string | null;
   adminKey?: string | null;
+  previewParticipantId?: string | null;
 };
 
 export type TaskDraftInput = {
@@ -101,12 +107,12 @@ export type ConditionUpdateInput = Pick<
 export type ParticipantUpdateInput = Partial<Pick<
   Participant,
   'auth_user_id' | 'display_name' | 'cohort' | 'condition_list' | 'status' | 'notes' | 'metadata'
->>;
+>> & { activity_assignments?: ParticipantActivityAssignment[] };
 
 export type ParticipantCreateInput = Pick<Participant, 'code'> & Partial<Pick<
   Participant,
   'auth_user_id' | 'display_name' | 'cohort' | 'condition_list' | 'notes' | 'metadata'
->>;
+>> & { activity_assignments?: ParticipantActivityAssignment[] };
 
 const adminHeaders = (adminKey: string) => ({ 'x-admin-key': adminKey });
 const learnerAuthHeaders = (): Record<string, string> => {
@@ -134,6 +140,16 @@ export const fetchAdminSnapshot = (adminKey: string, fetcher: FrontendFetcher = 
   });
 };
 
+export const fetchAdminParticipantPreview = (
+  adminKey: string,
+  participantId: string,
+  fetcher: FrontendFetcher = $fetch,
+) => {
+  return fetcher<AdminParticipantPreviewResponse>(`/api/admin/participants/${participantId}/preview`, {
+    headers: adminHeaders(adminKey),
+  });
+};
+
 export const fetchAdminSessionResearch = (
   adminKey: string,
   sessionId: string,
@@ -142,6 +158,10 @@ export const fetchAdminSessionResearch = (
   return fetcher<AdminSessionResearchResponse>(`/api/admin/sessions/${sessionId}/research`, {
     headers: adminHeaders(adminKey),
   });
+};
+
+export const fetchAdminLlmUsage = (adminKey: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<AdminLLMUsageResponse>('/api/admin/llm-usage', { headers: adminHeaders(adminKey) });
 };
 
 export const downloadAdminResearchExport = async (
@@ -212,6 +232,7 @@ export const initializeEventMaterial = (input: InitializeEventInput, fetcher: Fr
       condition_key: input.conditionKey,
       rebuild: input.rebuild,
       user_id: input.userId || null,
+      ...(input.previewParticipantId ? { preview_participant_id: input.previewParticipantId } : {}),
     },
   });
 };
@@ -264,6 +285,34 @@ export const fetchSessionState = (sessionId: string, fetcher: FrontendFetcher = 
 export const submitSessionClosure = (sessionId: string, closureId: string, reflection: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<SessionClosure>(`/api/sessions/${sessionId}/closure`, {
     method: 'POST', ...learnerAuthOptions(), body: { closure_id: closureId, reflection },
+  });
+};
+
+export const fetchPosttest = (sessionId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<PosttestStateResponse>(`/api/sessions/${sessionId}/posttest`, learnerAuthOptions());
+};
+
+export const startPosttest = (sessionId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<PosttestStateResponse>(`/api/sessions/${sessionId}/posttest/start`, {
+    method: 'POST', ...learnerAuthOptions(),
+  });
+};
+
+export const savePosttestDraft = (sessionId: string, input: PosttestDraftInput, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<PosttestStateResponse>(`/api/sessions/${sessionId}/posttest`, {
+    method: 'PATCH', ...learnerAuthOptions(), body: input,
+  });
+};
+
+export const advancePosttest = (sessionId: string, revision: number, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<PosttestStateResponse>(`/api/sessions/${sessionId}/posttest/advance`, {
+    method: 'POST', ...learnerAuthOptions(), body: { revision },
+  });
+};
+
+export const submitPosttest = (sessionId: string, revision: number, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<PosttestStateResponse>(`/api/sessions/${sessionId}/posttest/submit`, {
+    method: 'POST', ...learnerAuthOptions(), body: { revision },
   });
 };
 

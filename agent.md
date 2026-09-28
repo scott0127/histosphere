@@ -75,6 +75,8 @@ Your goal is to implement the requested feature in a production-realistic way. D
    - If the uncertainty is minor and has an obvious conventional solution, proceed using the existing project convention.
 
 10. **Audit and cleanup**
+   - Keep temporary scripts, screenshots, extracted text, reports and backups under `.agent-work/`, not in frontend or backend source directories.
+   - Preserve research usage ledgers, original LLM experiment records, formal documentation, System Map, production assets/code and reusable tests in their established locations; these are not disposable work files.
    - While working, you may keep temporary notes if necessary.
    - After all frontend and backend todo items are completed, delete temporary logs, scratch notes, and task-tracking files.
    - Leave only a concise `audit` file if needed.

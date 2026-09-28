@@ -16,6 +16,8 @@ from app.providers.wikipedia_provider import WikipediaProvider
 from app.schemas.requests import EventInitializeRequest
 from app.schemas.responses import EventInitializeResponse
 from app.services.event_service import EventService
+from app.services.participant_assignments import participant_activity_assignments, session_matches_activity
+from app.services.participant_preview import active_preview_participant, preview_user_id
 from app.services.session_runtime import expire_session_if_due
 from app.utils.text_normalizer import normalize_display_text
 
@@ -40,6 +42,12 @@ class EventInitializationService:
         admin_override: bool = False,
     ) -> EventInitializeResponse:
         """初始化事件、task、primary persona 與 session，供前端導向 task 頁。"""
+        is_participant_preview = request.preview_participant_id is not None
+        if is_participant_preview and not admin_override:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an admin can preview a participant assignment.",
+            )
         event_name = normalize_display_text(request.event_name.strip()) or request.event_name.strip()
         if not event_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Event name is required")
@@ -49,8 +57,21 @@ class EventInitializationService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment condition not found")
 
         participant = None
-        if not admin_override:
+        preview_context = {}
+        if is_participant_preview:
+            participant = active_preview_participant(self.repository, request.preview_participant_id)
+            self._validate_condition_assignment(participant, condition.condition_key)
+            request = request.model_copy(update={"user_id": preview_user_id(participant.id)})
+            preview_context = {
+                "preview_participant_id": participant.id,
+                "preview_participant_code": participant.code,
+                "preview_condition_list": list(participant.condition_list),
+            }
+        elif not admin_override:
             participant = self._validate_participant_assignment(request.user_id, condition.condition_key)
+        activity_assignments = participant_activity_assignments(participant) if participant else None
+        if activity_assignments is not None:
+            preview_context["activity_assignments"] = activity_assignments
 
         existing = self.repository.find_event_by_name(event_name)
         archived = self.repository.find_event_by_name(event_name, include_archived=True)
@@ -65,14 +86,27 @@ class EventInitializationService:
         if existing:
             # 已存在事件可重用；人物啟用狀態只能由 Admin 管理。
             event = existing
-            if not admin_override:
-                learner_session = self._learner_session_for_event(request.user_id, event.id)
+            if not admin_override or is_participant_preview:
+                if activity_assignments is not None and not any(
+                    item["event_id"] == event.id
+                    and item["condition_code"] == condition_code_for_key(condition.condition_key)
+                    for item in activity_assignments
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="此事件與模式不符合受測者的活動分派，請選擇已分派的活動。",
+                    )
+                learner_session = self._learner_session_for_event(
+                    request.user_id, event.id, admin_test=is_participant_preview,
+                )
                 self._validate_participant_execution_order(
                     participant,
                     condition.condition_key,
                     learner_session,
+                    session_user_id=request.user_id,
+                    admin_test=is_participant_preview,
                 )
-                if not learner_session and not event.materials_locked_at:
+                if not admin_override and not learner_session and not event.materials_locked_at:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail="Historical event materials are not locked for the experiment.",
@@ -81,6 +115,11 @@ class EventInitializationService:
             task = self._ensure_task(event, sources)
             personas = self._ensure_personas(event, condition)
         else:
+            if is_participant_preview:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Participant preview requires an existing historical event.",
+                )
             if not admin_override:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -106,6 +145,7 @@ class EventInitializationService:
         if learner_session:
             if (
                 participant
+                and not is_participant_preview
                 and learner_session.participant_id
                 and learner_session.participant_id != participant.id
             ):
@@ -114,7 +154,7 @@ class EventInitializationService:
                     detail="Session belongs to another participant assignment",
                 )
             # 舊 Session 若尚未凍結 participant 對應，於合法本人恢復時補上。
-            if participant and not learner_session.participant_id:
+            if participant and not is_participant_preview and not learner_session.participant_id:
                 learner_session.participant_id = participant.id
                 learner_session = self.repository.save_session(learner_session)
             attempt = self.repository.get_task_attempt_for_session(learner_session.id)
@@ -138,6 +178,7 @@ class EventInitializationService:
                         "event_name": event_name,
                         "condition_key": learner_session.condition_key_snapshot,
                         "requested_condition_key": condition.condition_key,
+                        **preview_context,
                     },
                 )
             )
@@ -155,7 +196,7 @@ class EventInitializationService:
                 condition_id=condition.id,
                 condition_key_snapshot=condition.condition_key,
                 user_id=request.user_id,
-                participant_id=participant.id if participant else None,
+                participant_id=participant.id if participant and not is_participant_preview else None,
                 event_id=event.id,
                 is_admin_test=admin_override,
             )
@@ -183,6 +224,7 @@ class EventInitializationService:
                     "rebuild": request.rebuild,
                     "rebuild_ignored": rebuild_ignored,
                     "material_llm_calls": material_llm_calls,
+                    **preview_context,
                 },
             )
         )
@@ -200,6 +242,8 @@ class EventInitializationService:
         self,
         user_id: str | None,
         event_id: str,
+        *,
+        admin_test: bool = False,
     ) -> ExperimentSession | None:
         """接續同事件的有效 session；完成過的事件必須由管理員重建。"""
         matching_sessions = [
@@ -207,7 +251,7 @@ class EventInitializationService:
             for session in self.repository.list_sessions_for_user((user_id or "").strip())
             if session.event_id == event_id
             and session.status != "archived"
-            and not session.is_admin_test
+            and session.is_admin_test == admin_test
         ]
         if any(session.status == "completed" for session in matching_sessions):
             raise HTTPException(
@@ -247,36 +291,55 @@ class EventInitializationService:
                 detail=f"Participant {participant.code} is not active.",
             )
 
+        self._validate_condition_assignment(participant, condition_key)
+        return participant
+
+    @staticmethod
+    def _validate_condition_assignment(participant: Participant, condition_key: str) -> None:
+        participant_activity_assignments(participant)
         assigned_code = condition_code_for_key(condition_key)
         if assigned_code not in participant.condition_list:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Condition {assigned_code} is not assigned to participant {participant.code}.",
             )
-        return participant
 
     def _validate_participant_execution_order(
         self,
         participant: Participant | None,
         condition_key: str,
         learner_session: ExperimentSession | None,
+        *,
+        session_user_id: str | None = None,
+        admin_test: bool = False,
     ) -> None:
         """只允許接續目前 Session，或開始 Admin 分派順序中的下一個 Condition。"""
-        if participant is None or not participant.auth_user_id:
+        progress_user_id = session_user_id or (participant.auth_user_id if participant else None)
+        if participant is None or not progress_user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Participant mapping is required before starting an experiment.",
             )
 
         requested_code = condition_code_for_key(condition_key)
-        formal_sessions = [
-            expire_session_if_due(self.repository, session)
-            for session in self.repository.list_sessions_for_user(participant.auth_user_id)
-            if session.status != "archived" and not session.is_admin_test
+        activity_assignments = participant_activity_assignments(participant)
+        scoped_sessions = [
+            session
+            for session in self.repository.list_sessions_for_user(progress_user_id)
+            if session.status != "archived" and session.is_admin_test == admin_test
+            and (admin_test or not session.participant_id or session.participant_id == participant.id)
         ]
+        if activity_assignments is not None and any(
+            not session_matches_activity(session, activity_assignments) for session in scoped_sessions
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="既有活動進度與目前分派的事件、模式不一致，請管理員確認原配對或封存相關紀錄。",
+            )
+        assigned_sessions = [expire_session_if_due(self.repository, session) for session in scoped_sessions]
         active_sessions = [
             session
-            for session in formal_sessions
+            for session in assigned_sessions
             if session.status in {"initialized", "task_submitted", "conversation_started"}
         ]
         if active_sessions:
@@ -296,10 +359,22 @@ class EventInitializationService:
                 )
             return
 
+        finished_sessions = []
+        for session in assigned_sessions:
+            if session.status != "completed":
+                continue
+            posttest = self.repository.get_posttest(session.id)
+            if not posttest or posttest.stage != "completed":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="請先完成上一輪的活動回饋與歷史思考後測，再開始下一輪。",
+                )
+            finished_sessions.append(session)
+
         completed_codes = {
             condition_code_for_key(session.condition_key_snapshot)
-            for session in formal_sessions
-            if session.status == "completed"
+            for session in finished_sessions
+            if activity_assignments is None or session_matches_activity(session, activity_assignments)
         }
         expected_code = next(
             (code for code in participant.condition_list if code not in completed_codes),
