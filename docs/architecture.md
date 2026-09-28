@@ -20,6 +20,14 @@
 
 Supabase 保存研究資料，Prompt 政策由後端程式控管。正式 runtime 使用 Supabase；`in_memory` 只供明確開啟的測試。Task 背景工作目前以單一後端 worker 執行，配合持久化階段與程序內重複工作保護；多台瀏覽器可連同一伺服器，但不支援多 worker 同時領取工作。不使用 Redis/Celery。
 
+## 本機啟動與內網入口
+
+`pnpm dev` 與 `pnpm dev:full` 預設讓 Nuxt 監聽 `0.0.0.0`，供同網路裝置使用主機內網網址連入；完整啟動腳本的 FastAPI 仍只監聽 `127.0.0.1`。瀏覽器的 `/api/**` 由 Nuxt 同源代理至後端，手機或平板不直接連後端埠。啟動時列出目前可用網址；換網路後執行 `pnpm dev:urls` 重新偵測，詳細操作見[本機開發](local-development.md)。這不會建立固定網域，也不會繞過防火牆或 Wi-Fi 裝置隔離。
+
+- `VITE_SUPABASE_URL` 指向 `localhost`、`127.0.0.1` 或 `[::1]` 時，瀏覽器改以目前網站 origin 的 `/supabase-auth/auth/v1/**` 連入，Nuxt 再代理到該本機 Supabase Auth。換 IP 不需要把 Supabase URL 改寫成內網位址。
+- Auth 代理不涵蓋資料表 REST、Storage 或 RPC。雲端及明確設定的遠端 Supabase URL 保持原樣；後端資料存取沿用自己的 Supabase 設定。
+- `useAuth` 僅在瀏覽器建立 Supabase client，避免 SSR 共用瀏覽器認證狀態。Auth token 的 storage key 沿用原設定 URL 所對應的 SDK 命名，保留同一網站 origin 的既有登入；改用另一個網站 origin 時，瀏覽器儲存空間仍彼此獨立。
+
 ## 正式流程與權限
 
 ```text
@@ -197,5 +205,7 @@ before_delivery → 候選先審查
 ## 驗證紀錄與限制
 
 2026-09-28 人工核對流程：完整後端測試 **533 passed**，涵蓋全題核准、改判、過期草稿、受測者隔離、SSE 重連、階段恢復及進場計時。`202609280001_task_human_review.sql` 已套用本機 Supabase，schema smoke 通過；實際帳號與 LLM 已驗證送出後停在人工核對、審核草稿重載與伺服器重啟恢復，以及全題核准後自動進場。實測倒數起點晚於核准，重新載入不改變原到期時間。
+
+同日內網入口調整：前端測試與建置通過，已經主機內網網址驗證網站、TEST_ACCOUNT 登入／讀取身分／登出；未帶 Admin key 的管理 API 回傳 401，`/supabase-auth/rest/v1/task_attempts` 回傳 404，確認 Auth 代理未開放資料表路徑。
 
 以上是工程流程驗證，不是 Judge 的判分信效度或正式收案驗收，也未宣稱完成兩台實體電腦的網路驗收。正式材料、判定基準的專家審視、人物時間界線與 HAT 設計仍見 backlog。

@@ -5,6 +5,7 @@
 import { createClient, type User, type Session } from '@supabase/supabase-js'
 import { clearAdminSession } from '~/utils/adminSession'
 import { getCurrentAccessToken, setCurrentAccessToken } from '~/utils/authSession'
+import { resolveSupabaseAuthEndpoint } from '~/utils/supabaseEndpoint'
 
 // Supabase 客戶端 (單例)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
@@ -22,8 +23,13 @@ function clearSharedBrowserSessionState() {
 }
 
 function getSupabaseClient() {
+  // Browser credentials and the current origin must never be shared by SSR requests.
+  if (!import.meta.client) return null
   if (!supabase && supabaseUrl && supabaseAnonKey) {
-    supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const endpoint = resolveSupabaseAuthEndpoint(supabaseUrl, window.location.origin)
+    supabase = createClient(endpoint.url, supabaseAnonKey, {
+      auth: { storageKey: endpoint.storageKey },
+    })
   }
   return supabase
 }

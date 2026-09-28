@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev",
+    "dev": "nuxt dev --host 0.0.0.0",
+    "dev:urls": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1 -ShowUrls",
     "dev:full": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1 -StartSupabase -KillExisting",
     "dev:full:supabase": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1 -StartSupabase -KillExisting",
     "dev:cleanup": "powershell -ExecutionPolicy Bypass -File ./scripts/stop-dev.ps1",

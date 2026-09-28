@@ -1,11 +1,12 @@
 param(
   [int]$BackendPort = 8000,
   [int]$FrontendPort = 3000,
-  [string]$HostAddress = "127.0.0.1",
+  [string]$HostAddress = "0.0.0.0",
   [switch]$Install,
   [switch]$UseSupabase,
   [switch]$StartSupabase,
-  [switch]$KillExisting
+  [switch]$KillExisting,
+  [switch]$ShowUrls
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,6 +34,38 @@ function Write-Status {
   $Label = if ($Ok) { "OK" } else { "WARN" }
   $Color = if ($Ok) { "Green" } else { "Yellow" }
   Write-Host ("[{0}] {1}: {2}" -f $Label, $Name, $Message) -ForegroundColor $Color
+}
+
+function Write-FrontendUrls {
+  param([string]$BindAddress, [int]$Port)
+
+  $LocalAddress = if ($BindAddress -eq "0.0.0.0") { "127.0.0.1" } else { $BindAddress }
+  Write-DevLog "This computer: http://${LocalAddress}:$Port"
+  if ($BindAddress -ne "0.0.0.0") {
+    Write-DevLog "Frontend is configured to listen on $BindAddress only."
+    return
+  }
+
+  try {
+    # A default gateway identifies usable network connections and excludes
+    # disconnected adapters and the local Docker/WSL virtual networks.
+    $Adapters = @(Get-NetIPConfiguration -ErrorAction Stop | Where-Object {
+      $_.NetAdapter.Status -eq "Up" -and $_.IPv4DefaultGateway
+    })
+    $Found = $false
+    foreach ($Adapter in $Adapters) {
+      foreach ($Address in $Adapter.IPv4Address.IPAddress) {
+        if (-not $Address -or $Address -match '^(127\.|169\.254\.|0\.)') { continue }
+        Write-DevLog "LAN ($($Adapter.InterfaceAlias)): http://${Address}:$Port/admin"
+        $Found = $true
+      }
+    }
+    if (-not $Found) { Write-Warning "No active LAN IPv4 address was found. Connect to Wi-Fi or Ethernet and run pnpm dev:urls again." }
+  }
+  catch {
+    Write-Warning "Could not read the current network addresses: $($_.Exception.Message)"
+  }
+  Write-DevLog "After changing networks: pnpm dev:urls -FrontendPort $Port"
 }
 
 function Ensure-Command {
@@ -351,10 +384,10 @@ function Test-SupabaseRunning {
     return $false
   }
 
-  $SupabasePortOpen = Test-TcpPort $HostAddress $ApiPort
+  $SupabasePortOpen = Test-TcpPort "127.0.0.1" $ApiPort
   if ($DbStatus -match "^running (healthy|no-healthcheck)" -and $KongStatus -match "^running (healthy|no-healthcheck)" -and $SupabasePortOpen) {
     if (-not $Quiet) {
-      Write-Status "Supabase" $true "local stack is running at http://${HostAddress}:$ApiPort"
+      Write-Status "Supabase" $true "local stack is running at http://127.0.0.1:$ApiPort"
     }
     return $true
   }
@@ -384,11 +417,18 @@ function Wait-SupabaseRunning {
   return $false
 }
 
+if ($ShowUrls) {
+  Write-DevLog "Current network addresses for frontend port $FrontendPort (server availability is not checked)."
+  Write-FrontendUrls -BindAddress $HostAddress -Port $FrontendPort
+  exit 0
+}
+
 Ensure-Command "python"
 Ensure-Command "pnpm"
 
-$BackendUrl = "http://${HostAddress}:$BackendPort"
-$FrontendUrl = "http://${HostAddress}:$FrontendPort"
+$BackendUrl = "http://127.0.0.1:$BackendPort"
+$FrontendLocalAddress = if ($HostAddress -eq "0.0.0.0") { "127.0.0.1" } else { $HostAddress }
+$FrontendUrl = "http://${FrontendLocalAddress}:$FrontendPort"
 $BackendLog = Join-Path $LogDir "backend.log"
 $BackendErrLog = Join-Path $LogDir "backend.err.log"
 $FrontendLog = Join-Path $LogDir "frontend.log"
@@ -487,7 +527,7 @@ if ($Install) {
 }
 
 Write-DevLog "Starting FastAPI backend at $BackendUrl"
-$BackendCommand = "& `"$PythonExe`" -m uvicorn app.main:app --reload --host $HostAddress --port $BackendPort"
+$BackendCommand = "& `"$PythonExe`" -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort"
 $BackendProcess = Start-Process `
   -FilePath "powershell" `
   -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $BackendCommand) `
@@ -535,6 +575,7 @@ if (-not $SupabaseReady) {
 
 $StartupStopwatch.Stop()
 Write-DevLog "Frontend: $FrontendUrl"
+Write-FrontendUrls -BindAddress $HostAddress -Port $FrontendPort
 Write-DevLog "Backend:  $BackendUrl"
 Write-DevLog "Logs:     $LogDir"
 Write-DevLog ("Ready in {0:N1}s" -f $StartupStopwatch.Elapsed.TotalSeconds)

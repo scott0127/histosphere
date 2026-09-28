@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { supabaseAuthProxyRules } from './utils/supabaseEndpoint';
 
 // This handler must run before Nuxt's module entry, including when that entry cannot load.
 const clientStartupScript = readFileSync(new URL('./scripts/client-startup.js', import.meta.url), 'utf8');
@@ -131,6 +132,9 @@ export default defineNuxtConfig({
 
   nitro: {
     routeRules: {
+      // Local Auth follows this website's origin, including after a Wi-Fi/IP change.
+      // Only GoTrue is proxied; database, storage and RPC routes are not forwarded.
+      ...supabaseAuthProxyRules(process.env.VITE_SUPABASE_URL || ''),
       // 排除 Nuxt Icon 的 API 路徑，不進行代理
       '/api/_nuxt_icon/**': { headers: { 'cache-control': 's-maxage=3600' } },
       // 其他 API 請求代理到後端
