@@ -17,9 +17,12 @@ import {
 import {
   fetchSessionState,
   fetchTaskSubmissionStatus,
+  enterTaskInteraction,
+  learnerAuthHeaders,
   saveTaskDraft,
   submitTaskAnswers,
 } from '~/utils/histosphereApi';
+import { waitForReviewedTask, type TaskWaitingState } from '~/utils/taskSubmissionWaiter';
 
 export const useTaskGate = (
   sessionId: Ref<string> | ComputedRef<string>,
@@ -28,6 +31,8 @@ export const useTaskGate = (
   const taskData = useState<EventInitializeResponse | null>('taskData', () => null);
   const answers = ref<TaskStudentAnswer[]>([]);
   const isSubmitting = ref(false);
+  const waitingState = ref<TaskWaitingState>({ stage: 'sending', connected: true });
+  let submissionWaiter: ReturnType<typeof waitForReviewedTask> | null = null;
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const draftError = ref<string | null>(null);
@@ -95,6 +100,7 @@ export const useTaskGate = (
 
   onBeforeUnmount(() => {
     isUnmounted.value = true;
+    submissionWaiter?.stop();
     clearDraftTimer();
   });
 
@@ -104,6 +110,7 @@ export const useTaskGate = (
     clearDraftTimer();
     persistLocalDraft();
     isSubmitting.value = true;
+    waitingState.value = { stage: 'sending', connected: true };
     error.value = null;
     draftError.value = null;
     try {
@@ -114,10 +121,10 @@ export const useTaskGate = (
         userId: userIdForRequest.value,
         responsePayload: buildTaskResponsePayload(answers.value, data.task),
       });
-      const response = await waitForSubmission(accepted.attempt_id, data.session_id);
+      const response = await waitForSubmission(accepted.attempt_id);
       if (!isUnmounted.value && sessionId.value === data.session_id) await finishSubmission(response);
     } catch (e: any) {
-      if (!isUnmounted.value && sessionId.value === data.session_id) {
+      if (e.name !== 'AbortError' && !isUnmounted.value && sessionId.value === data.session_id) {
         error.value = e.data?.detail || e.data?.message || e.message || '送出失敗，請稍後再試。';
       }
     } finally {
@@ -125,9 +132,10 @@ export const useTaskGate = (
     }
   };
 
-  // 以後端 session state 為準：已建立 conversation 就直接導往 conversation route。
+  // 已建立 opening 仍須經過 enter checkpoint；只有 entered/legacy session 可直接進對話。
   const loadSessionState = async (routeSessionId: string) => {
     const version = ++loadVersion;
+    submissionWaiter?.stop();
     clearDraftTimer();
     isLoading.value = true;
     error.value = null;
@@ -146,7 +154,7 @@ export const useTaskGate = (
       const state: SessionStateResponse = await fetchSessionState(routeSessionId);
       if (isUnmounted.value || version !== loadVersion) return;
       session.value = state.session;
-      if (state.conversation_id) {
+      if (state.conversation_id && (!state.attempt || state.attempt.status === 'submitted')) {
         if (state.task) clearLocalDraft(localDraftKey({ session_id: state.session.id, task: state.task }));
         await navigateTo({
           path: `/conversations/${state.conversation_id}`,
@@ -171,25 +179,24 @@ export const useTaskGate = (
       const localDraft = readLocalDraft(key);
       // 僅在後端仍是本機編輯的基底版本時補回未同步內容，避免覆蓋較新的作答。
       if (localDraft && (localDraft.basePayload === lastDraftPayload.value || localDraft.pendingPayload === lastDraftPayload.value)
-        && state.attempt?.status !== 'processing' && state.attempt?.status !== 'submitted') {
+        && (!state.attempt || state.attempt.status === 'in_progress')) {
         answers.value = restoreTaskAnswers(state.task, localDraft.responsePayload);
       } else {
         clearLocalDraft(key);
       }
-      if (state.attempt?.status === 'processing') {
+      if (state.attempt && state.attempt.status !== 'in_progress') {
         isSubmitting.value = true;
+        isLoading.value = false;
         try {
-          const response = await waitForSubmission(state.attempt.id, routeSessionId);
+          const response = await waitForSubmission(state.attempt.id);
           if (!isUnmounted.value && version === loadVersion) await finishSubmission(response);
         } catch (e: any) {
-          if (!isUnmounted.value && version === loadVersion) {
-            error.value = e.data?.detail || e.data?.message || e.message || '任務處理失敗，請重新送出。';
+          if (e.name !== 'AbortError' && !isUnmounted.value && version === loadVersion) {
+            error.value = '作答已保存，請通知研究者協助繼續。';
           }
         } finally {
           if (version === loadVersion) isSubmitting.value = false;
         }
-      } else if (state.attempt?.status === 'failed') {
-        error.value = String(state.attempt.judgement_payload?.error || '上次處理失敗，請重新送出。');
       }
     } catch (e: any) {
       if (!isUnmounted.value && version === loadVersion) {
@@ -256,19 +263,16 @@ export const useTaskGate = (
     return draftSavePromise;
   };
 
-  const waitForSubmission = async (attemptId: string, expectedSessionId: string): Promise<TaskSubmitResponse> => {
-    const deadline = Date.now() + 4 * 60 * 1000;
-    while (!isUnmounted.value && sessionId.value === expectedSessionId && Date.now() < deadline) {
-      const state = await fetchTaskSubmissionStatus(attemptId);
-      if (state.attempt.status === 'failed') {
-        throw new Error(state.error || 'Task processing failed.');
-      }
-      if (state.attempt.status === 'submitted' && state.result) {
-        return state.result;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    throw new Error('任務仍在處理中，請重新整理頁面繼續等待。');
+  const waitForSubmission = (attemptId: string): Promise<TaskSubmitResponse> => {
+    submissionWaiter?.stop();
+    submissionWaiter = waitForReviewedTask({
+      attemptId,
+      headers: learnerAuthHeaders,
+      status: fetchTaskSubmissionStatus,
+      enter: enterTaskInteraction,
+      onState: (state) => { waitingState.value = state; },
+    });
+    return submissionWaiter.result;
   };
 
   const finishSubmission = async (response: TaskSubmitResponse) => {
@@ -284,6 +288,7 @@ export const useTaskGate = (
     canSubmit,
     isLoading,
     isSubmitting,
+    waitingState,
     judgement,
     session,
     submitError,

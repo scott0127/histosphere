@@ -6,6 +6,7 @@ import json
 
 from app.core.experiment_conditions import condition_code_for_key
 from app.models.domain import ChatMessage, Participant, ResearchLog
+from tests.task_review_helpers import review_and_enter
 
 
 ADMIN_HEADERS = {"x-admin-key": "test-admin"}
@@ -57,10 +58,7 @@ def _prepare_conversation(client):
         },
     )
     assert accepted.status_code == 202
-    completed = client.get(accepted.json()["poll_url"])
-    assert completed.status_code == 200
-    result = completed.json()["result"]
-    assert result
+    result = review_and_enter(client, accepted.json())
 
     chat = client.post(
         "/api/chat",

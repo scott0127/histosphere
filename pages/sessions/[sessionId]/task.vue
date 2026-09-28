@@ -7,6 +7,7 @@
     :error="submitError"
     :is-loading="isLoading"
     :is-submitting="isSubmitting"
+    :waiting-state="waitingState"
     :judgement="judgement"
     :session="session"
     :activity-mode="activityMode"
@@ -37,6 +38,7 @@ const {
   canSubmit,
   isLoading,
   isSubmitting,
+  waitingState,
   judgement,
   session,
   submitError,

@@ -3,6 +3,7 @@ import pytest
 from app.core.interaction_contract import INTERACTION_POLICY_VERSION, build_interaction_runtime
 from app.models.domain import ChatMessage, Event
 from app.providers.llm.base import ChatGenerationResult
+from tests.task_review_helpers import review_and_enter
 
 
 CONDITIONS = [
@@ -23,24 +24,22 @@ def initialize_event(client, event_name: str = "諾曼第登陸", condition_key:
     return response.json()
 
 
-def submit_task(client, initialized: dict, answer_text: str = "1944 年盟軍在法國諾曼第登陸，影響西線戰局。") -> dict:
+def submit_task(
+    client, initialized: dict, answer_text: str = "1944 年盟軍在法國諾曼第登陸，影響西線戰局。",
+    *, response_payload: dict | None = None,
+) -> dict:
     response = client.post(
         f"/api/tasks/{initialized['task']['id']}/submit",
         json={
             "session_id": initialized["session_id"],
-            "response_payload": {"answer_text": answer_text},
+            "response_payload": response_payload if response_payload is not None else {"answer_text": answer_text},
         },
     )
     assert response.status_code == 202
-    accepted = response.json()
-    polled = client.get(accepted["poll_url"])
-    assert polled.status_code == 200
-    assert polled.json()["attempt"]["status"] == "submitted"
-    assert polled.json()["result"]
-    return polled.json()["result"]
+    return review_and_enter(client, response.json())
 
 
-def test_task_attempt_stays_processing_until_opening_is_durable(client):
+def test_task_attempt_stays_preparing_until_approved_opening_is_durable(client):
     initialized = initialize_event(client, "提交狀態語意測試", "no_ebl_roleplay")
     repository = client.app.state.repository
     provider = client.app.state.opening_service.llm_provider
@@ -65,11 +64,10 @@ def test_task_attempt_stays_processing_until_opening_is_durable(client):
     )
 
     assert accepted.status_code == 202
-    assert observed == {"attempt_status": "processing", "conversation_exists": False}
-    polled = client.get(accepted.json()["poll_url"])
-    assert polled.status_code == 200
-    assert polled.json()["attempt"]["status"] == "submitted"
-    assert polled.json()["result"]["conversation_id"]
+    assert observed == {}
+    result = review_and_enter(client, accepted.json())
+    assert observed == {"attempt_status": "preparing_chat", "conversation_exists": False}
+    assert result["conversation_id"]
 
 
 def test_compatibility_conversation_creation_is_idempotent_and_workflow_bound(client):
@@ -281,7 +279,10 @@ def test_task_submit_creates_attempt_conversation_messages_and_logs(client):
     logs = client.get("/api/admin/research-logs", headers={"x-admin-key": "test-admin"})
     assert logs.status_code == 200
     action_types = {item["action_type"] for item in logs.json()}
-    assert {"event_initialized", "task_answer_changed", "task_submitted", "conversation_started"}.issubset(action_types)
+    assert {
+        "event_initialized", "task_answer_changed", "task_awaiting_review",
+        "task_review_approved", "conversation_started",
+    }.issubset(action_types)
 
 
 def test_task_draft_and_session_progress_are_recoverable(client):
@@ -433,30 +434,27 @@ def test_chat_policy_matrix(client):
 
 @pytest.mark.parametrize("condition_key", ["ebl_no_roleplay", "ebl_roleplay"])
 def test_d4_gives_feedback_then_waits_for_one_restatement(client, condition_key):
-    initialized = initialize_event(client, "D4 切題測試事件", condition_key)
-    submitted = submit_task(client, initialized)
-    repository = client.app.state.repository
-    attempt = repository.get_task_attempt(submitted["attempt_id"])
-    judgement = dict(attempt.judgement_payload)
-    question_results = list(judgement["question_results"])
-    question_results[0] = {**question_results[0], "expected_answer": "按人數"}
-    question_results.append(
-        {
-            "question_id": "q02",
+    original_generate_task = client.app.state.llm_provider.generate_task
+
+    async def generate_two_questions(event, sources):
+        task = await original_generate_task(event, sources)
+        task.evaluation_payload["questions"][0]["correct_answer"] = "按人數"
+        task.evaluation_payload["questions"].append({
+            "id": "q02", "type": "cloze",
             "prompt": "第二項錯誤應如何修正？",
             "source_text": "第二項可檢查的歷史脈絡。",
-            "learner_answer": "錯誤判斷",
-            "expected_answer": "修正判斷",
-            "correctness": "incorrect",
-            "error_code": "unclassified",
-            "historical_concept": "cause_and_consequence",
-            "reasoning_process": "argumentation",
-            "evidence_ids": ["E02"],
-        }
-    )
-    repository.save_task_attempt(
-        attempt.model_copy(update={"judgement_payload": {**judgement, "question_results": question_results}})
-    )
+            "correct_answer": "修正判斷", "accepted_evidence_ids": ["E02"],
+        })
+        task.error_elicitation_task_full_text += "\n第二題：{{blank:q02}}"
+        return task
+
+    client.app.state.llm_provider.generate_task = generate_two_questions
+    initialized = initialize_event(client, "D4 切題測試事件", condition_key)
+    submitted = submit_task(client, initialized, response_payload={"answers": [
+        {"question_id": "q01", "value": "按等級"},
+        {"question_id": "q02", "value": "錯誤判斷"},
+    ]})
+    repository = client.app.state.repository
     repository.add_message(
         ChatMessage(
             conversation_id=submitted["conversation_id"],

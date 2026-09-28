@@ -361,9 +361,15 @@ class TaskAttempt(BaseModel):
     event_id: str
     session_id: str
     user_id: str | None = None
-    status: Literal["in_progress", "processing", "submitted", "failed"] = "in_progress"
+    status: Literal[
+        "in_progress", "processing", "awaiting_review", "preparing_chat", "ready", "submitted", "failed",
+    ] = "in_progress"
     response_payload: dict[str, Any] = Field(default_factory=dict)
     judgement_payload: dict[str, Any] = Field(default_factory=dict)
+    ai_judgement_payload: dict[str, Any] = Field(default_factory=dict)
+    review_payload: dict[str, Any] = Field(default_factory=dict)
+    review_version: int = 0
+    pipeline_error: dict[str, Any] = Field(default_factory=dict)
     submitted_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

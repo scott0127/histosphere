@@ -18,7 +18,7 @@
       >
         <Icon v-if="isSubmitting" name="mdi:loading" class="h-5 w-5 animate-spin" />
         <Icon v-else name="mdi:message-processing-outline" class="h-5 w-5" />
-        {{ isSubmitting ? '送出中' : '送出並進入對話' }}
+        {{ isSubmitting ? '送出中' : '送出作答' }}
       </button>
     </div>
   </div>

@@ -57,6 +57,9 @@ async def _lifespan(app: FastAPI):
     try:
         yield
     finally:
+        for task in list(app.state.task_stream_workers):
+            task.cancel()
+        await asyncio.gather(*app.state.task_stream_workers, return_exceptions=True)
         await app.state.answer_review_service.close()
         worker.cancel()
         with suppress(asyncio.CancelledError):
@@ -115,6 +118,7 @@ def create_app() -> FastAPI:
     app.state.task_service = TaskService(repository, llm_provider, opening_service)
     app.state.session_service = SessionService(repository)
     app.state.active_task_attempts = set()
+    app.state.task_stream_workers = set()
 
     app.include_router(api_router)
 

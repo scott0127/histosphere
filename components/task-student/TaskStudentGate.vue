@@ -71,7 +71,7 @@
     <ConfirmActionModal
       :show="showSubmitConfirmDialog"
       title="TASK"
-      message="點選「是」進入下一階段 [CHAT]"
+      message="送出後將等待研究者確認，完成後自動進入互動。送出後無法再修改作答。"
       eyebrow="階段確認"
       icon="mdi:send-check-outline"
       confirm-label="是"
@@ -82,9 +82,8 @@
 
     <TaskTransitionOverlay
       :show="isSubmitting"
+      :waiting-state="waitingState"
       :event-name="taskData?.event.canonical_name || '歷史事件'"
-      :start-year="taskData?.event.start_year"
-      :end-year="taskData?.event.end_year"
     />
   </TaskStudentShell>
 </template>
@@ -98,6 +97,7 @@ import type { EventInitializeResponse, ExperimentSession, TaskStudentAnswer } fr
 import SessionTimerBanner from '~/components/session/SessionTimerBanner.vue';
 import { hasInlineTaskBlanks, isErrorElicitationTask, isTaskAnswerComplete, normalizeTaskQuestions, studentActivityTitle, taskConfigurationError } from '~/composables/useStudentTask';
 import { shouldShowEventIntroduction, type EventIntroductionMode } from '~/utils/eventVisibility';
+import type { TaskWaitingState } from '~/utils/taskSubmissionWaiter';
 
 const props = defineProps<{
   taskData: EventInitializeResponse | null;
@@ -106,6 +106,7 @@ const props = defineProps<{
   error: string | null;
   isLoading: boolean;
   isSubmitting: boolean;
+  waitingState?: TaskWaitingState;
   judgement: Record<string, any> | null;
   session?: ExperimentSession | null;
   activityMode?: EventIntroductionMode;

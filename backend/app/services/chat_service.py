@@ -118,6 +118,10 @@ class ChatService:
             if conversation.task_attempt_id
             else None
         )
+        if task_attempt and (task_attempt.status != "submitted" or (
+            task_attempt.ai_judgement_payload and not task_attempt.review_payload.get("approved_at")
+        )):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Human review and conversation entry are required")
         existing_operation = self.repository.get_learner_message_by_request(
             conversation.id,
             client_request_id,

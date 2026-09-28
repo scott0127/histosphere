@@ -1,45 +1,18 @@
-"""作答先存檔，再由背景工作完成判題與開場，前端可查詢進度。
-
-判題或開場失敗都要保留作答。重試能沿用相同輸入、相同版本的有效判題，
-不因開場失敗就重新評分；等開場存好後，才開始五分鐘對話倒數。
+"""作答保存後初判；每题人工核准後準備開場，由受測者進入時啟動互動計時。
 """
-
-import hashlib
-import json
-import logging
-from datetime import timedelta
 
 from fastapi import HTTPException, status
 
 from app.crud.protocols import RepositoryProtocol
-from app.core.error_elicitation_contract import (
-    ERROR_ELICITATION_CONTRACT_VERSION,
-    ERROR_ELICITATION_JUDGE_CONTRACT_VERSION,
-    validate_task_answers,
-)
-from app.core.interaction_contract import build_interaction_runtime
+from app.core.error_elicitation_contract import validate_task_answers
 from app.services.learning_focus import build_learning_focus
-from app.core.research_reproducibility import record_prompt_snapshot, stable_hash
-from app.models.domain import ChatMessage, Conversation, Event, ResearchLog, TaskAttempt, utc_now
+from app.models.domain import ResearchLog, TaskAttempt, utc_now
 from app.providers.llm.base import LLMProvider
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
-from app.schemas.responses import (
-    TaskDraftResponse,
-    TaskSubmissionAcceptedResponse,
-    TaskSubmissionStatusResponse,
-    TaskSubmitResponse,
-)
-from app.services.conversation_opening_service import (
-    ConversationOpening,
-    ConversationOpeningService,
-    OpeningValidationError,
-)
+from app.schemas.responses import TaskDraftResponse, TaskSubmissionAcceptedResponse, TaskSubmissionStatusResponse, TaskSubmitResponse
+from app.services.conversation_opening_service import ConversationOpeningService
 from app.services.session_runtime import EXPERIMENT_CHAT_DURATION_MINUTES, expire_session_if_due
-from app.services.task_judgement import enrich_task_judgement
-from app.services.llm_generation_audit import record_rejected_generation
-
-
-logger = logging.getLogger(__name__)
+from app.services.task_pipeline import TaskPipeline
 
 
 class TaskService:
@@ -54,13 +27,14 @@ class TaskService:
         self.repository = repository
         self.llm_provider = llm_provider
         self.opening_service = opening_service
+        self.pipeline = TaskPipeline(repository, llm_provider, opening_service)
 
     def save_draft(self, task_id: str, request: TaskDraftRequest) -> TaskDraftResponse:
         """只保存可恢復的作答草稿，不呼叫 LLM。"""
         task, session = self._task_and_session(task_id, request.session_id, request.user_id)
         self._validate_answers(task.evaluation_payload, request.response_payload, complete=False)
         attempt = self.repository.get_task_attempt_for_session(session.id, task.id)
-        if attempt and attempt.status in {"processing", "submitted"}:
+        if attempt and attempt.status != "in_progress":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task already submitted")
 
         if not attempt:
@@ -91,9 +65,11 @@ class TaskService:
 
         attempt = self.repository.get_task_attempt_for_session(session.id, task.id)
         # 重新整理或重送不能多建一份作答，也不能重複排程付費判題。
-        if attempt and attempt.status == "submitted":
-            return self._accepted(attempt), False
-        if attempt and attempt.status == "processing":
+        if attempt and attempt.status != "in_progress":
+            if attempt.response_payload != request.response_payload:
+                raise HTTPException(409, "Submitted task answers cannot be changed")
+            if attempt.status == "failed":
+                return self.retry_submission(attempt.id), True
             return self._accepted(attempt), False
 
         self._validate_answers(task.evaluation_payload, request.response_payload, complete=True)
@@ -109,7 +85,7 @@ class TaskService:
         if attempt.response_payload != request.response_payload:
             attempt.judgement_payload = {}
         attempt.response_payload = request.response_payload
-        attempt.submitted_at = None
+        attempt.submitted_at = utc_now()
         attempt.user_id = request.user_id or attempt.user_id or session.user_id
         attempt = self.repository.save_task_attempt(attempt)
 
@@ -138,192 +114,52 @@ class TaskService:
         return self._accepted(attempt), True
 
     async def process_submission(self, attempt_id: str) -> None:
-        """處理已存好的提交：取得有效判題、保存開場，最後才標記完成並啟動倒數。"""
+        """Run only the missing persisted checkpoint; human approval is never automatic."""
+        self.pipeline.llm_provider = self.llm_provider
+        self.pipeline.opening_service = self.opening_service
+        await self.pipeline.process(attempt_id)
+
+    def retry_submission(self, attempt_id: str) -> TaskSubmissionAcceptedResponse:
         attempt = self.repository.get_task_attempt(attempt_id)
-        if not attempt or attempt.status != "processing":
-            return
-
-        try:
-            task = self.repository.get_event_task(attempt.task_id)
-            session = self.repository.get_session(attempt.session_id) if attempt.session_id else None
-            event = self.repository.get_event(attempt.event_id)
-            if not task or not session or not event:
-                raise RuntimeError("Task submission context is incomplete")
-            self._validate_answers(task.evaluation_payload, attempt.response_payload, complete=True)
-            condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
-            if not condition:
-                raise RuntimeError("Experiment condition is missing")
-
-            judgement_input_hash = stable_hash({
-                "event": event,
-                "task": task,
-                "response_payload": attempt.response_payload,
-            })
-            # 只有已驗證並持久化的判題才有此標記；開場失敗或程序中斷後可接續，不能重判污染結果。
-            judgement_reused = attempt.judgement_payload.get("judgement_input_hash") == judgement_input_hash
-            if task.evaluation_payload.get("contract_version") == ERROR_ELICITATION_CONTRACT_VERSION:
-                judgement_reused = judgement_reused and (
-                    attempt.judgement_payload.get("judge_contract_version") == ERROR_ELICITATION_JUDGE_CONTRACT_VERSION
-                )
-            if judgement_reused:
-                judgement = {
-                    key: value for key, value in attempt.judgement_payload.items()
-                    if key not in {"error", "error_type", "completion_validation"}
-                }
-            else:
-                judgement = await self.llm_provider.judge_task_attempt(event, task, attempt.response_payload)
-                try:
-                    judgement = enrich_task_judgement(task, attempt.response_payload, judgement)
-                except ValueError as exc:
-                    # 模型漏題等問題保留原輸出供查核；不可產生假的 incorrect 結果。
-                    audit_id = record_rejected_generation(
-                        stage="task_judgement_contract",
-                        provider=str(judgement.get("provider", "unknown")),
-                        model=str(judgement.get("model", "unknown")),
-                        task_name="judge_task_attempt",
-                        raw_output=json.dumps(judgement, ensure_ascii=False),
-                        reasons=[str(exc)],
-                        context={"attempt_id": attempt.id, "task_id": task.id},
-                    )
-                    attempt.judgement_payload = {"llm_call": judgement.get("llm_call"), "judge_validation_audit_id": audit_id}
-                    raise
-                judgement["judgement_input_hash"] = judgement_input_hash
-            # 前端看到 submitted 就會進入聊天；開場尚未存好前只能保持 processing。
-            attempt.judgement_payload = judgement
+        if not attempt:
+            raise HTTPException(404, "Task attempt not found")
+        self._task_and_session(attempt.task_id, attempt.session_id, attempt.user_id)
+        if attempt.status == "failed":
+            attempt = attempt.model_copy(deep=True)
+            attempt.status = "preparing_chat" if attempt.review_payload.get("approved_at") else "processing"
+            attempt.pipeline_error = {}
             attempt = self.repository.save_task_attempt(attempt)
+        return self._accepted(attempt)
 
-            conversation = self.repository.get_conversation_by_session(session.id)
-            personas = self.repository.list_personas(event.id)
-            messages = self.repository.list_messages(conversation.id) if conversation else []
-            if messages:
-                greeting_message = messages[0]
-            else:
-                opening = await self.opening_service.generate(
-                    event=event,
-                    personas=personas,
-                    condition=condition,
-                    attempt=attempt,
-                )
-                # 等待開場期間可能已刪除／結束活動，不能依舊物件重新建立。
-                session = self.repository.get_session(session.id)
-                if not session or not self.repository.get_task_attempt(attempt.id):
-                    return
-                if session.status in {"completed", "archived"}:
-                    raise RuntimeError("Experiment session closed during opening")
-                if not conversation:
-                    conversation = self.repository.save_conversation(
-                        Conversation(
-                            event_id=event.id,
-                            task_attempt_id=attempt.id,
-                            session_id=session.id,
-                            user_id=attempt.user_id,
-                        )
-                    )
-                greeting_message = self._store_greeting(conversation.id, condition, opening, attempt, event)
-
-            attempt.status = "submitted"
-            attempt.submitted_at = utc_now()
-            attempt = self.repository.save_task_attempt(attempt)
-            session.status = "conversation_started"
-            timer_started = session.timer_ends_at is None
-            if timer_started:
-                # 五分鐘從 Chat 真正可互動時開始，避免 LLM 開場等待占用實驗時間。
-                timer_started_at = utc_now()
-                session.timer_started_at = timer_started_at
-                session.timer_ends_at = timer_started_at + timedelta(
-                    minutes=EXPERIMENT_CHAT_DURATION_MINUTES,
-                )
-            session = self.repository.save_session(session)
-            self.repository.log_research(
-                ResearchLog(
-                    user_id=attempt.user_id,
-                    session_id=session.id,
-                    event_id=event.id,
-                    task_id=task.id,
-                    attempt_id=attempt.id,
-                    conversation_id=conversation.id,
-                    message_id=greeting_message.id,
-                    action_type="task_submission_processed",
-                    payload={
-                        "judgement_llm_call": judgement.get("llm_call"),
-                        "judgement_reused": judgement_reused,
-                        "opening_llm_call": greeting_message.metadata.get("llm_call"),
-                    },
-                )
-            )
-            if timer_started:
-                self.repository.log_research(
-                    ResearchLog(
-                        user_id=session.user_id,
-                        session_id=session.id,
-                        event_id=session.event_id,
-                        action_type="session_timer_started",
-                        payload={
-                            "duration_minutes": EXPERIMENT_CHAT_DURATION_MINUTES,
-                            "timer_ends_at": session.timer_ends_at.isoformat(),
-                            "trigger": "conversation_ready",
-                        },
-                    )
-                )
-            self.repository.log_research(
-                ResearchLog(
-                    user_id=attempt.user_id,
-                    session_id=session.id,
-                    event_id=event.id,
-                    task_id=task.id,
-                    attempt_id=attempt.id,
-                    action_type="task_submitted",
-                    payload={"judgement": judgement},
-                )
-            )
-            self.repository.log_research(
-                ResearchLog(
-                    user_id=attempt.user_id,
-                    session_id=session.id,
-                    event_id=event.id,
-                    task_id=task.id,
-                    attempt_id=attempt.id,
-                    conversation_id=conversation.id,
-                    message_id=greeting_message.id,
-                    action_type="conversation_started",
-                    payload={"condition_key": condition.condition_key},
-                )
-            )
-        except Exception as exc:
-            logger.exception("Task submission processing failed for attempt %s", attempt.id)
-            if not self.repository.get_session(attempt.session_id) or not self.repository.get_task_attempt(attempt.id):
-                return
-            attempt.status = "failed"
-            previous_judgement = dict(attempt.judgement_payload)
-            llm_call = getattr(getattr(exc, "metadata", None), "as_dict", lambda: {})()
-            validation_failure = (
-                {"rejected_candidates": exc.rejected_candidates}
-                if isinstance(exc, OpeningValidationError)
-                else None
-            )
-            attempt.judgement_payload = {
-                **previous_judgement,
-                "error": "Task processing failed. The submission can be retried.",
-                "error_type": type(exc).__name__,
-                # 開場失敗的呼叫另存 research log，不覆蓋已成功判題的 token 與 provider 紀錄。
-                **({"llm_call": llm_call} if llm_call and not previous_judgement.get("judgement_input_hash") else {}),
-                **({"completion_validation": validation_failure} if validation_failure else {}),
-            }
-            self.repository.save_task_attempt(attempt)
-            self.repository.log_research(
-                ResearchLog(
-                    user_id=attempt.user_id,
-                    session_id=attempt.session_id,
-                    event_id=attempt.event_id,
-                    task_id=attempt.task_id,
-                    attempt_id=attempt.id,
-                    action_type="task_submission_failed",
-                    payload={
-                        "error_type": type(exc).__name__,
-                        "llm_call": llm_call or None,
-                    },
-                )
-            )
+    def enter_interaction(self, attempt_id: str) -> TaskSubmitResponse:
+        attempt = self.repository.get_task_attempt(attempt_id)
+        if not attempt:
+            raise HTTPException(404, "Task attempt not found")
+        self._task_and_session(attempt.task_id, attempt.session_id, attempt.user_id)
+        if attempt.status not in {"ready", "submitted"}:
+            raise HTTPException(409, "Conversation is not ready")
+        if attempt.status == "ready" and not attempt.review_payload.get("approved_at"):
+            raise HTTPException(409, "Human approval is required")
+        previous_status = attempt.status
+        started = self.repository.start_task_interaction(attempt.id, EXPERIMENT_CHAT_DURATION_MINUTES)
+        if not started:
+            raise HTTPException(409, "Conversation is not ready")
+        result = self._submission_result(started)
+        if not result:
+            raise HTTPException(409, "Conversation opening is not available")
+        if previous_status == "ready":
+            session = self.repository.get_session(attempt.session_id)
+            for action, payload in (
+                ("session_timer_started", {"duration_minutes": EXPERIMENT_CHAT_DURATION_MINUTES,
+                 "timer_ends_at": session.timer_ends_at.isoformat(), "trigger": "learner_entered"}),
+                ("conversation_started", {"condition_key": session.condition_key_snapshot}),
+            ):
+                self.repository.log_research(ResearchLog(
+                    user_id=attempt.user_id, session_id=attempt.session_id, event_id=attempt.event_id,
+                    task_id=attempt.task_id, attempt_id=attempt.id, conversation_id=result.conversation_id,
+                    action_type=action, payload=payload,
+                ))
+        return result
 
     def submission_status(self, attempt_id: str) -> TaskSubmissionStatusResponse:
         """Load polling state and materialize the legacy full result once ready."""
@@ -334,7 +170,7 @@ class TaskService:
         result = self._submission_result(attempt) if attempt.status == "submitted" else None
         error = None
         if attempt.status == "failed":
-            error = str(attempt.judgement_payload.get("error") or "Task processing failed")
+            error = str(attempt.pipeline_error.get("message") or "Task processing failed")
         return TaskSubmissionStatusResponse(attempt=attempt, result=result, error=error)
 
     def _submission_result(self, attempt: TaskAttempt) -> TaskSubmitResponse | None:
@@ -399,63 +235,3 @@ class TaskService:
             status=attempt.status,
             poll_url=f"/api/tasks/attempts/{attempt.id}",
         )
-
-    def _store_greeting(
-        self,
-        conversation_id: str,
-        condition,
-        opening: ConversationOpening,
-        attempt: TaskAttempt,
-        event: Event,
-    ) -> ChatMessage:
-        persona = opening.persona
-        system_fallback = bool(opening.metadata.get("system_fallback"))
-        profile_payload = persona.prompt_profile if persona else {}
-        profile_hash = hashlib.sha256(
-            json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        message = ChatMessage(
-            conversation_id=conversation_id,
-            persona_id=persona.id if persona and not system_fallback else None,
-            speaker_type="persona" if persona and not system_fallback else "assistant",
-            speaker_name="系統提示" if system_fallback else (persona.name if persona else ("AI Tutor" if condition.ebl_enabled else "AI Assistant")),
-            sequence_index=self.repository.next_message_sequence(conversation_id),
-            content=opening.generation.response,
-            annotations=opening.generation.annotations,
-            metadata={
-                "condition_key": condition.condition_key,
-                "task_attempt_id": attempt.id,
-                "judgement": attempt.judgement_payload,
-                "prompt_hash": hashlib.sha256(opening.prompt.encode("utf-8")).hexdigest(),
-                "prompt_modules": [module.name for module in opening.modules],
-                "persona_profile_contract": profile_payload.get("contract_version") if persona else None,
-                "persona_profile_hash": profile_hash if persona else None,
-                **opening.metadata,
-                **opening.generation.llm_metadata,
-            },
-        )
-        review = self.opening_service.answer_review_service
-        review_context = review.prepare(
-            message, runtime=build_interaction_runtime(condition, attempt, []),
-            event=event, attempt=attempt,
-            history=[], learner_message="",
-        ) if review else None
-        message = self.repository.add_message(message)
-        if attempt.session_id:
-            record_prompt_snapshot(
-                self.repository,
-                session_id=attempt.session_id,
-                event_id=attempt.event_id,
-                task_id=attempt.task_id,
-                attempt_id=attempt.id,
-                conversation_id=conversation_id,
-                message_id=message.id,
-                user_id=attempt.user_id,
-                stage="conversation_opening",
-                prompt=opening.prompt,
-                modules=opening.modules,
-                llm_call=opening.generation.llm_metadata.get("llm_call"),
-            )
-        if review:
-            review.schedule(message, review_context)
-        return message

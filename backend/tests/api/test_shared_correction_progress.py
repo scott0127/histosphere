@@ -9,23 +9,25 @@ from app.core.experiment_conditions import EXPERIMENT_CONDITION_KEY_BY_CODE
 from app.providers.llm.base import ChatGenerationResult
 from tests.api.test_learning_focus_responses import _focus, _frames
 from tests.test_api import initialize_event, submit_task
+from tests.task_review_helpers import add_generated_question
 
 
 @pytest.mark.parametrize("code", ["01", "02", "03", "04"])
 def test_shared_correction_progress_persists_and_replays_without_rewriting_initial_answers(
     client, monkeypatch, code,
 ):
+    add_generated_question(client, {
+        "id": "q02", "type": "cloze", "prompt": "第二個問題",
+        "correct_answer": "PRIVATE_SECOND_ANSWER", "source_text": "PRIVATE_SECOND_EXPLANATION",
+    })
     initialized = initialize_event(client, condition_key=EXPERIMENT_CONDITION_KEY_BY_CODE[code])
-    submitted = submit_task(client, initialized)
+    submitted = submit_task(client, initialized, response_payload={"answers": [
+        {"question_id": "q01", "value": "原先的判斷", "rationale": "原先的理由"},
+        {"question_id": "q02", "value": "原先的判斷", "rationale": "原先的理由"},
+    ]})
     repo = client.app.state.repository
     cid, sid = submitted["conversation_id"], initialized["session_id"]
     attempt = repo.get_task_attempt(submitted["attempt_id"])
-    attempt.judgement_payload["question_results"].append({
-        "question_id": "q02", "prompt": "第二個問題", "correctness": "incorrect",
-        "learner_answer": "原先的判斷", "learner_rationale": "原先的理由",
-        "expected_answer": "PRIVATE_SECOND_ANSWER", "source_text": "PRIVATE_SECOND_EXPLANATION",
-    })
-    repo.save_task_attempt(attempt)
     original_answers = deepcopy(attempt.response_payload)
     original_judgement = deepcopy(attempt.judgement_payload)
     assert submitted["learning_focus"] == _focus()

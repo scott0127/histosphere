@@ -59,6 +59,8 @@ class ConversationService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Task submission must finish before creating a conversation",
             )
+        if attempt.ai_judgement_payload and not attempt.review_payload.get("approved_at"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Human approval is required")
         if user_id and session.user_id and user_id != session.user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session belongs to another Auth user")
 
@@ -168,6 +170,10 @@ class ConversationService:
             if conversation.task_attempt_id
             else None
         )
+        if task_attempt and (task_attempt.status != "submitted" or (
+            task_attempt.ai_judgement_payload and not task_attempt.review_payload.get("approved_at")
+        )):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conversation has not been entered")
         task = (
             self.repository.get_event_task(task_attempt.task_id)
             if task_attempt

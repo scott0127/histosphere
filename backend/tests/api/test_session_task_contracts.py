@@ -3,6 +3,7 @@ from app.models.domain import EventTask
 from app.models.domain import ChatMessage, Participant, utc_now
 from datetime import timedelta
 import pytest
+from tests.task_review_helpers import review_and_enter
 
 
 @pytest.mark.parametrize("condition_key", ["no_ebl_no_roleplay", "ebl_no_roleplay", "no_ebl_roleplay", "ebl_roleplay"])
@@ -51,15 +52,26 @@ def test_timed_closure_is_scoped_durable_and_separate_from_chat(client, conditio
 def test_timed_closure_handles_only_the_current_error_with_frozen_answers(client):
     from tests.test_api import submit_task
     from app.core.interaction_contract import INTERACTION_POLICY_VERSION
+    original_generate_task = client.app.state.llm_provider.generate_task
+
+    async def generate_two_questions(event, sources):
+        task = await original_generate_task(event, sources)
+        task.evaluation_payload["questions"].append({
+            "id": "q02", "type": "true_false", "correct_answer": False, "prompt": "文件與出版時間是否相同？",
+            "source_text": "原始文件時間不同於出版時間。",
+        })
+        task.error_elicitation_task_full_text += "\n第二題：{{blank:q02}}"
+        return task
+
+    client.app.state.llm_provider.generate_task = generate_two_questions
     initialized = initialize_event(client)
-    submitted = submit_task(client, initialized)
+    submitted = submit_task(client, initialized, response_payload={"answers": [
+        {"question_id": "q01", "value": "不符合材料的答案"},
+        {"question_id": "q02", "value": True},
+    ]})
     repo = client.app.state.repository
     sid, cid = initialized["session_id"], submitted["conversation_id"]
     attempt = repo.get_task_attempt(submitted["attempt_id"])
-    first = attempt.judgement_payload["question_results"][0]
-    attempt.judgement_payload["question_results"] = [first, {**first, "question_id": "q02",
-        "expected_answer": False, "source_text": "原始文件時間不同於出版時間。"}]
-    repo.save_task_attempt(attempt)
     session = repo.get_session(sid)
     session.timer_ends_at = utc_now() - timedelta(seconds=1)
     repo.save_session(session)
@@ -240,10 +252,7 @@ def test_submit_transitions_session_to_conversation_started(client):
         },
     )
     assert submitted.status_code == 202
-    accepted_payload = submitted.json()
-    polled = client.get(accepted_payload["poll_url"])
-    assert polled.status_code == 200
-    submitted_payload = polled.json()["result"]
+    submitted_payload = review_and_enter(client, submitted.json())
     assert submitted_payload["conversation_id"]
     assert submitted_payload["attempt"]["status"] == "submitted"
     assert submitted_payload["history"][0]["speaker_type"] == "assistant"

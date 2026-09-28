@@ -8,6 +8,7 @@
 """
 
 from threading import Lock
+from datetime import timedelta
 
 from app.core.experiment_conditions import EXPERIMENT_CONDITION_DEFINITIONS, condition_sort_index
 from app.crud.protocols import RepositoryProtocol
@@ -66,6 +67,7 @@ class InMemoryRepository(RepositoryProtocol):
         self.participants: dict[str, Participant] = {}
         self.event_tasks: dict[str, EventTask] = {}
         self.task_attempts: dict[str, TaskAttempt] = {}
+        self._task_review_lock = Lock()
         self.personas: dict[str, Persona] = {}
         self.conversations: dict[str, Conversation] = {}
         self.messages: dict[str, list[ChatMessage]] = {}
@@ -421,9 +423,49 @@ class InMemoryRepository(RepositoryProtocol):
         )
         if duplicate:
             raise ValueError("A session may only have one task attempt")
+        current = self.task_attempts.get(attempt.id)
+        if current:
+            if current.ai_judgement_payload and current.ai_judgement_payload != attempt.ai_judgement_payload:
+                raise ValueError("Saved initial task judgements are immutable")
+            if current.review_payload.get("approved_at") and (
+                current.review_payload != attempt.review_payload or current.judgement_payload != attempt.judgement_payload
+            ):
+                raise ValueError("Approved task reviews are immutable")
+            if current.submitted_at and current.response_payload != attempt.response_payload:
+                raise ValueError("Submitted task answers are immutable")
         attempt.updated_at = utc_now()
-        self.task_attempts[attempt.id] = attempt
-        return attempt
+        self.task_attempts[attempt.id] = attempt.model_copy(deep=True)
+        return attempt.model_copy(deep=True)
+
+    def save_task_review(self, attempt: TaskAttempt, expected_version: int) -> TaskAttempt | None:
+        with self._task_review_lock:
+            current = self.task_attempts.get(attempt.id)
+            if not current or current.status != "awaiting_review" or current.review_version != expected_version:
+                return None
+            return self.save_task_attempt(attempt.model_copy(deep=True))
+
+    def start_task_interaction(self, attempt_id: str, duration_minutes: int) -> TaskAttempt | None:
+        with self._task_review_lock:
+            current = self.task_attempts.get(attempt_id)
+            if not current or current.status not in {"ready", "submitted"}:
+                return None
+            if current.status == "ready" and not current.review_payload.get("approved_at"):
+                return None
+            session = self.get_session(current.session_id)
+            conversation = self.get_conversation_by_session(current.session_id)
+            if not session or session.status in {"completed", "archived"} or not conversation:
+                return None
+            if not self.list_messages(conversation.id):
+                return None
+            session = session.model_copy(deep=True)
+            if session.timer_started_at is None:
+                session.timer_started_at = utc_now()
+                session.timer_ends_at = session.timer_started_at + timedelta(minutes=duration_minutes)
+            session.status = "conversation_started"
+            self.save_session(session)
+            current = current.model_copy(deep=True)
+            current.status = "submitted"
+            return self.save_task_attempt(current)
 
     def get_task_attempt(self, attempt_id: str) -> TaskAttempt | None:
         """依 ID 取得 task attempt。
@@ -434,7 +476,8 @@ class InMemoryRepository(RepositoryProtocol):
         Returns:
             TaskAttempt | None: 匹配的 attempt，或 None。
         """
-        return self.task_attempts.get(attempt_id)
+        attempt = self.task_attempts.get(attempt_id)
+        return attempt.model_copy(deep=True) if attempt else None
 
     def get_task_attempt_for_session(self, session_id: str, task_id: str | None = None) -> TaskAttempt | None:
         """取得指定 session 的唯一 attempt。
@@ -452,7 +495,7 @@ class InMemoryRepository(RepositoryProtocol):
         if task_id:
             attempts = [attempt for attempt in attempts if attempt.task_id == task_id]
         attempts.sort(key=lambda item: item.updated_at, reverse=True)
-        return attempts[0] if attempts else None
+        return attempts[0].model_copy(deep=True) if attempts else None
 
     def save_persona(self, persona: Persona) -> Persona:
         """儲存 persona。

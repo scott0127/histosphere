@@ -11,6 +11,31 @@ from app.services.conversation_metrics import conversation_metrics
 START = datetime(2026, 9, 28, 1, tzinfo=timezone.utc)
 
 
+def test_human_review_prepared_opening_does_not_start_learning_before_entry():
+    ready_session = session(completed=False)
+    ready_session.timer_started_at = ready_session.timer_ends_at = None
+    ready_session.status = "initialized"
+    opening = message(0, "assistant", 0, metadata=target("q01", judgement={"decision_source": "human_review"}))
+    result = conversation_metrics([opening], ready_session, now=START + timedelta(seconds=100))
+    assert result["learning"]["duration_seconds"] is None
+    assert result["learning"]["started_at"] is None
+    assert result["learning"]["questions"] == []
+
+
+def test_first_thinking_period_excludes_ready_waiting_before_learner_entry():
+    active_session = session(seconds=80)
+    active_session.timer_started_at = START + timedelta(seconds=50)
+    messages = [
+        message(0, "assistant", 0, metadata=target("q01", judgement={"decision_source": "human_review"})),
+        message(1, "learner", 60),
+        message(2, "assistant", 65, metadata=target("q01")),
+    ]
+    result = conversation_metrics(messages, active_session)
+    assert result["round_trips"][0]["thinking_seconds"] == 10
+    assert result["round_trips"][0]["elapsed_seconds"] == 15
+    assert result["learning"]["duration_seconds"] == 30
+
+
 def message(index, speaker, seconds, *, text="測 試\n🙂", metadata=None, **kwargs):
     return ChatMessage(
         id=f"m{index}", conversation_id="conversation", sequence_index=index,

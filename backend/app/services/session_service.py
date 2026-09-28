@@ -47,6 +47,9 @@ class SessionService:
         task = get_session_task(self.repository, session, attempt)
         condition = self.repository.get_condition_by_key(session.condition_key_snapshot)
         conversation = self.repository.get_conversation_by_session(session.id)
+        entered = bool(attempt and attempt.status == "submitted")
+        if not entered:
+            conversation = None
         posttest = self.repository.get_posttest(session.id)
         pending_final_response = bool(
             session.status == "completed" and conversation
@@ -68,7 +71,7 @@ class SessionService:
             final_exchange=self._final_exchange(history) if session.status == "completed" else None,
             learning_focus=build_learning_focus(
                 condition, attempt, history,
-            ),
+            ) if entered else None,
             posttest_stage=posttest.stage if posttest else ("not_started" if session.status == "completed" else None),
         )
 
@@ -243,7 +246,7 @@ class SessionService:
                     session_id=session.id,
                     task_id=task.id if isinstance(task, EventTask) else None,
                     attempt_id=attempt.id if attempt else None,
-                    conversation_id=conversation.id if conversation else None,
+                    conversation_id=conversation.id if conversation and attempt and attempt.status == "submitted" else None,
                     status=self._public_status(
                         session.status,
                         attempt.status if attempt else None,
@@ -396,9 +399,9 @@ class SessionService:
             return "archived"
         if session_status == "completed":
             return "completed"
-        if has_conversation or session_status == "conversation_started":
+        if attempt_status == "submitted" and (has_conversation or session_status == "conversation_started"):
             return "chat_started"
-        if attempt_status == "submitted" or session_status == "task_submitted":
+        if attempt_status in {"processing", "awaiting_review", "preparing_chat", "ready", "submitted", "failed"} or session_status == "task_submitted":
             return "task_submitted"
         if attempt_status == "in_progress":
             return "task_draft"

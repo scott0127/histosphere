@@ -502,6 +502,21 @@ class SupabaseRepository(RepositoryProtocol):
         """
         return self._upsert("task_attempts", attempt)
 
+    def save_task_review(self, attempt: TaskAttempt, expected_version: int) -> TaskAttempt | None:
+        attempt.updated_at = utc_now()
+        data = self._request(
+            "PATCH", "task_attempts",
+            params={"id": f"eq.{attempt.id}", "review_version": f"eq.{expected_version}", "status": "eq.awaiting_review"},
+            json=self._payload(attempt), prefer="return=representation",
+        )
+        return TaskAttempt(**data[0]) if data else None
+
+    def start_task_interaction(self, attempt_id: str, duration_minutes: int) -> TaskAttempt | None:
+        data = self._request("POST", "rpc/start_task_interaction", json={
+            "p_attempt_id": attempt_id, "p_duration_minutes": duration_minutes,
+        })
+        return TaskAttempt(**data[0]) if data else None
+
     def get_task_attempt(self, attempt_id: str) -> TaskAttempt | None:
         """依 ID 取得 task attempt。
 

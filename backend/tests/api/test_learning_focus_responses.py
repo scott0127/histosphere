@@ -14,6 +14,7 @@ from app.models.domain import TaskAttempt
 from app.providers.llm.base import ChatGenerationResult
 from tests.api.test_learner_task_redaction import _assert_private_absent, _seed
 from tests.test_api import initialize_event, submit_task
+from tests.task_review_helpers import add_generated_question
 
 
 def _focus(question_id="q01", status="active", origin="learner", claim=None):
@@ -173,17 +174,17 @@ def test_focus_stays_until_committed_feedback_and_transition_then_replays_its_ow
 def test_completed_question_advances_without_a_spoken_transition_and_survives_recovery(
     client, monkeypatch, tmp_path, code, restatement,
 ):
+    add_generated_question(client, {
+        "id": "q02", "type": "cloze", "prompt": "第二個問題",
+        "correct_answer": "PRIVATE_SECOND_ANSWER", "source_text": "PRIVATE_SECOND_EXPLANATION",
+    })
     initialized = initialize_event(client, condition_key=EXPERIMENT_CONDITION_KEY_BY_CODE[code])
-    submitted = submit_task(client, initialized)
+    submitted = submit_task(client, initialized, response_payload={"answers": [
+        {"question_id": "q01", "value": "原先的判斷"},
+        {"question_id": "q02", "value": "原先的判斷"},
+    ]})
     repo = client.app.state.repository
     cid, sid = submitted["conversation_id"], initialized["session_id"]
-    attempt = repo.get_task_attempt(submitted["attempt_id"])
-    attempt.judgement_payload["question_results"].append({
-        "question_id": "q02", "prompt": "第二個問題", "correctness": "incorrect",
-        "learner_answer": "原先的判斷", "expected_answer": "PRIVATE_SECOND_ANSWER",
-        "source_text": "PRIVATE_SECOND_EXPLANATION",
-    })
-    repo.save_task_attempt(attempt)
     opening = repo.list_messages(cid)[0]
     opening.metadata.update(
         dialogue_state="SELF_CORRECT" if restatement else "REFLECT",

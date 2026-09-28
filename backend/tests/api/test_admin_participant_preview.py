@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.models.domain import Participant, utc_now
 from tests.api.test_posttest import finish_posttest
 from tests.test_api import initialize_event
+from tests.task_review_helpers import review_and_enter
 
 
 ADMIN_HEADERS = {"x-admin-key": "test-admin"}
@@ -132,10 +133,7 @@ def test_preview_enforces_assignment_order_resume_and_actual_posttest_gate(clien
         "response_payload": {"answer_text": "我先依原先的理解提出答案。"},
     })
     assert accepted.status_code == 202, accepted.text
-    polled = admin_client.get(accepted.json()["poll_url"])
-    assert polled.status_code == 200, polled.text
-    submitted = polled.json()["result"]
-    assert submitted
+    submitted = review_and_enter(admin_client, accepted.json())
     session = repository.get_session(initialized["session_id"])
     session.timer_ends_at = utc_now() - timedelta(seconds=1)
     repository.save_session(session)

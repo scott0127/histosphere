@@ -113,7 +113,8 @@ class ResearchExportService:
     def _judgement_llm_call(attempt: TaskAttempt | None) -> dict[str, Any]:
         if not attempt or not isinstance(attempt.judgement_payload, dict):
             return {}
-        value = attempt.judgement_payload.get("llm_call", {})
+        judgement = attempt.ai_judgement_payload or attempt.judgement_payload
+        value = judgement.get("llm_call", {})
         return value if isinstance(value, dict) else {}
 
     def _session_stats(

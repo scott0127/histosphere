@@ -1275,7 +1275,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       <svg data-lucide="landmark" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18"/><path d="M6 18v-7"/><path d="M10 18v-7"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="m12 2 9 5H3l9-5Z"/></svg>
       <span>HISTOSPHERE</span>
     </div>
-    <div class="root-note text-small">後測流程同步：2026-09-19 · 藍點代表所列工程範圍完成，不代表研究效度已驗證 · hover 可看白話說明與例子</div>
+    <div class="root-note text-small">人工複審與施測監測同步：2026-09-28 · 藍點代表所列工程範圍完成，不代表研究效度已驗證 · hover 可看白話說明與例子</div>
   </div>
 
   <div class="legend text-small" aria-label="完成度圖例">
@@ -1447,11 +1447,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">事件 → Task → Chat → 後測的 session 關聯與 condition snapshot<span class="function-note text-small">Session completed 只表示對話結束；本輪完成另需後測 completed</span></span>
+          <span class="function-name">事件 → Task → 人工核對 → Chat → 後測的 session 關聯與 condition snapshot<span class="function-note text-small">所有題目經研究者確認後才準備互動；Session completed 只表示對話結束，本輪完成另需後測 completed</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">重新整理／重新登入後依 Supabase 狀態恢復 task、processing、chat 或後測</span>
+          <span class="function-name">重新整理／重新登入後依 Supabase 狀態恢復作答、待審、互動準備、Chat 或後測</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1459,7 +1459,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Chat 就緒自動啟動固定 05:00；重新整理沿用原截止時間</span>
+          <span class="function-name">受測者進入已就緒 Chat 才啟動固定 05:00；重新整理沿用原截止時間<span class="function-note text-small">初判、人工核對、準備開場與 ready 等待均不計入互動時間；重複進場不重設倒數</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1571,23 +1571,31 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">草稿持久化、required 檢查、202 提交、polling 與 reload 恢復</span>
+          <span class="function-name">草稿持久化、required 檢查、202 提交與持久化等待<span class="function-note text-small">SSE 通知後重新讀取狀態，低頻 polling 備援；待審不套用舊的四分鐘逾時，重整可續接</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">填空答案與每題理由 LLM 判定；選擇／是非規則判定<span class="function-note text-small">Judge v4：填空接受等義表述，與所有理由合併原本一次呼叫；模型格式失敗不算學生答錯</span></span>
+          <span class="function-name">填空答案與每題理由 LLM 初判；選擇／是非答案規則初判<span class="function-note text-small">Judge v4：填空與所有理由合併一次呼叫；初判完成進 awaiting_review，不直接解鎖互動；模型失敗不算學生答錯</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">二分逐題結果、錯誤原因與 learner 回顧<span class="function-note text-small">answer_correct、reasoning_correct 都 true 才通過；具體 feedback 供後續私有 Prompt，HT tags 不計分</span></span>
+          <span class="function-name">全題人工複審與最終結果確認<span class="function-note text-small">每題分開核對答案與理由，含 AI 判對的題目；逐題確認、保存判定說明，改判需原因；全部已審才可確認最終結果</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">確認 → 準備開場 → ready → 受測者進場<span class="function-note text-small">awaiting_review → preparing_chat → ready → submitted；核准及進場可安全重送，後端阻擋未核准的 Chat／stream</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">原始初判、人工草稿與最終判定分開保存<span class="function-note text-small">ai_judgement_payload 保留初判；review_payload 保存人工核對；核准後才寫入 judgement_payload 供互動使用。Learner 不取得初判與審核草稿</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="critical">
-          <span class="function-name">正式題組與 Judge 人工抽樣驗收<span class="function-note text-small">四事件題組仍待研究者驗收；填空四判例小測試通過，不等於正式判分效度</span></span>
+          <span class="function-name">正式題組、判準文件與專家審查<span class="function-note text-small">逐份全題人工核對已實作；收案前仍需確認四事件題組、書面判準與歷史專家審查，工程驗收不等於判分效度</span></span>
           <span class="status text-small"><span class="dot"></span>收案前必要</span>
         </div>
         <div class="function" data-status="not-needed">
-          <span class="function-name">背景工作耐久性<span class="function-note text-small">單機、單一受測者可由持久化 processing 狀態與 polling 重掛；多 instance queue 暫不實作</span></span>
+          <span class="function-name">背景工作耐久性<span class="function-note text-small">單一後端可依資料庫的 processing／preparing_chat 狀態重掛；待審與已核准結果保留，失敗可重試。多 instance queue 暫不實作</span></span>
           <span class="status text-small"><span class="dot"></span>不做多機佇列</span>
         </div>
       </div>
@@ -1815,6 +1823,14 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
+          <span class="function-name">單一場次施測監測與逐題核對<span class="function-note text-small">受測者 → 活動 → 已建立的 Session 進入 /admin-monitor；四階段：作答 → 人工核對 → AI 互動 → 後續評量，同一頁隨階段切換</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
+          <span class="function-name">跨電腦管理員監測與 SSE 變更同步<span class="function-note text-small">兩端連同一後端與資料庫；研究者端驗證管理員 key，受測者端沿用個人登入。已同機獨立登入驗證，兩台實體電腦現場連線待驗；SSE 重連讀取最新快照</span></span>
+          <span class="status text-small"><span class="dot"></span>已完成</span>
+        </div>
+        <div class="function" data-status="done">
           <span class="function-name">admin_mode 與 admin_testmode；可測試所有 01–04 condition</span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
@@ -1867,7 +1883,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>本研究不需要</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">後測資料與 session_id 對應<span class="function-note text-small">後測已串接系統；同一受測者可有多輪，以 session_id 配對，participant code 用於受測者層級核對。Admin 目前透過研究 API／匯出取得後測，尚無專用檢視面板</span></span>
+          <span class="function-name">後測資料與 session_id 對應<span class="function-note text-small">同一受測者可有多輪，以 session_id 配對；施測監測頁顯示後續評量階段，完整回答仍由研究 API／匯出取得</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
       </div>
@@ -1887,7 +1903,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">事件封存、participant Auth mapping、timer 與 async task migration</span>
+          <span class="function-name">事件封存、participant Auth mapping、timer 與 Task 人工複審 migration<span class="function-note text-small">task_attempts 新增初判、人工草稿、review_version 與 pipeline_error；保存新階段，未新增審核資料表</span></span>
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
@@ -1915,11 +1931,11 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       </summary>
       <div class="functions">
         <div class="function" data-status="done">
-          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">後測實作驗證：新增 13 項行為測試與既有前端測試通過，production build 及變動 Vue 元件編譯通過；本次文件同步未重跑程式測試</span></span>
+          <span class="function-name">Frontend 純函式／API contract tests<span class="function-note text-small">人工複審實作驗證：188 項前端測試及 production build 通過；涵蓋全題確認、草稿保存與衝突、SSE 重連、長時間待審及進場恢復</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">後測實作驗證：138 項聚焦 API／repository 測試通過，涵蓋階段、歸屬、版本與匯出；不等於全範圍研究效度</span></span>
+          <span class="function-name">Backend API／interaction／persona／provider tests<span class="function-note text-small">人工複審實作驗證：533 項後端測試通過，涵蓋初判與核准、存取界線、版本衝突、進場計時及恢復；不等於研究效度驗證</span></span>
           <span class="status text-small"><span class="dot"></span>已通過</span>
         </div>
         <div class="function" data-status="done">
@@ -1963,7 +1979,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
           <span class="status text-small"><span class="dot"></span>已完成</span>
         </div>
         <div class="function" data-status="done">
-          <span class="function-name">文件與程式一致性<span class="function-note text-small">2026-09-19 對照後測程式更新系統導讀、schema、研究匯出與本圖；工程流程與正式量測待辦分開標示</span></span>
+          <span class="function-name">文件與程式一致性<span class="function-note text-small">2026-09-28 對照人工複審程式同步 architecture、schema 與本圖；工程流程與正式判準、量測驗收待辦分開標示</span></span>
           <span class="status text-small"><span class="dot"></span>已同步</span>
         </div>
         <div class="function" data-status="done">
@@ -1991,7 +2007,7 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
       <article class="question-card">
         <span class="question-status">待研究程序確認 01</span>
         <h3 class="question-title">未完成作答與中途退出</h3>
-        <p class="question-detail"><strong>目前：</strong>正式 Task 每題須有答案與理由，漏答先拒絕提交；LLM 失敗保留 failed，不算學生答錯。</p>
+        <p class="question-detail"><strong>目前：</strong>正式 Task 每題須有答案與理由；提交後由 LLM／規則初判，再由研究者全題核對。漏答拒絕提交，LLM 失敗保留 failed，不算學生答錯。</p>
         <p class="question-detail"><strong>需決定：</strong>正式中止、缺漏與排除規則；不是再決定把 unanswered 當作錯誤排入哪裡。</p>
         <p class="question-detail"><strong>影響：</strong>避免把未嘗試或系統故障混成學生的學習錯誤。</p>
       </article>
@@ -2046,9 +2062,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
 
       <article class="question-card">
         <span class="question-status">最高優先正式驗收 08</span>
-        <h3 class="question-title">四事件素材與 Judge 通過標準</h3>
-        <p class="question-detail"><strong>目前：</strong>四事件閱讀題組已有新版內容，但仍待研究者驗收。填空語意四判例測試通過不等於正式判分效度。</p>
-        <p class="question-detail"><strong>必要工作：</strong>跨事件史料類型、數量與閱讀負荷一致，逐題審查真實來源、修正說明與通過標準，抽樣比對人工與 LLM 判斷。</p>
+        <h3 class="question-title">四事件素材、人工判準與專家審查</h3>
+        <p class="question-detail"><strong>目前：</strong>LLM 提供初判，研究者對每份作答的所有題目確認最終答案與理由判定後，才進入 AI 互動；系統流程完成不等於判分效度已驗證。</p>
+        <p class="question-detail"><strong>必要工作：</strong>確認跨事件史料類型、數量與閱讀負荷，編製逐題書面判準並交歷史專家審視；保留合理等義回答、理由通過條件與爭議判例。</p>
         <p class="question-detail"><strong>影響：</strong>錯誤判題會製造假的 EBL 目標；素材差異也可能被誤認為 Condition 效果。</p>
       </article>
     </div>
@@ -2078,9 +2094,9 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "學習者看得到後來整理的材料，不代表人物當年讀過它；也需區分出版日期與原始文件日期。",
         "2010 年翻譯 1930 年紀錄與描述未來事件是不同問題；本次沒有放寬人物的時間邊界。"
       ]],
-      ["正式題組與 Judge 人工抽樣驗收", [
-        "程式能判題，不代表每個通過標準都適當；正式收案前仍需研究者逐題審查並抽樣核對模型。",
-        "檢查學生用了合理的同義答案時不會被判錯，再檢查理由雖流暢卻錯誤的答案不會被放過。"
+      ["正式題組、判準文件與專家審查", [
+        "每份作答的全題人工複審已有系統支持；題目本身的正當性、書面判準與專家審查仍是收案前工作。",
+        "事先列出可接受的等義答案與理由通過條件，請歷史專家審視；不能只以程式測試通過宣稱判分有效。"
       ]],
       ["Learner Supabase Auth 登入、登出、密碼重設與帳號切換狀態清理", [
         "受測者使用 Supabase 帳號登入。切換帳號或登出時會清除舊受測者及 Admin 狀態，避免沿用上一人的身分。",
@@ -2182,21 +2198,21 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "Admin 可以新增、封存或恢復 Participant；封存只停止實驗存取，不刪除 Auth 綁定、作答、Session 或聊天紀錄。",
         "P004 暫停參與時被封存；恢復後仍沿用原帳號和 Condition 清單。"
       ]],
-      ["事件 → Task → Chat → 後測的 session 關聯與 condition snapshot", [
-        "Session 保存開始當下的 Condition，後測另以 session_id 關聯；原 Session completed 只表示對話階段結束。",
-        "P001 聊天結束但尚未交後測時，仍屬本輪未完成，不能開始下一個指派條件。"
+      ["事件 → Task → 人工核對 → Chat → 後測的 session 關聯與 condition snapshot", [
+        "同一 Session 串起作答、初判、全題人工核對、互動與後測，並保存開始當下的 Condition；completed 只表示對話結束。",
+        "P001 的作答須經研究者確認才準備 Chat；聊天結束但後測未提交時，仍不能開始下一個指派條件。"
       ]],
-      ["重新整理／重新登入後依 Supabase 狀態恢復 task、processing、chat 或後測", [
-        "頁面重整或重新登入時，前端依後端資料返回 Task、等待畫面、Chat 或已開始的後測；尚未開始後測則先回 Chat 收尾。",
-        "P001 在 HAT 階段重新整理後會回到 HAT，並取回已保存的回答，不用重做活動回饋。"
+      ["重新整理／重新登入後依 Supabase 狀態恢復作答、待審、互動準備、Chat 或後測", [
+        "頁面重整或重新登入後依持久化階段恢復；人工待審不會因等待超過四分鐘自動失敗或跳過核對。",
+        "P001 等研究者核對時重整仍停在等待；已核准則續接開場準備或進場，已開始的後測則恢復原階段。"
       ]],
       ["進入下一階段前確認視窗與長等待中轉畫面", [
-        "階段切換前要求受測者明確確認；需要等待 LLM 時顯示中轉畫面，避免被誤認為當機。",
-        "Task 送出前顯示「點選是進入下一階段」，送出後顯示「正在回到明治維新的時代」。"
+        "提交作答後，受測者依公開狀態看見初判、人工核對或互動準備的等待提示，不看到研究者修改中的判定。",
+        "研究者把 Q02 的理由改判時，受測者仍在等待畫面；全題確認且開場準備完成後才自動銜接互動。"
       ]],
-      ["Chat 就緒自動啟動固定 05:00；重新整理沿用原截止時間", [
-        "開場訊息與聊天資料完成保存後，系統自動開始五分鐘倒數；重整或重新登入都沿用原本截止時間，不會重新獲得五分鐘。",
-        "P001 剩下 02:14 時關閉頁面，重新登入後會從實際剩餘時間繼續，而不是回到 05:00。"
+      ["受測者進入已就緒 Chat 才啟動固定 05:00；重新整理沿用原截止時間", [
+        "研究者核准後先準備開場；ready 仍不計時。受測者端成功呼叫進場端點後，才保存互動開始與截止時間。",
+        "研究者核對花八分鐘不會扣除互動時間；受測者進場後再重整或重送進場請求，沿用同一截止時間。"
       ]],
       ["到期停止對話；目前未完成錯誤的修正與重述收尾", [
         "五分鐘一到不能繼續聊天。若目前錯誤還未處理完，收尾畫面提供修正與一次重述，然後進下一階段。",
@@ -2270,21 +2286,29 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "學生閱讀材料後，直接在文中完成填空、選擇或是非；每一題都必須另外寫下判斷理由。",
         "Q01 選答案後若沒有填理由，正式送出會被阻止，但草稿仍會保留。"
       ]],
-      ["草稿持久化、required 檢查、202 提交、polling 與 reload 恢復", [
-        "系統保存作答草稿、阻止漏答必填題，提交後在背景評分並持續查詢結果。",
-        "學生提交後重新整理頁面，仍能回到「評分處理中」並取得最終結果。"
+      ["草稿持久化、required 檢查、202 提交與持久化等待", [
+        "系統保存作答草稿並阻止漏答；提交後回覆已受理，再依資料庫狀態等待初判及人工核對。SSE 搭配低頻查詢備援。",
+        "研究者尚未完成核對時，即使等待超過四分鐘或學生重整頁面，已提交作答與待審狀態仍保留。"
       ]],
-      ["填空答案與每題理由 LLM 判定；選擇／是非規則判定", [
-        "選擇和是非的答案用規則判；填空的語意與每題理由由同一次 LLM 判斷，不為每題另外呼叫。",
-        "「大衛的畫稿。」及等義改寫可判對；若答案對但理由把它當現場照片，該題仍不通過。"
+      ["填空答案與每題理由 LLM 初判；選擇／是非答案規則初判", [
+        "選擇和是非答案先用規則判；填空語意與每題理由由同一次 LLM 初判。這些建議需經研究者全題確認才成為最終結果。",
+        "模型初判 Q01 答案正確、理由錯誤，研究者仍須核對兩者；模型格式失敗則保留系統錯誤並重試，不製造學生錯誤。"
       ]],
-      ["二分逐題結果、錯誤原因與 learner 回顧", [
-        "保存原答案與理由；填空 answer_feedback 和 reasoning_feedback 說明具體原因，不再另外分類 factual/reasoning issue。",
-        "學生能看作答結果；後續 AI 與 Admin 能讀私有診斷，但 Learner 不會提前看到正解或 Judge 回饋。"
+      ["全題人工複審與最終結果確認", [
+        "每題起始皆為未審；研究者核對原答案與理由，分別確認正誤及判定說明。改判須記錄原因並更新對應說明；全題已審才可核准。",
+        "即使 AI 初判三題全對，研究者仍須逐題確認，不能只檢查判錯題；答案與理由都正確才算該題通過。"
+      ]],
+      ["確認 → 準備開場 → ready → 受測者進場", [
+        "人工核准將 awaiting_review 轉成 preparing_chat；開場保存後轉 ready，受測者成功進場才轉 submitted 並開始倒數。",
+        "核准後斷線可從已批准結果接續準備；重送核准或進場不重複判題、不重設倒數。未核准時直接請求 Chat 也會被後端拒絕。"
+      ]],
+      ["原始初判、人工草稿與最終判定分開保存", [
+        "保留原始作答、不可覆寫的初判與人工複審資料；只有核准後的 judgement_payload 供後續互動使用。Learner API 排除初判與私有審核草稿。",
+        "研究者將 Q02 從錯改對後，仍能追溯原始 AI 初判與改判原因；受測者不會看見保存草稿時的修改過程。"
       ]],
       ["背景工作耐久性", [
-        "作答會先保存到資料庫；後端中斷後，受測者再次開啟或輪詢時會重新掛回評分，已足以支援目前的單機實驗。",
-        "只有同時運行多台後端時才需要資料庫工作認領或佇列；目前不實作，並接受多台後端可能重複處理的限制。"
+        "單一後端依資料庫保存的處理階段恢復初判或開場準備；人工待審與已核准結果也持久化。多台瀏覽器共用同一後端不需要多 instance 佇列。",
+        "核准後生成開場失敗，可從已核准結果重試；不要求研究者重審，也不重做初判。目前仍不支援多個後端 instance 同時認領工作。"
       ]],
       ["後端 canonical modules 與 2×2 factor composition", [
         "後端以共用 Prompt 模組加上 EBL、Role-play 因子組成四種 Condition。",
@@ -2446,6 +2470,14 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "管理員可查看受測者帳號綁定、分派模式、目前實驗階段及計時器。",
         "確認 P001 已綁定帳號、分派 01 和 03，目前停在 Task。"
       ]],
+      ["單一場次施測監測與逐題核對", [
+        "從受測者的活動紀錄進入 /admin-monitor?session=…，一頁監測作答、人工核對、AI 互動與後續評量。初判歸人工核對；準備開場與 ready 歸 AI 互動並標明實際狀態。",
+        "核對時查看原題、材料、圖片、原答與理由，AI 說明預填且可修訂；判準可另參照研究者文件。互動開始後同頁顯示對話與計時，後續顯示評量階段。"
+      ]],
+      ["跨電腦管理員監測與 SSE 變更同步", [
+        "研究者端以管理員 key 驗證，受測者端沿用個人登入，兩端連同一後端與資料庫。SSE 僅提示變更，再讀資料庫快照；重連重新驗證並同步，未存審核編輯不被覆蓋。",
+        "已在同機獨立登入驗證提交、核准與自動進場；兩台實體電腦現場連線仍待驗。跨機須用可達伺服器位址；監測僅呈現已保存進度，不推測在線或逐字輸入。"
+      ]],
       ["admin_mode 與 admin_testmode；可測試所有 01–04 condition", [
         "管理模式用於修改資料；測試模式模擬受測者視角，而且不受一般受測者分派限制。",
         "研究者切到測試模式，逐一檢查 01–04 的 Task 與聊天畫面。"
@@ -2483,16 +2515,16 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "研究者能追溯 P001 使用的素材，但不會在 Admin 中操作類似文件版本管理器。"
       ]],
       ["後測資料與 session_id 對應", [
-        "系統內後測保存於 session_posttests，研究 API 與匯出可查回；尚未建立專用 Admin 後測檢視面板。",
+        "系統內後測保存於 session_posttests；施測監測頁顯示活動回饋、HAT 或完成階段，完整回答由研究 API 與匯出查回。",
         "P001 先後做 03 與 01 時，兩份後測各自對應不同 session_id，不能僅靠 P001 代號合併成同一輪。"
       ]],
       ["15 個 public tables、UUID PK、關聯索引與 service-role repository", [
         "新增 session_posttests 後共 15 表；後測有唯一 session_id、階段與版本欄位，已提交回答由資料庫 trigger 拒絕更新。",
         "後端可由同一 Session 查詢 Task attempt、conversation 與後測，不重複建立第二份後測。"
       ]],
-      ["事件封存、participant Auth mapping、timer 與 async task migration", [
-        "事件封存、帳號綁定、計時器與非同步 Task 所需的資料庫欄位及遷移已建立。",
-        "封存事件或保存 Task 背景處理狀態時，都有對應的資料庫結構。"
+      ["事件封存、participant Auth mapping、timer 與 Task 人工複審 migration", [
+        "既有 task_attempts 新增 ai_judgement_payload、review_payload、review_version 與 pipeline_error，擴充階段狀態；不另外建立審核表。",
+        "研究者以舊 review_version 保存時回覆版本衝突，避免另一台電腦的草稿被覆寫；核准時間與最終判定可保留追溯。"
       ]],
       ["研究主鏈 NOT NULL／FK／刪除限制", [
         "資料庫會直接要求 Session、Task attempt、答案、Conversation 與 Message 等研究主鏈具備有效歸屬，並限制刪除仍被引用的紀錄。",
@@ -2507,12 +2539,12 @@ html>body{box-sizing:border-box;max-width:1440px;margin:0 auto;padding:1.25rem}<
         "瀏覽器不能直接讀寫後測表；請求經 FastAPI 所有權與階段檢查後，再由後端 service role 存取。"
       ]],
       ["Frontend 純函式／API contract tests", [
-        "測試涵蓋前端純邏輯與 API 契約；單元測試通過不等於完整畫面或正式實驗全部驗收。",
-        "後測實作時另以真實瀏覽器走過霧社 Demo 的活動回饋、HAT 與提交，兩階段草稿及完成狀態均驗證重整後保留。"
+        "人工複審實作後，188 項前端測試與 production build 通過；涵蓋表單操作、草稿保存、核對條件、SSE 解析與等待恢復。",
+        "測試確認待審超過舊四分鐘限制仍等待；ready 只進場一次，進場回應遺失後可恢復，離頁停止等待不再導航。"
       ]],
       ["Backend API／interaction／persona／provider tests", [
-        "既有測試涵蓋判定、互動與私有資訊界線；後測新增驗證階段順序、歸屬、欄位限制、版本衝突與研究匯出。",
-        "後測相關 138 項聚焦測試通過，只證明所測工程行為；Pseudo 題不因此成為正式量表或有效的 HAT 評分。"
+        "人工複審實作後，533 項後端測試通過，包含既有判定、互動、後測與新增核准流程及私有資訊界線。",
+        "測試核對未審題阻擋核准、改判說明、版本衝突、重送進場與計時；這些工程驗證不代表題目效度或評分者一致性已成立。"
       ]],
       ["Supabase 現行 schema 唯讀 smoke test", [
         "先前的唯讀 smoke 紀錄涵蓋原 14 表；這次後測驗證另檢查新表的本機儲存、版本衝突、提交鎖定及匿名存取拒絕。",

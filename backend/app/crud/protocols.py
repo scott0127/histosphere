@@ -348,6 +348,14 @@ class RepositoryProtocol(Protocol):
         """
         ...
 
+    def save_task_review(self, attempt: TaskAttempt, expected_version: int) -> TaskAttempt | None:
+        """Save an awaiting-review draft/approval only if its version still matches."""
+        ...
+
+    def start_task_interaction(self, attempt_id: str, duration_minutes: int) -> TaskAttempt | None:
+        """Atomically enter a ready conversation and start its timer only once."""
+        ...
+
     def get_task_attempt(self, attempt_id: str) -> TaskAttempt | None:
         """依 ID 取得單一 task attempt。
 

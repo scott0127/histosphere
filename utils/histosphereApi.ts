@@ -30,6 +30,7 @@ import type {
   TaskDraftResponse,
   TaskSubmissionAcceptedResponse,
   TaskSubmissionStatusResponse,
+  TaskSubmitResponse,
   UserProgressResponse,
 } from '../types';
 import { getAdminSessionKey } from '~/utils/adminSession';
@@ -115,7 +116,7 @@ export type ParticipantCreateInput = Pick<Participant, 'code'> & Partial<Pick<
 >> & { activity_assignments?: ParticipantActivityAssignment[] };
 
 const adminHeaders = (adminKey: string) => ({ 'x-admin-key': adminKey });
-const learnerAuthHeaders = (): Record<string, string> => {
+export const learnerAuthHeaders = (): Record<string, string> => {
   const adminKey = getAdminSessionKey();
   if (adminKey) return adminHeaders(adminKey);
   const accessToken = getCurrentAccessToken();
@@ -342,6 +343,10 @@ export const submitTaskAnswers = (taskId: string, input: TaskSubmitInput, fetche
 
 export const fetchTaskSubmissionStatus = (attemptId: string, fetcher: FrontendFetcher = $fetch) => {
   return fetcher<TaskSubmissionStatusResponse>(`/api/tasks/attempts/${attemptId}`, learnerAuthOptions());
+};
+
+export const enterTaskInteraction = (attemptId: string, fetcher: FrontendFetcher = $fetch) => {
+  return fetcher<TaskSubmitResponse>(`/api/tasks/attempts/${attemptId}/enter`, { ...learnerAuthOptions(), method: 'POST' });
 };
 
 export const fetchConversation = (conversationId: string, fetcher: FrontendFetcher = $fetch) => {

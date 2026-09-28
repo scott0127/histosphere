@@ -1,65 +1,19 @@
 <template>
-  <Transition
-    enter-active-class="transition-opacity duration-300 ease-out"
-    leave-active-class="transition-opacity duration-200 ease-in"
-    enter-from-class="opacity-0"
-    leave-to-class="opacity-0"
-  >
-    <div
-      v-if="show"
-      class="fixed inset-0 z-[100] overflow-y-auto bg-[var(--admin-page)] font-sans text-[var(--admin-text)]"
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-      :aria-label="`正在回到 ${eraLabel}的時代`"
-    >
-      <div class="pointer-events-none fixed inset-0">
-        <img src="~/assets/images/landing-bg.png" alt="" class="h-full w-full object-cover opacity-[0.16]" />
-        <div class="absolute inset-0 bg-[rgba(242,240,236,0.9)]"></div>
-      </div>
-
-      <header class="relative z-10 border-b border-[var(--admin-border)] bg-[rgba(255,253,248,0.82)]">
-        <div class="mx-auto flex min-h-16 max-w-6xl items-center justify-between px-6">
-          <div class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[var(--admin-line)] bg-[var(--admin-surface)] text-[var(--admin-coffee)] shadow-[0_3px_0_rgba(47,41,36,0.18)]">
-              <Icon name="mdi:history" class="h-5 w-5" />
-            </span>
-            <span>
-              <span class="block font-serif text-lg font-bold tracking-[0.08em]">Histosphere</span>
-              <span class="block text-xs font-semibold tracking-[0.08em] text-[var(--admin-copy)]">時間轉場</span>
-            </span>
+  <Transition enter-active-class="transition-opacity duration-300" leave-active-class="transition-opacity duration-200"
+    enter-from-class="opacity-0" leave-to-class="opacity-0">
+    <div v-if="show" class="task-waiting" role="status" aria-live="polite" aria-busy="true">
+      <header class="task-waiting__header"><span>Histosphere</span><span>{{ eventName }}</span></header>
+      <main class="task-waiting__main">
+        <section class="task-waiting__card">
+          <div class="task-waiting__mark" aria-hidden="true"><Icon name="mdi:check" /></div>
+          <p class="task-waiting__eyebrow">TASK</p>
+          <h1>{{ waitingState?.stage === 'sending' ? '正在送出作答' : '作答已送出' }}</h1>
+          <p class="task-waiting__description">{{ message }}</p>
+          <div class="task-waiting__connection">
+            <span :class="['task-waiting__dot', { 'is-offline': waitingState && !waitingState.connected }]" aria-hidden="true"></span>
+            <span>{{ waitingState && !waitingState.connected ? '正在重新連線，已保存的進度會保留' : '完成準備後，將自動進入互動' }}</span>
           </div>
-          <span class="font-mono text-sm font-semibold text-[var(--admin-copy)]">
-            {{ elapsedSeconds }} 秒
-          </span>
-        </div>
-      </header>
-
-      <main class="relative z-10 mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl items-center px-6 py-14">
-        <section class="w-full max-w-5xl">
-          <p class="text-xs font-black uppercase tracking-[0.22em] text-[var(--admin-coffee)]">Time transition</p>
-          <h2 class="mt-5 max-w-5xl font-serif text-5xl font-bold leading-[1.12] text-[var(--admin-text)] md:text-7xl">
-            正在回到
-            <span class="my-2 block text-[var(--admin-coffee)]">{{ eraLabel }}</span>
-            的時代
-          </h2>
-          <p class="mt-6 max-w-3xl text-xl font-semibold leading-9 text-[var(--admin-copy)] md:text-2xl">
-            {{ eventName }}
-          </p>
-
-          <div class="mt-12 flex items-center gap-4" aria-hidden="true">
-            <span class="h-3 w-3 shrink-0 rounded-full bg-[var(--admin-coffee)] animate-pulse"></span>
-            <span class="h-px flex-1 bg-[var(--admin-border)]"></span>
-            <Icon name="mdi:book-open-page-variant" class="h-6 w-6 shrink-0 text-[var(--admin-coffee)]" />
-          </div>
-
-          <div class="mt-8 flex max-w-4xl items-start gap-4 border-y border-[var(--admin-border)] py-5">
-            <Icon name="mdi:loading" class="mt-1 h-6 w-6 shrink-0 animate-spin text-[var(--admin-coffee)]" />
-            <div>
-              <p class="text-lg font-bold text-[var(--admin-text)]">{{ phase.label }}</p>
-              <p class="mt-1 text-sm font-semibold leading-7 text-[var(--admin-copy)]">{{ phase.detail }}</p>
-            </div>
-          </div>
+          <p class="task-waiting__hint">請保持此頁開啟。等待期間不計入互動時間。</p>
         </section>
       </main>
     </div>
@@ -67,44 +21,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { formatTaskTransitionEra, taskTransitionPhase } from '~/utils/taskTransition';
+import { computed } from 'vue';
+import type { TaskWaitingState } from '~/utils/taskSubmissionWaiter';
 
 const props = defineProps<{
   show: boolean;
   eventName: string;
-  startYear?: number | null;
-  endYear?: number | null;
+  waitingState?: TaskWaitingState;
 }>();
-
-const elapsedSeconds = ref(0);
-let timer: ReturnType<typeof setInterval> | null = null;
-
-const eraLabel = computed(() => formatTaskTransitionEra(
-  props.eventName,
-  props.startYear,
-  props.endYear,
-));
-const phase = computed(() => taskTransitionPhase(elapsedSeconds.value));
-
-const stopTimer = () => {
-  if (!timer) return;
-  clearInterval(timer);
-  timer = null;
-};
-
-watch(
-  () => props.show,
-  (show) => {
-    stopTimer();
-    elapsedSeconds.value = 0;
-    if (!show || !import.meta.client) return;
-    timer = setInterval(() => {
-      elapsedSeconds.value += 1;
-    }, 1000);
-  },
-  { immediate: true },
-);
-
-onBeforeUnmount(stopTimer);
+const message = computed(() => {
+  if (props.waitingState?.stage === 'failed') return '作答已保存，請通知研究者協助繼續。';
+  if (['preparing_chat', 'ready', 'submitted'].includes(props.waitingState?.stage || '')) return '正在準備接下來的互動，請稍候。';
+  if (props.waitingState?.stage === 'sending') return '正在保存你的回答，請稍候。';
+  return '請稍候，研究者正在確認你的作答。';
+});
 </script>
+
+<style scoped>
+.task-waiting { position: fixed; inset: 0; z-index: 100; overflow-y: auto; background: var(--admin-page); color: var(--admin-text); font-family: var(--font-sans, sans-serif); }
+.task-waiting__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.2rem clamp(1.5rem, 5vw, 5rem); border-bottom: 1px solid var(--admin-border-soft); color: var(--admin-copy); font-size: .85rem; }
+.task-waiting__header span:first-child { font-family: var(--font-serif, serif); color: var(--admin-text); font-size: 1.25rem; }
+.task-waiting__main { min-height: calc(100dvh - 72px); display: grid; place-items: center; padding: 2rem 1.25rem; }
+.task-waiting__card { width: min(100%, 560px); padding: clamp(2rem, 5vw, 3.5rem); text-align: center; background: var(--admin-surface); border: 1px solid var(--admin-border-soft); border-radius: 24px; box-shadow: 0 16px 56px rgba(74, 57, 43, .05), inset 0 1px 0 #ffffffa0; }
+.task-waiting__mark { display: grid; place-items: center; width: 3rem; height: 3rem; margin: 0 auto 1.8rem; border: 1px solid #7d8b7530; border-radius: 50%; background: #7d8b750c; color: #68765e; font-size: 1.4rem; }
+.task-waiting__eyebrow { font-size: .7rem; letter-spacing: .18em; color: var(--admin-coffee); }
+h1 { margin: .8rem 0 1rem; font-size: clamp(1.5rem, 4vw, 1.85rem); font-weight: 600; letter-spacing: .025em; }
+.task-waiting__description { color: var(--admin-copy); font-size: .95rem; line-height: 1.9; }
+.task-waiting__connection { display: flex; justify-content: center; align-items: center; gap: .55rem; margin-top: 2.25rem; padding-top: 1.5rem; border-top: 1px solid var(--admin-border-soft); font-size: .8rem; color: var(--admin-copy); }
+.task-waiting__dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: #7d8b75; }
+.task-waiting__dot.is-offline { background: var(--admin-coffee); }
+.task-waiting__hint { margin-top: .85rem; font-size: .75rem; line-height: 1.8; color: var(--admin-copy); opacity: .8; }
+</style>

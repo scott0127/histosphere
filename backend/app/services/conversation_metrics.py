@@ -66,7 +66,7 @@ def _question_id(message: ChatMessage) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _round_trips(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+def _round_trips(messages: list[ChatMessage], interaction_start: datetime | None = None) -> list[dict[str, Any]]:
     by_id = {message.id: message for message in messages}
     positions = {message.id: index for index, message in enumerate(messages)}
     used_responses: set[str] = set()
@@ -103,6 +103,10 @@ def _round_trips(messages: list[ChatMessage]) -> list[dict[str, Any]]:
         )
         response_at = _response_at(response) if response else None
         preceding_at = _response_at(previous_assistant) if previous_assistant else None
+        if (not result and preceding_at and interaction_start and request_at >= interaction_start
+                and previous_assistant.metadata.get("judgement", {}).get("decision_source") == "human_review"):
+            # A prepared opening is hidden until the learner enters; that waiting is not thinking time.
+            preceding_at = max(preceding_at, interaction_start)
         status = "completed" if response else (
             "failed" if fallback_response or learner.operation_status == "failed" or learner.metadata.get("response_status") == "failed"
             else "pending" if learner.operation_status in {"processing", "pending"}
@@ -137,6 +141,8 @@ def _learning(
 ) -> dict[str, Any]:
     assistant = [message for message in messages if _assistant(message)]
     start = _stamp(session.timer_started_at) if session else None
+    if session and not start and assistant and assistant[0].metadata.get("judgement", {}).get("decision_source") == "human_review":
+        assistant = []
     source = "session_timer" if start else "message_timestamps" if assistant else "unavailable"
     timer_starts = [start] if start else []
     for log in logs:
@@ -270,7 +276,7 @@ def conversation_metrics(
     ai_metrics = [row for message, row in zip(messages, metrics) if _assistant(message)]
     reported = [row for row in ai_metrics if row["total_tokens"] is not None]
     known_tokens = sum(row["total_tokens"] for row in reported)
-    rounds = _round_trips(messages)
+    rounds = _round_trips(messages, _stamp(session.timer_started_at) if session else None)
     return {
         "total_characters": sum(counts.values()), "learner_characters": counts["learner"],
         "assistant_characters": counts["assistant"], "system_characters": counts["system"],

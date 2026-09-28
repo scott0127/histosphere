@@ -15,38 +15,26 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from app.api.deps import get_task_service, require_active_participant_actor, require_session_actor
 from app.core.auth import AuthenticatedActor
 from app.core.learner_task_view import learner_view
+from app.api.state_events import state_event_response
+from app.api.task_processing import PROCESSING_STAGES, schedule_task_processing
 from app.schemas.requests import TaskDraftRequest, TaskSubmitRequest
 from app.schemas.responses import (
     TaskDraftResponse,
     TaskSubmissionAcceptedResponse,
     TaskSubmissionStatusResponse,
+    TaskSubmitResponse,
 )
 from app.services import TaskService
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
-async def _process_and_release(request: Request, service: TaskService, attempt_id: str) -> None:
-    try:
-        await service.process_submission(attempt_id)
-    finally:
-        request.app.state.active_task_attempts.discard(attempt_id)
-
-
-def _schedule_processing(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    service: TaskService,
-    attempt_id: str,
-) -> None:
-    active = getattr(request.app.state, "active_task_attempts", None)
-    if active is None:
-        active = set()
-        request.app.state.active_task_attempts = active
-    if attempt_id in active:
-        return
-    active.add(attempt_id)
-    background_tasks.add_task(_process_and_release, request, service, attempt_id)
+def _owned_attempt(service: TaskService, actor: AuthenticatedActor, attempt_id: str):
+    response = service.submission_status(attempt_id)
+    session = service.repository.get_session(response.attempt.session_id)
+    actor.require_owner(response.attempt.user_id or (session.user_id if session else None))
+    require_session_actor(actor, service.repository, session)
+    return response
 
 
 @router.patch("/{task_id}/draft", response_model=TaskDraftResponse)
@@ -90,29 +78,13 @@ async def submit_task(
     actor: AuthenticatedActor = Depends(require_active_participant_actor),
     service: TaskService = Depends(get_task_service),
 ) -> TaskSubmissionAcceptedResponse:
-    """Queue task judgement and return a persistent polling id immediately.
-
-    完整流程：接收 response_payload → LLM 自動評分（judgement）→
-    建立 TaskAttempt → 建立 Conversation → 產生 greeting 訊息。
-    前端收到回應後即可導向聊天頁。
-
-    Args:
-        task_id: 目標 task 的 UUID。
-        request: 提交請求，包含 session_id、response_payload
-            與可選 user_id。
-        service: 由 Dependency Injection 注入的 TaskService 實例。
-
-    Returns:
-        TaskSubmitResponse: 包含 attempt_id、conversation_id、
-            event、task、personas、condition、attempt、
-            judgement、greeting 與初始 history。
-    """
+    """Persist submission, queue initial judgement, then wait for human review."""
     user_id = actor.resolve_user_id(payload.user_id)
     require_session_actor(actor, service.repository, service.repository.get_session(payload.session_id))
     verified_payload = payload.model_copy(update={"user_id": user_id})
     accepted, _ = service.queue_submission(str(task_id), verified_payload)
-    if accepted.status == "processing":
-        _schedule_processing(http_request, background_tasks, service, accepted.attempt_id)
+    if accepted.status in PROCESSING_STAGES:
+        schedule_task_processing(http_request, service, accepted.attempt_id, background_tasks)
     return accepted
 
 
@@ -125,16 +97,33 @@ def task_submission_status(
     service: TaskService = Depends(get_task_service),
 ) -> TaskSubmissionStatusResponse:
     """Return queued task processing state and the final navigation payload."""
-    response = service.submission_status(str(attempt_id))
-    owner_user_id = response.attempt.user_id
-    session = None
-    if not owner_user_id and response.attempt.session_id:
-        session = service.repository.get_session(response.attempt.session_id)
-        owner_user_id = session.user_id if session else None
-    actor.require_owner(owner_user_id)
-    if response.attempt.session_id and session is None:
-        session = service.repository.get_session(response.attempt.session_id)
-    require_session_actor(actor, service.repository, session)
-    if response.attempt.status == "processing":
-        _schedule_processing(request, background_tasks, service, str(attempt_id))
+    response = _owned_attempt(service, actor, str(attempt_id))
+    if response.attempt.status in PROCESSING_STAGES:
+        schedule_task_processing(request, service, str(attempt_id), background_tasks)
     return learner_view(response)
+
+
+@router.get("/attempts/{attempt_id}/events")
+async def task_submission_events(attempt_id: UUID, request: Request,
+                                 actor: AuthenticatedActor = Depends(require_active_participant_actor),
+                                 service: TaskService = Depends(get_task_service)):
+    response = _owned_attempt(service, actor, str(attempt_id))
+    if response.attempt.status in PROCESSING_STAGES:
+        schedule_task_processing(request, service, str(attempt_id))
+
+    def change_token() -> dict:
+        # No initial verdict, admin draft, feedback or private change history.
+        attempt = service.repository.get_task_attempt(str(attempt_id))
+        return {"attempt_id": str(attempt_id), "stage": attempt.status if attempt else "missing",
+                "version": attempt.updated_at.isoformat() if attempt else ""}
+
+    return state_event_response(request, change_token)
+
+
+@router.post("/attempts/{attempt_id}/enter", response_model=TaskSubmitResponse)
+def enter_interaction(attempt_id: UUID,
+                      actor: AuthenticatedActor = Depends(require_active_participant_actor),
+                      service: TaskService = Depends(get_task_service)) -> TaskSubmitResponse:
+    """Enter only an approved, prepared interaction; starts the timer exactly once."""
+    _owned_attempt(service, actor, str(attempt_id))
+    return learner_view(service.enter_interaction(str(attempt_id)))

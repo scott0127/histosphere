@@ -1,6 +1,6 @@
 # Supabase Public Schema Export
 
-原結構匯出日期：2026-09-04；後測契約說明更新：2026-09-19。本次依 `202609190001_session_posttests.sql` 與目前後端程式補充後測結構，未重新完整匯出 live schema。該 migration 已套用於本機 Supabase，並完成後測儲存、版本衝突、已提交不可更新與匿名存取拒絕的針對性驗證。
+原結構匯出日期：2026-09-04；契約說明更新：2026-09-28。依 `202609190001_session_posttests.sql`、`202609280001_task_human_review.sql` 與目前後端程式補充後測及全題人工審核結構，未重新完整匯出 live schema。兩項 migration 均已套用本機 Supabase；人工審核流程已完成後端測試及實際提交、等待與重啟恢復驗證。
 
 來源：`supabase/migrations/`（schema 單一來源）與 local Supabase Postgres `public` schema。
 
@@ -20,7 +20,7 @@
 | `knowledge_chunks` | 未來 RAG 用知識片段，目前暫緩。 |
 | `event_tasks` | 對話前 task 與 story/question payload。 |
 | `task_blanks` | 未來 blank-level scoring 設計表，目前暫緩。 |
-| `task_attempts` | learner task submission。 |
+| `task_attempts` | learner 作答、初判、人工審核與進入互動的持久化階段。 |
 | `task_answers` | 未來 normalized per-blank answer 表，目前暫緩。 |
 | `personas` | 歷史人物 persona。 |
 | `participants` | 受測者顯示代號、Auth 對應與 condition 指派清單。 |
@@ -37,16 +37,16 @@
 - `knowledge_chunks.embedding` 是 `vector` 型別，但目前 RAG retrieval 仍是空實作。
 - `participants.auth_user_id` 對應 Supabase Auth 使用者。正式 Session 建立時，同時把當下 `participants.id` 凍結到 `experiment_sessions.participant_id`；Auth `user_id` 仍作為請求身分，日後帳號改綁不會改變舊研究紀錄歸屬。Admin test 的 `participant_id` 保持 `NULL`。
 - `participants.condition_list` 以 learner-visible condition code 保存分派條件及 Admin 指定執行順序，例如 `{03,01}` 代表先做 03、再做 01。目前不另建 condition assignment table。
-- 既有 14 張表的 RLS 記錄為 disabled；新表 `session_posttests` 啟用 RLS，並撤銷 `anon`／`authenticated` 的資料表權限。後端仍使用 Supabase service role，並由 FastAPI 驗證受測者與 Session 歸屬，瀏覽器不能直接存取此表。
+- `session_posttests` 與 `task_attempts` 已由各自 migration 啟用 RLS，並撤銷 `anon`／`authenticated` 的資料表權限。後端使用 Supabase service role，由 FastAPI 驗證受測者／Session 歸屬或管理員身分，瀏覽器不能直接讀取審核草稿。
 - `events.archived_at` 是可逆封存旗標。一般 event management 不刪除 event 或其關聯研究資料。
-- `experiment_sessions` timer 欄位在 Task 階段為 `NULL`；Chat 建立後由後端自動開始固定五分鐘倒數，Admin 可在該輪後測尚未開始時重置。
+- `experiment_sessions` timer 欄位在初判、人工審核、開場準備與待進場階段均為 `NULL`；只有受測者 `/enter` 成功後才開始固定五分鐘倒數，Admin 可在該輪後測尚未開始時重置。
 - `experiment_sessions.is_admin_test` 明確區分 Admin 驗證與正式受測 Session；Admin test 不進入 learner 進度或正式研究匯出。
 - `events.materials_locked_at` 為最低限度素材鎖定；只有鎖定事件可供 learner 開始，鎖定期間禁止編輯 Event、Task 與 Persona。
-- `task_attempts.status` 支援 `in_progress`、`processing`、`submitted`、`failed`，供非同步 task submit 與 polling 使用。
+- `task_attempts.status` 依序為 `in_progress` → `processing` → `awaiting_review` → `preparing_chat` → `ready` → `submitted`；初判／開場失敗另記 `failed`。`submitted_at` 是受測者送出時間，`submitted` 階段則代表已進入互動，兩者不可混用。
 - `task_attempts.session_id` 與 `conversations.session_id` 都有 unique index；一個 Session 最多各有一筆作答與一個對話。
 - `session_posttests.session_id` 也唯一；`experiment_sessions.status='completed'` 只表示本輪對話已結束，不代表後測已提交。後測需另有 `stage='completed'` 與 `submitted_at`，才能解鎖下一個已指派條件。
 - 四個研究事件的 canonical Error-Elicitation Task 由 `supabase/content/error-elicitation-reading-tasks.json` 管理，migration/seed 只新增缺少的 authoring version，不改寫舊 Task、作答或對話。
-- Runtime safety、chat operation、persona 生命週期、研究完整性與 Admin test 分類由既有 migrations 增量建立；`202609190001_session_posttests.sql` 另新增後測資料表，不回填或改寫既有 Session、作答與對話。
+- Runtime safety、chat operation、persona 生命週期、研究完整性與 Admin test 分類由既有 migrations 增量建立；後測 migration 新增資料表，人工審核 migration 增加 Attempt 欄位、保護 trigger 與進場 RPC，不補做或改寫舊活動的人工判定。
 
 ### Placeholder Posttest Contract
 
@@ -61,9 +61,12 @@
 
 - `event_tasks.evaluation_payload.questions[]` 保存三種客觀題、正解與研究者的 `reasoning_criteria`。
 - `task_attempts.response_payload` 保存每題 learner 的 `value` 與 `rationale` 原文。
-- 新判題的 `task_attempts.judgement_payload` 使用 `error_elicitation_judge_v4`：選擇／是非由 backend 判答案；填空答案與所有理由合併在一次 LLM 呼叫。保存 `answer_correct`、`reasoning_correct`、填空 `answer_feedback`、`reasoning_feedback` 與描述性 HT tags，不再輸出 factual/reasoning issue 分類。
+- 初判保存在 `ai_judgement_payload`，使用 `error_elicitation_judge_v4`：選擇／是非由 backend 判答案；填空答案與所有理由合併在一次 LLM 呼叫。保存 `answer_correct`、`reasoning_correct`、填空 `answer_feedback`、`reasoning_feedback` 與描述性 HT tags，不再輸出 factual/reasoning issue 分類或 EET `score`。
 - `correct_answer` 可含參考別名，但不是填空等義答案的窮舉表。輸入原文保留；缺少必要判定或格式錯誤是 processing failure，不是 learner incorrect。
-- 本次只改既有 JSONB 內容契約，沒有新增表或欄位。已提交舊結果不重判；pending 重用要求相同輸入 hash 與 v4。詳細責任見 [architecture](architecture.md#error-elicitation-task-與-judge)。
+- `review_payload.question_results[]` 保存每題確認狀態、答案／理由對錯、研究者修訂說明與改判原因；核准時加入 `approved_at`、`reviewer_id`。`judgement_payload` 在核准前保持空物件，核准後保存最終逐題判定及 `decision_source=human_review`；後續互動只採用此結果。既有舊結果不自動重判或補做審核。
+- 每次存稿／核准遞增 `review_version`；Repository 同時以 Attempt ID、原版本及 `status=awaiting_review` 作條件更新（CAS），衝突回傳 409。保存的是當前草稿及凍結初判／最終稿，不是每次文字修改的版本歷史。
+- `pipeline_error` 保存失敗階段、通用訊息、錯誤類型及時間。重試依是否已核准回到初判或開場；已存初判與開場可重用。DB 是恢復依據，SSE 僅通知快照變更，不另建訊息佇列或 Redis 訂閱資料。
+- Learner API 清空初判與人工審核 payload，只有 `ready`／`submitted` 提供經過濾的最終對錯，不傳改判原因或私有診斷；進場前仍不開放對話。詳細責任見 [architecture](architecture.md#error-elicitation-task-與-judge)。
 - `messages.metadata` 沿用既有 JSONB 保存答案審查、交付及其用量；計時後重述放 `research_logs`，不另建審查或收尾資料表。
 - 每題僅有 `correct`／`incorrect`；只有答案和理由都正確才通過。
 
@@ -285,6 +288,10 @@
 | 9 | `submitted_at` | `timestamp with time zone` | YES |  |
 | 10 | `created_at` | `timestamp with time zone` | YES | `now()` |
 | 11 | `updated_at` | `timestamp with time zone` | YES | `now()` |
+| 12 | `ai_judgement_payload` | `jsonb` | NO | `'{}'::jsonb` |
+| 13 | `review_payload` | `jsonb` | NO | `'{}'::jsonb` |
+| 14 | `review_version` | `integer` | NO | `0` |
+| 15 | `pipeline_error` | `jsonb` | NO | `'{}'::jsonb` |
 
 ### `task_blanks`
 
@@ -345,7 +352,7 @@ All public tables use `id uuid` as primary key:
 
 | Table | Constraint |
 | --- | --- |
-| `task_attempts` | `status IN ('in_progress', 'processing', 'submitted', 'failed')` |
+| `task_attempts` | `status IN ('in_progress', 'processing', 'awaiting_review', 'preparing_chat', 'ready', 'submitted', 'failed')`；`review_version >= 0` |
 | `experiment_conditions` | fixed 2×2 mapping between `condition_key`, EBL, Role-play, agent mode and response policy |
 | `session_posttests` | `instrument_version = 'posttest_placeholder_v1'`；`is_placeholder = true` |
 | `session_posttests` | `stage IN ('engagement', 'hat', 'completed')`；`revision >= 0` |
@@ -353,6 +360,14 @@ All public tables use `id uuid` as primary key:
 | `session_posttests` | `(stage = 'completed') = (submitted_at IS NOT NULL)` |
 
 `protect_submitted_posttest` 為 `session_posttests` 的 `BEFORE UPDATE` trigger，呼叫同名函式；當舊紀錄 `stage='completed'` 時拒絕所有更新，即使寫入者持有 service role。它不是刪除保護 trigger；目前後測 API 沒有刪除操作。
+
+`protect_task_review_checkpoints` 為 `task_attempts` 的 `BEFORE UPDATE` trigger：初判非空後不得改寫；`review_payload` 含 `approved_at` 後不得改寫審核稿或最終判定；`submitted_at` 非空後不得改寫作答。這些限制同樣作用於 service role 更新，不是刪除保護。
+
+### 進入互動 RPC
+
+`start_task_interaction(p_attempt_id uuid, p_duration_minutes integer)` 在同一 transaction 鎖定 Attempt 與 Session，只接受 `ready`／`submitted`、未關閉活動，以及已存在的對話開場；`ready` 另外要求已人工核准。成功時將 Attempt 設為 `submitted`、Session 設為 `conversation_started`，以 `COALESCE` 首次寫入起訖時間，重複進場不重新倒數。呼叫端固定傳入五分鐘；原子進場不等同於多 worker 背景工作領取機制。
+
+RPC 的 `PUBLIC`、`anon`、`authenticated` 執行權限已撤銷，只授予 `service_role`；受測者透過 FastAPI `/enter` 的身分與歸屬驗證使用它。
 
 ### Foreign Keys
 
@@ -450,8 +465,8 @@ All public tables use `id uuid` as primary key:
 
 ## RLS Status
 
-既有 14 張表沿用原匯出的 `relrowsecurity=false`、`relforcerowsecurity=false` 記錄；本次沒有重新逐表查詢。
+`session_posttests`、`task_attempts` 由各自 migration 啟用 RLS，未啟用 FORCE RLS，也未建立供 `anon`／`authenticated` 使用的 policies；這兩個角色的表權限另被全部撤銷。其餘 13 張表沿用原匯出的 RLS disabled 記錄，本次沒有重新逐表匯出。
 
-新表 `session_posttests` 由 migration 啟用 RLS，未啟用 FORCE RLS，也未建立供 `anon`／`authenticated` 使用的 policies；這兩個角色的表權限另被全部撤銷。Migration 明確授予 service role `SELECT`、`INSERT`、`UPDATE`，不宣稱撤銷該角色可能已有的其他 default privileges。
+後測 migration 明確授予 service role `SELECT`、`INSERT`、`UPDATE`；人工審核 migration 對 `task_attempts` 授予 `SELECT`、`INSERT`、`UPDATE`、`DELETE`。不把 RLS 描述成 service role 的讀寫限制，已核准資料的更新保護由 trigger 負責。
 
-後測請求經 FastAPI 的 active participant／Session owner 驗證，或沿用管理員驗證；DB 由 service role 存取。新增 RLS 並不取代後端的歸屬、階段與版本驗證。
+後測與作答請求經 FastAPI 的 active participant／Session owner 驗證，人工審核及監測路由需管理員驗證；DB 由 service role 存取。RLS 不取代後端的歸屬、階段、全題審核與版本驗證。

@@ -23,11 +23,11 @@ const fileEnv = parseEnvFile('.env');
 const env = { ...fileEnv, ...process.env };
 const supabaseUrl = env.SCHEMA_SUPABASE_URL || env.VITE_SUPABASE_URL || env.SUPABASE_URL;
 const supabaseKey = env.SCHEMA_SUPABASE_KEY
-  || env.VITE_SUPABASE_ANON_KEY
-  || env.SUPABASE_ANON_KEY
   || env.SUPABASE_SERVICE_ROLE_KEY
   || env.SUPABASE_KEY_service_role
-  || env.SUPABASE_KEY;
+  || env.SUPABASE_KEY
+  || env.VITE_SUPABASE_ANON_KEY
+  || env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error('缺少 Supabase URL 或 key，無法執行唯讀 schema 檢查。');
@@ -45,7 +45,7 @@ const expectedSchema = {
   participants: ['id', 'code', 'auth_user_id', 'condition_list', 'status'],
   research_logs: ['id', 'session_id', 'user_id', 'action_type', 'payload'],
   task_answers: ['id'],
-  task_attempts: ['id', 'task_id', 'session_id', 'user_id', 'status', 'response_payload'],
+  task_attempts: ['id', 'task_id', 'session_id', 'user_id', 'status', 'response_payload', 'ai_judgement_payload', 'review_payload', 'review_version', 'pipeline_error'],
   task_blanks: ['id'],
   wiki_sources: ['id', 'event_id'],
 };

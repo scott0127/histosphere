@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { errorElicitationTask as task } from './student-task.test.mjs';
 
 const logic = await globalThis.loadTsModule('composables/useStudentTask.ts');
+const waiter = await globalThis.loadTsModule('utils/taskSubmissionWaiter.ts');
 const dataUrl = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const delegates = (names, area) => dataUrl(names.map((name) => `export const ${name} = (...args) => globalThis.__taskGateTest.${area}.${name}(...args);`).join('\n'));
 const source = await readFile('composables/useTaskGate.ts', 'utf8');
@@ -13,7 +14,8 @@ const compiled = ts.transpileModule(source, {
 }).outputText
   .replaceAll("'vue'", JSON.stringify(import.meta.resolve('vue')))
   .replaceAll("'~/composables/useStudentTask'", JSON.stringify(delegates(['buildTaskResponsePayload', 'isTaskAnswerComplete', 'normalizeTaskQuestions', 'restoreTaskAnswers'], 'logic')))
-  .replaceAll("'~/utils/histosphereApi'", JSON.stringify(delegates(['fetchSessionState', 'fetchTaskSubmissionStatus', 'saveTaskDraft', 'submitTaskAnswers'], 'api')));
+  .replaceAll("'~/utils/histosphereApi'", JSON.stringify(delegates(['fetchSessionState', 'fetchTaskSubmissionStatus', 'saveTaskDraft', 'submitTaskAnswers', 'enterTaskInteraction', 'learnerAuthHeaders'], 'api')))
+  .replaceAll("'~/utils/taskSubmissionWaiter'", JSON.stringify(delegates(['waitForReviewedTask'], 'waiter')));
 const { useTaskGate } = await import(dataUrl(compiled));
 
 const payload = (answers = []) => ({ contract_version: 'error_elicitation_v1', answers });
@@ -39,7 +41,7 @@ const deferred = () => {
 const flush = async () => { await nextTick(); await new Promise(setImmediate); await nextTick(); };
 
 const withGate = async (options, run) => {
-  const previous = Object.fromEntries(['window', 'useState', 'navigateTo', '__taskGateTest', 'setTimeout', 'clearTimeout'].map((key) => [key, globalThis[key]]));
+  const previous = Object.fromEntries(['window', 'useState', 'navigateTo', '__taskGateTest', 'setTimeout', 'clearTimeout', 'fetch'].map((key) => [key, globalThis[key]]));
   const storage = options.storage || memoryStorage();
   const state = options.state || stateFor();
   const states = new Map();
@@ -55,7 +57,10 @@ const withGate = async (options, run) => {
   globalThis.navigateTo = async (route) => { calls.navigation.push(route); };
   globalThis.setTimeout = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; };
   globalThis.clearTimeout = (id) => timers.delete(id);
-  globalThis.__taskGateTest = { logic, api: {
+  globalThis.fetch = async () => { throw new Error('SSE offline fixture'); };
+  globalThis.__taskGateTest = { logic, waiter, api: {
+    learnerAuthHeaders: () => ({}),
+    enterTaskInteraction: async () => ({ conversation_id: 'conversation-a', judgement: {} }),
     fetchSessionState: options.fetchState || (async () => state),
     saveTaskDraft: async (taskId, input) => {
       calls.drafts.push({ taskId, ...structuredClone(input) });
@@ -219,13 +224,15 @@ test('task gate recovers newer edits when reloaded before an older autosave ackn
   });
 });
 
-test('task gate preserves local and in-memory answers when processing fails instead of grading them wrong', async () => {
+test('task gate keeps submitted answers locked when processing fails while awaiting researcher retry', async () => {
   await withGate({ submissionStatus: { attempt: { status: 'failed' }, error: 'Processing unavailable' } }, async ({ gate, storage, calls }) => {
     gate.answers.value = logic.restoreTaskAnswers(task, payload(complete()));
-    await gate.submitTask();
-    assert.equal(gate.submitError.value, 'Processing unavailable');
+    void gate.submitTask();
+    await flush();
+    assert.equal(gate.waitingState.value.stage, 'failed');
     assert.equal(gate.judgement.value, null);
-    assert.equal(gate.canSubmit.value, true);
+    assert.equal(gate.canSubmit.value, false);
+    assert.equal(gate.isSubmitting.value, true);
     assert.equal(gate.answers.value[2].value, false);
     assert.equal(JSON.parse(storage.getItem(keyFor())).responsePayload.answers[2].rationale, 'Third rationale');
     assert.equal(calls.navigation.length, 0);

@@ -5,6 +5,7 @@ import pytest
 from app.core.error_elicitation_contract import ERROR_ELICITATION_CONTRACT_VERSION
 from app.models.domain import ChatMessage, utc_now
 from app.schemas.requests import TaskSubmitRequest
+from tests.task_review_helpers import review_and_enter
 
 
 ADMIN_HEADERS = {"x-admin-key": "test-admin"}
@@ -41,12 +42,7 @@ def submit_and_poll(client, initialized):
         },
     )
     assert accepted.status_code == 202
-    status_response = client.get(accepted.json()["poll_url"])
-    assert status_response.status_code == 200
-    payload = status_response.json()
-    assert payload["attempt"]["status"] == "submitted"
-    assert payload["result"]
-    return payload["result"]
+    return review_and_enter(client, accepted.json())
 
 
 def test_learner_may_only_reuse_assigned_existing_material(client):
@@ -147,10 +143,15 @@ def test_task_submission_is_persisted_and_polled(client):
 
     duplicate = client.post(
         f"/api/tasks/{initialized['task']['id']}/submit",
-        json={"session_id": initialized["session_id"], "response_payload": {"answer_text": "重送"}},
+        json={"session_id": initialized["session_id"], "response_payload": {"answer_text": "測試回答"}},
     )
     assert duplicate.status_code == 202
     assert duplicate.json()["attempt_id"] == submitted["attempt_id"]
+    changed = client.post(
+        f"/api/tasks/{initialized['task']['id']}/submit",
+        json={"session_id": initialized["session_id"], "response_payload": {"answer_text": "重送且變更答案"}},
+    )
+    assert changed.status_code == 409
 
 
 @pytest.mark.parametrize("version_location", ["task", "response"])
@@ -201,8 +202,9 @@ def test_processing_attempt_is_recovered_by_polling_after_worker_loss(client):
 
     recovered = client.get(accepted.poll_url)
     assert recovered.status_code == 200
-    assert recovered.json()["attempt"]["status"] == "submitted"
-    assert recovered.json()["result"]
+    assert recovered.json()["attempt"]["status"] == "awaiting_review"
+    assert recovered.json()["result"] is None
+    assert review_and_enter(client, accepted.model_dump())["conversation_id"]
 
 
 def test_chat_uses_database_backed_multi_turn_history(client):

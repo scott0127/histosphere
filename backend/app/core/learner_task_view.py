@@ -102,7 +102,12 @@ def learner_view(value: T) -> T:
         })
     if isinstance(value, TaskAttempt):
         return value.model_copy(deep=True, update={
-            "judgement_payload": learner_judgement(value.judgement_payload),
+            "judgement_payload": learner_judgement(value.judgement_payload)
+            if value.status in {"ready", "submitted"} else {},
+            "ai_judgement_payload": {},
+            "review_payload": {},
+            "review_version": 0,
+            "pipeline_error": _pick(value.pipeline_error, {"stage", "message"}),
         })
     if isinstance(value, ChatMessage):
         return value.model_copy(deep=True, update={

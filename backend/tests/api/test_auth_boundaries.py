@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.core import config
 from app.models.domain import Participant
+from tests.task_review_helpers import review_and_enter
 
 
 def _admin_initialize(client: TestClient, event_name: str = "JWT 身分邊界測試") -> dict:
@@ -112,9 +113,8 @@ def test_jwt_blocks_cross_account_conversation_reads_and_chat_writes(client):
         },
     )
     assert submitted.status_code == 202
-    completed = client.get(submitted.json()["poll_url"])
-    assert completed.status_code == 200
-    conversation_id = completed.json()["result"]["conversation_id"]
+    result = review_and_enter(client, submitted.json())
+    conversation_id = result["conversation_id"]
     owner_chat = client.post(
         "/api/chat",
         json={
@@ -168,9 +168,7 @@ def test_rebound_auth_user_cannot_access_session_frozen_to_previous_participant(
         },
     )
     assert submitted.status_code == 202
-    completed = client.get(submitted.json()["poll_url"])
-    assert completed.status_code == 200
-    result = completed.json()["result"]
+    result = review_and_enter(client, submitted.json())
 
     repository = client.app.state.repository
     original = repository.get_participant_by_auth_user("participant-001")

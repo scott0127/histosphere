@@ -155,6 +155,15 @@
                 <p class="participant-record-meta">{{ sessionTimerLabel(item.session) }}</p>
               </div>
               <div class="participant-record-actions">
+                <NuxtLink
+                  v-if="item.session.status !== 'archived'"
+                  :to="{ path: '/admin-monitor', query: { session: item.session.id } }"
+                  class="admin-button-secondary participant-record-button inline-flex items-center gap-2"
+                  :aria-label="`監測 ${row.participant.code} ${item.eventName} 的施測與審核`"
+                >
+                  <Icon name="mdi:eye-outline" class="h-4 w-4" />
+                  施測監測
+                </NuxtLink>
                 <button
                   type="button"
                   class="admin-button-primary participant-record-button"

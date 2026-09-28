@@ -1,6 +1,6 @@
 # 系統技術架構
 
-更新日期：2026-09-06。依目前工作樹核對，不代表已部署或完成正式收案驗收。
+更新日期：2026-09-28。依目前工作樹核對，不代表已部署或完成正式收案驗收。
 
 本文件是前後端責任、API 與 runtime 契約的技術基準。入門看[工程交接手冊](backend-database-handbook.html)，研究介入看[介入規格](ebl-historical-roleplay-intervention-design.md)，待決事項只在[研究 backlog](research-experiment-backlog.md)維護。
 
@@ -18,7 +18,7 @@
 | `supabase/migrations/` | 唯一 migration 來源；不維護 backend SQL 副本。 |
 | `supabase/content/error-elicitation-reading-tasks.json` | 四事件人工整理的閱讀題組版本。 |
 
-Supabase 保存研究資料，Prompt 政策由後端程式控管。正式 runtime 使用 Supabase；`in_memory` 只供明確開啟的測試。單機背景工作配合持久化狀態，不引入 Redis/Celery 或多機 claim 平台。
+Supabase 保存研究資料，Prompt 政策由後端程式控管。正式 runtime 使用 Supabase；`in_memory` 只供明確開啟的測試。Task 背景工作目前以單一後端 worker 執行，配合持久化階段與程序內重複工作保護；多台瀏覽器可連同一伺服器，但不支援多 worker 同時領取工作。不使用 Redis/Celery。
 
 ## 正式流程與權限
 
@@ -27,8 +27,10 @@ Admin 審查並鎖定事件、Task、唯一啟用人物
 → 綁定 Participant Auth 帳號，分派有順序的 Conditions
 → Learner JWT 登入，開始或恢復同一 Session
 → Error-Elicitation Task：閱讀材料，每題回答案與理由
-→ 202 + attempt_id；背景判題與生成開場
-→ Chat 可用才開始五分鐘倒數
+→ 202 + attempt_id；保存作答，背景產生初判
+→ 研究者在施測監測頁逐題核對，包括初判正確的題目
+→ 全題確認並核准最終結果，才生成並保存開場
+→ Learner 自動進入 Chat；進入請求成功時才開始五分鐘倒數
 → 到期停止 Chat；02/04 有已談到的未完成目標時進入收尾
 → 顯示該題修正與理由，重述一次，再進下一階段
 ```
@@ -55,10 +57,11 @@ Admin 審查並鎖定事件、Task、唯一啟用人物
 
 | 項目 | 判定者 | 規則 |
 | --- | --- | --- |
-| 選擇／是非答案 | Backend | 依選項值或 Boolean 確定對錯，不讓 LLM 改判。 |
-| 填空答案 | LLM | 依題意、材料及參考正解作語意判定，接受等義名稱、改寫與句末標點。 |
-| 所有題目的理由 | 同一次 LLM 呼叫 | 依研究者的通過標準判定；指出具體問題，不要求說出 HT 術語。 |
-| 最終二分結果 | Backend | `answer_correct && reasoning_correct` 才是 `correct`。 |
+| 選擇／是非答案初判 | Backend | 依選項值或 Boolean 確定對錯，不讓 LLM 改寫初判。 |
+| 填空答案初判 | LLM | 依題意、材料及參考正解作語意判定，接受等義名稱、改寫與句末標點。 |
+| 所有題目的理由初判 | 同一次 LLM 呼叫 | 依研究者的通過標準判定；指出具體問題，不要求說出 HT 術語。 |
+| 每題最終答案與理由判定 | 研究者 | 全題核對，可保留或改判；改判須記錄原因並修訂對應說明。 |
+| 最終二分結果 | Backend | 以研究者核准的 `answer_correct && reasoning_correct` 重算 `correctness` 與整體 `result`。 |
 
 參考正解不是窮舉白名單。LLM 不能用理由替學習者改寫答案，也不能把錯誤人物、否定或互相矛盾的答案當成等義。填空答案與所有理由合併在原本一個 structured completion 中，不逐題增加呼叫。
 
@@ -76,15 +79,29 @@ Admin 審查並鎖定事件、Task、唯一啟用人物
 }
 ```
 
-`answer_feedback` 是填空的判定說明；選擇／是非為 `null`。新版不再輸出 `factual_error`／`reasoning_error` 分類。HT tags 只是描述，不參與計分，也不是 Historical Thinking outcome。
+初判的 `answer_feedback` 是填空判定說明，選擇／是非初判為 `null`；研究者修改答案判定時須補寫相應說明。「理由判定說明」由 LLM 的 `reasoning_feedback` 預填，可由研究者修訂；後續 AI 使用核准版本。新版不再輸出 `factual_error`／`reasoning_error` 分類，也不保留 EET `score`。HT tags 只是描述，不參與計分，也不是 Historical Thinking outcome。
 
 ### 持久化、恢復與資訊邊界
 
-`in_progress → processing → submitted`；模型或契約失敗記為 `failed`，不能轉成學生 `incorrect`。原作答保留，可重試。單機 processing 工作可由 polling 重掛，並以 process-local guard 避免重複工作。
+```text
+in_progress → processing → awaiting_review → preparing_chat → ready → submitted
+                初判          全題人工核對       生成開場      待進場    已進入互動
+```
 
-成功判題但開場失敗時，只有輸入 hash 及 Judge v4 都一致才重用 pending judgement。已完成的舊 Attempt 不自動重判；舊契約讀取相容不表示舊判分已換成 v4。這次沒有新增資料表或 schema migration。
+- `TaskService` 處理送出、查詢與進入；`TaskPipeline` 只執行初判或開場的下一個持久化階段；`TaskReviewService` 處理草稿與核准。模型／契約失敗記為 `failed` 及 `pipeline_error`，不算學生答錯。
+- `ai_judgement_payload` 保存不可覆寫的初判；`review_payload` 保存逐題草稿、確認狀態、改判原因及核准資訊；核准後才寫 `judgement_payload` 最終結果。`review_version` 搭配預期版本條件更新，過期視窗回傳 409，不靜默覆寫。
+- 核准要求每題確認、必要說明完整；變更對錯時必須記錄改判原因，並修訂相應說明。資料庫 trigger 保護已送出答案、已保存初判與已核准稿；原始初判不被研究者改寫。
+- 瀏覽器或伺服器中斷後，重新載入依 DB 階段恢復。`processing`／`preparing_chat` 可重掛；`awaiting_review` 保留已儲存草稿並繼續等待；`ready` 沿用已保存開場。失敗重試會根據是否已核准恢復初判或開場，已保存的初判不再呼叫 LLM；尚未保存的模型呼叫可能重跑。舊 `submitted` 紀錄保持相容，不補做人工審核。
+- `ready` 尚不啟動計時或開放 Chat。受測者的 `/enter` 請求透過 `start_task_interaction` DB transaction 鎖定 Attempt 與 Session，確認開場存在後，原子地轉成 `submitted` 並首次設定五分鐘倒數；重送不重置時間。初判、人工核對與開場等待均不算互動時間。
+- 凍結的最終逐題判定供私有 Prompt 使用。02/04 據此處理錯誤；01/03 作為背景。Learner API 一律清空初判、審核草稿與改判原因；只有 `ready`／`submitted` 提供經過濾的最終對錯，進場前不提供 Conversation ID／歷史。最終結果仍移除正解、標準及判定說明等私有診斷。
 
-凍結的逐題答案、理由、判定說明、標準及材料供後續私有 Prompt 使用。02/04 據此處理答案錯或理由錯；01/03 當背景，不強制 EBL。Learner 回應移除正解、標準、`answer_feedback`、`reasoning_feedback` 等私有診斷；Admin 可讀完整資料。
+### 管理員監測與 SSE
+
+管理員從受測者的活動紀錄開啟 `/admin-monitor?session=…`，可在另一台電腦以管理員身分監測同一 Session 的作答、人工核對、互動及後續評量。審核 UI 顯示原作答、初判與可編輯最終判定，不顯示「評判依據」區塊；資料庫的判準仍保留供判題與研究使用。
+
+監測頁與受測者等待頁使用 SSE **變更通知**：後端每秒比較 DB 快照，首次連線與變更時通知前端重新讀取當前狀態；有 heartbeat，定期斷開重連以重新驗證身分。不是 Redis pub/sub 或事件重播；即使漏掉通知，也能從 DB 最新階段恢復。受測者等待頁另每 15 秒同步一次作為備援。管理員 SSE 需 Admin key；受測者 SSE 驗證歸屬，事件只含 Attempt ID、階段與版本，不含審核內容。
+
+畫面將流程合併為「作答 → 人工核對 → AI 互動 → 後續評量」；較細的初判、準備與待進場狀態仍由後端保存，供恢復與故障重試。
 
 ## Prompt 組裝
 
@@ -144,9 +161,9 @@ before_delivery → 候選先審查
 
 `learning_focus.py` 決定目前題目；前端 `StudySplitView.vue` 把閱讀材料／當前題目與聊天分開，桌面可拖曳調整比例。01/03 不冒充正在處理某個 EBL 錯誤。四組可查看共用固定材料；圖片給 Learner 看，LLM 未接收圖片像素，只取得相關文字。
 
-計時以後端 `timer_ends_at` 為準。刷新、重開不重置；Admin 可 reset timer。到期未完成的 EBL **已談到的目前題目**，由 `SessionService._closure` 取凍結正解和 `source_text` 修正說明，不另呼叫 LLM、不公布未談過的題目。重述保存為 `session_closure_restatement`、`independent_mastery=false`，不新增聊天回合或算進五分鐘；缺少完整修正資料回報需研究員協助，不猜答案。
+計時以後端 `timer_ends_at` 為準，自受測者進場起算。刷新、重開不重置；Admin 可 reset timer。到期未完成的 EBL **已談到的目前題目**，由 `SessionService._closure` 取凍結正解和 `source_text` 修正說明，不另呼叫 LLM、不公布未談過的題目。重述保存為 `session_closure_restatement`、`independent_mastery=false`，不新增聊天回合或算進五分鐘；缺少完整修正資料回報需研究員協助，不猜答案。
 
-前端流程責任：`useExperimentSession` 管初始化／恢復，`useTaskGate` 管草稿／提交／polling，`useConversationSession` 管載入／SSE／重試，`useAdminWorkspace` 管管理資料。
+前端流程責任：`useExperimentSession` 管初始化／恢復，`useTaskGate` 與 `taskSubmissionWaiter` 管草稿／提交／等待與進場，`useConversationSession` 管 Chat 載入／SSE／重試，`useAdminWorkspace` 管管理資料，`useAdminMonitor` 管施測監測與審核，`sessionEventStream` 共用階段變更通知與重連。
 
 ## API 索引
 
@@ -157,10 +174,11 @@ before_delivery → 候選先審查
 | Catalog | `GET /health`、`GET /api/conditions`、`GET /api/events`、`GET /api/personas`、`POST /api/event/check` |
 | 初始化／受測者 | `POST /api/event/initialize`、`GET /api/participants/me` |
 | Session | `GET /api/sessions/progress`、`GET /api/sessions/{session_id}/state`、`POST /api/sessions/{session_id}/closure` |
-| Task | `PATCH /api/tasks/{task_id}/draft`、`POST /api/tasks/{task_id}/submit`、`GET /api/tasks/attempts/{attempt_id}` |
+| Task | `PATCH /api/tasks/{task_id}/draft`、`POST /api/tasks/{task_id}/submit`、`GET /api/tasks/attempts/{attempt_id}`、`GET /api/tasks/attempts/{attempt_id}/events`、`POST /api/tasks/attempts/{attempt_id}/enter` |
 | Conversation | `POST /api/conversations`（相容入口）、`GET /api/conversations/{conversation_id}` |
 | Chat | `POST /api/chat`、`POST /api/chat/stream`、`GET /api/chat/operations/{client_request_id}` |
 | Admin | `/api/admin/*`：snapshot、participants、events、tasks、personas、conditions、prompt-preview／dry-run、sessions timer／restart、research logs／replay／export |
+| 施測監測／人工審核 | `GET /api/admin/monitor/sessions/{session_id}`、`GET /api/admin/monitor/sessions/{session_id}/events`、`PATCH /api/admin/monitor/attempts/{attempt_id}/review`、`POST /api/admin/monitor/attempts/{attempt_id}/approve`／`retry` |
 | 全域 LLM 用量 | `GET /api/admin/llm-usage`，同樣需 `x-admin-key`。 |
 
 公開事件清單只帶 Task 摘要，不含文章、題目與正解；Learner Task／Conversation 依階段過濾，Admin snapshot 保留完整資料。Persona 的新增／編輯／DELETE 相容路由有 Admin 保護，DELETE 是封存。背景圖重新生成的空端點不再是正式功能。
@@ -178,12 +196,6 @@ before_delivery → 候選先審查
 
 ## 驗證紀錄與限制
 
-2026-09-06 填空 Judge v4 改動後，前一輪執行的範圍：
+2026-09-28 人工核對流程：完整後端測試 **533 passed**，涵蓋全題核准、改判、過期草稿、受測者隔離、SSE 重連、階段恢復及進場計時。`202609280001_task_human_review.sql` 已套用本機 Supabase，schema smoke 通過；實際帳號與 LLM 已驗證送出後停在人工核對、審核草稿重載與伺服器重啟恢復，以及全題核准後自動進場。實測倒數起點晚於核准，重新載入不改變原到期時間。
 
-- 聚焦後端回歸：362 passed；既有 4 則 HTTP 422 deprecation warnings。
-- 前端單元測試：101 passed。該次未重跑 Nuxt build。
-- 單次真實 Terra low，法國大革命同一題四個判例：句末標點、等義改寫均通過；錯誤材料不通過；答案對但理由錯仍為 incorrect。
-- 3,762 tokens，8.449 秒，估算 US$0.013694；用量帳本 correlation ID：`ec42f8e7-4896-4f1b-9049-49708627f092`。
-- 無 DB 寫入、無重試。這是小樣本，不是正式判分信效度或完整四事件驗收。
-
-本輪僅同步文件；沒有重跑上述程式測試或新增付費呼叫。之後修改判題應更新既有測試，不重複建立同樣測試。正式材料、Judge 抽樣複核、人物時間界線與 HAT 設計仍見 backlog。
+以上是工程流程驗證，不是 Judge 的判分信效度或正式收案驗收，也未宣稱完成兩台實體電腦的網路驗收。正式材料、判定基準的專家審視、人物時間界線與 HAT 設計仍見 backlog。

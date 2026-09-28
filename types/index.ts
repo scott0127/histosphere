@@ -191,7 +191,7 @@ export interface TaskAttempt {
   event_id: string;
   session_id?: string | null;
   user_id?: string | null;
-  status: 'in_progress' | 'processing' | 'submitted' | 'failed';
+  status: 'in_progress' | 'processing' | 'awaiting_review' | 'preparing_chat' | 'ready' | 'submitted' | 'failed';
   response_payload: Record<string, unknown>;
   judgement_payload: Record<string, unknown>;
   submitted_at?: string | null;
