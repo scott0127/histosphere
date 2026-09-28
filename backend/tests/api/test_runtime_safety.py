@@ -557,7 +557,7 @@ def test_chat_rejects_missing_session_or_condition_without_falling_back(client):
     assert len(client.app.state.llm_provider.chat_prompts) == prompt_count
 
 
-def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client):
+def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client, monkeypatch):
     initialized = admin_initialize(client, "計時器測試")
     session_id = initialized["session_id"]
     original = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
@@ -571,25 +571,28 @@ def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client):
     assert started["timer_ends_at"]
     started_at = datetime.fromisoformat(started["timer_started_at"].replace("Z", "+00:00"))
     ends_at = datetime.fromisoformat(started["timer_ends_at"].replace("Z", "+00:00"))
-    assert (ends_at - started_at).total_seconds() == 300
+    assert (ends_at - started_at).total_seconds() == 600
 
-    # 重整只讀取同一截止時間，不能重新給受測者五分鐘。
+    # 重整只讀取同一截止時間，不能重新給受測者十分鐘。
     reloaded = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert reloaded["timer_started_at"] == started["timer_started_at"]
     assert reloaded["timer_ends_at"] == started["timer_ends_at"]
 
-    invalid_duration = client.post(
-        f"/api/admin/sessions/{session_id}/timer",
-        headers=ADMIN_HEADERS,
-        json={"duration_minutes": 30},
-    )
-    assert invalid_duration.status_code == 422
+    for duration in (5, 30):
+        invalid_duration = client.post(
+            f"/api/admin/sessions/{session_id}/timer",
+            headers=ADMIN_HEADERS,
+            json={"duration_minutes": duration},
+        )
+        assert invalid_duration.status_code == 422
 
-    repository = client.app.state.repository
-    session = repository.get_session(session_id)
-    session.timer_ends_at = utc_now() - timedelta(seconds=1)
-    repository.save_session(session)
-    assert client.app.state.session_service.expire_due_sessions() == 1
+    with monkeypatch.context() as timer_clock:
+        timer_clock.setattr("app.services.session_runtime.utc_now", lambda: started_at + timedelta(seconds=599))
+        assert client.app.state.session_service.expire_due_sessions() == 0
+        active = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
+        assert active["status"] == "conversation_started"
+        timer_clock.setattr("app.services.session_runtime.utc_now", lambda: ends_at)
+        assert client.app.state.session_service.expire_due_sessions() == 1
 
     completed = client.get(f"/api/sessions/{session_id}/state", headers=ADMIN_HEADERS).json()["session"]
     assert completed["status"] == "completed"
@@ -598,7 +601,7 @@ def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client):
     reset = client.post(
         f"/api/admin/sessions/{session_id}/timer",
         headers=ADMIN_HEADERS,
-        json={"duration_minutes": 5},
+        json={"duration_minutes": 10},
     )
     assert reset.status_code == 200
     reset_session = reset.json()
@@ -606,6 +609,9 @@ def test_chat_timer_starts_once_expires_and_only_admin_can_reset_it(client):
     assert reset_session["completed_at"] is None
     assert reset_session["completion_reason"] is None
     assert reset_session["timer_ends_at"] != completed["timer_ends_at"]
+    reset_start = datetime.fromisoformat(reset_session["timer_started_at"].replace("Z", "+00:00"))
+    reset_end = datetime.fromisoformat(reset_session["timer_ends_at"].replace("Z", "+00:00"))
+    assert (reset_end - reset_start).total_seconds() == 600
 
 
 def test_learner_resumes_active_event_and_cannot_repeat_completed_event(client):

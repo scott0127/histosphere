@@ -38,7 +38,7 @@ Admin 審查並鎖定事件、Task、唯一啟用人物
 → 202 + attempt_id；保存作答，背景產生初判
 → 研究者在施測監測頁逐題核對，包括初判正確的題目
 → 全題確認並核准最終結果，才生成並保存開場
-→ Learner 自動進入 Chat；進入請求成功時才開始五分鐘倒數
+→ Learner 自動進入 Chat；進入請求成功時才開始十分鐘倒數
 → 到期停止 Chat；02/04 有已談到的未完成目標時進入收尾
 → 顯示該題修正與理由，重述一次，再進下一階段
 ```
@@ -100,7 +100,7 @@ in_progress → processing → awaiting_review → preparing_chat → ready → 
 - `ai_judgement_payload` 保存不可覆寫的初判；`review_payload` 保存逐題草稿、確認狀態、改判原因及核准資訊；核准後才寫 `judgement_payload` 最終結果。`review_version` 搭配預期版本條件更新，過期視窗回傳 409，不靜默覆寫。
 - 核准要求每題確認、必要說明完整；變更對錯時必須記錄改判原因，並修訂相應說明。資料庫 trigger 保護已送出答案、已保存初判與已核准稿；原始初判不被研究者改寫。
 - 瀏覽器或伺服器中斷後，重新載入依 DB 階段恢復。`processing`／`preparing_chat` 可重掛；`awaiting_review` 保留已儲存草稿並繼續等待；`ready` 沿用已保存開場。失敗重試會根據是否已核准恢復初判或開場，已保存的初判不再呼叫 LLM；尚未保存的模型呼叫可能重跑。舊 `submitted` 紀錄保持相容，不補做人工審核。
-- `ready` 尚不啟動計時或開放 Chat。受測者的 `/enter` 請求透過 `start_task_interaction` DB transaction 鎖定 Attempt 與 Session，確認開場存在後，原子地轉成 `submitted` 並首次設定五分鐘倒數；重送不重置時間。初判、人工核對與開場等待均不算互動時間。
+- `ready` 尚不啟動計時或開放 Chat。受測者的 `/enter` 請求透過 `start_task_interaction` DB transaction 鎖定 Attempt 與 Session，確認開場存在後，原子地轉成 `submitted` 並首次設定十分鐘倒數；重送不重置時間。初判、人工核對與開場等待均不算互動時間。
 - 凍結的最終逐題判定供私有 Prompt 使用。02/04 據此處理錯誤；01/03 作為背景。Learner API 一律清空初判、審核草稿與改判原因；只有 `ready`／`submitted` 提供經過濾的最終對錯，進場前不提供 Conversation ID／歷史。最終結果仍移除正解、標準及判定說明等私有診斷。
 
 ### 管理員監測與 SSE
@@ -119,7 +119,7 @@ in_progress → processing → awaiting_review → preparing_chat → ready → 
 | AI 互動 | 10 分鐘 | `session.timer_started_at`，人工核對與開場等待不計入 |
 | 後續評量 | 共 15 分鐘 | `posttest.started_at`；HAT 10 分鐘與 Engagement 5 分鐘共用倒數，切換子階段不重置 |
 
-以上只供研究者提醒，歸零顯示提示，不新增自動送出、跳頁或截止行為。受測者原有的 **AI 互動 5 分鐘截止**仍保留，監測頁同步註明此差異；尚未進入後測時顯示「尚未開始」。重新整理、斷線重連與草稿保存不重設起點；管理員明確重置互動計時時，參考倒數跟隨新的 `timer_started_at`。
+監測頁倒數本身只供研究者提醒，歸零顯示提示，不發送切換階段的指令。受測者的 **AI 互動實際時限為 10 分鐘**，由既有後端截止機制執行，與管理員參考時間一致；作答及後測仍僅有管理員參考倒數。尚未進入後測時顯示「尚未開始」。重新整理、斷線重連與草稿保存不重設起點；管理員明確重置互動計時時，參考倒數跟隨新的 `timer_started_at`。
 
 `utils/monitorTiming.ts` 負責參考倒數。管理員快照另帶 `server_now`，`useAdminMonitor` 據此校正管理員裝置的時鐘差；此欄位不加入 SSE 的狀態雜湊，避免時間流逝觸發不必要的重新讀取。無資料庫結構變更。
 
@@ -181,7 +181,7 @@ before_delivery → 候選先審查
 
 `learning_focus.py` 決定目前題目；前端 `StudySplitView.vue` 把閱讀材料／當前題目與聊天分開，桌面可拖曳調整比例。01/03 不冒充正在處理某個 EBL 錯誤。四組可查看共用固定材料；圖片給 Learner 看，LLM 未接收圖片像素，只取得相關文字。
 
-計時以後端 `timer_ends_at` 為準，自受測者進場起算。刷新、重開不重置；Admin 可 reset timer。到期未完成的 EBL **已談到的目前題目**，由 `SessionService._closure` 取凍結正解和 `source_text` 修正說明，不另呼叫 LLM、不公布未談過的題目。重述保存為 `session_closure_restatement`、`independent_mastery=false`，不新增聊天回合或算進五分鐘；缺少完整修正資料回報需研究員協助，不猜答案。
+計時以後端 `timer_ends_at` 為準，自受測者進場起算，新開始與 Admin reset timer 均為 10 分鐘（600 秒）。已保存的舊紀錄不因部署、刷新或重開而改寫截止時間；若舊紀錄仍為 5 分鐘，監測頁會註明差異。到期未完成的 EBL **已談到的目前題目**，由 `SessionService._closure` 取凍結正解和 `source_text` 修正說明，不另呼叫 LLM、不公布未談過的題目。重述保存為 `session_closure_restatement`、`independent_mastery=false`，不新增聊天回合或算進十分鐘；缺少完整修正資料回報需研究員協助，不猜答案。
 
 前端流程責任：`useExperimentSession` 管初始化／恢復，`useTaskGate` 與 `taskSubmissionWaiter` 管草稿／提交／等待與進場，`useConversationSession` 管 Chat 載入／SSE／重試，`useAdminWorkspace` 管管理資料，`useAdminMonitor` 管施測監測與審核，`sessionEventStream` 共用階段變更通知與重連。
 
@@ -221,5 +221,7 @@ before_delivery → 候選先審查
 同日內網入口調整：前端測試與建置通過，已經主機內網網址驗證網站、TEST_ACCOUNT 登入／讀取身分／登出；未帶 Admin key 的管理 API 回傳 401，`/supabase-auth/rest/v1/task_attempts` 回傳 404，確認 Auth 代理未開放資料表路徑。
 
 同日監測頁精簡：**197 項前端測試、10 項監測／審核 API 測試與正式建置通過**。以獨立管理員測試紀錄驗證作答倒數重載後接續、真實初判與三題逐題確認、核准後透過 SSE 切換 AI 參考倒數；另確認後測歸零提示。Codex 瀏覽器已留存實際介面截圖，768 px 平板視窗無水平溢出。受測者原有截止規則未變更。
+
+隨後依施測設定將 AI 互動實際時限由 5 分鐘調整為 10 分鐘：**534 項後端測試、198 項前端測試與正式建置通過**。測試確認初次進場與重置均為 600 秒、第 599 秒仍可互動、第 600 秒到期；本機 Supabase 的管理員測試活動實際重置後保存 600 秒，互動頁顯示九分多鐘倒數，重新整理正常接續。此調整取代前述監測頁精簡當下保留的 5 分鐘設定。
 
 以上是工程流程驗證，不是 Judge 的判分信效度或正式收案驗收，也未宣稱完成兩台實體電腦的網路驗收。正式材料、判定基準的專家審視、人物時間界線與 HAT 設計仍見 backlog。

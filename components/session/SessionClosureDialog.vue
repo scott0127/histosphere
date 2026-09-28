@@ -8,7 +8,7 @@
     <header class="flex items-start gap-4">
       <Icon name="mdi:timer-check-outline" class="mt-1 h-7 w-7 shrink-0 text-[var(--admin-coffee)]" />
       <div>
-        <p class="text-sm font-bold text-[var(--admin-coffee)]">五分鐘對話已結束</p>
+        <p class="text-sm font-bold text-[var(--admin-coffee)]">對話時間已結束</p>
         <h2 id="closure-title" class="mt-2 text-2xl font-bold">{{ closure ? '整理這一題的想法' : '本階段已結束' }}</h2>
       </div>
     </header>

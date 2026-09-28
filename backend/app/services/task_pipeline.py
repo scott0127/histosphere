@@ -129,7 +129,7 @@ class TaskPipeline:
         attempt.status = "ready"
         attempt.pipeline_error = {}
         self.repository.save_task_attempt(attempt)
-        # Approval/generation waiting never consumes the learner's five-minute conversation.
+        # Approval/generation waiting never consumes the learner's interaction time.
         self.repository.log_research(ResearchLog(
             user_id=attempt.user_id, session_id=session.id, event_id=event.id, task_id=attempt.task_id,
             attempt_id=attempt.id, conversation_id=conversation.id, message_id=greeting_message.id,

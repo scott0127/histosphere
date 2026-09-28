@@ -17,7 +17,20 @@ test('monitor task reference countdown survives reload and draft updates without
   assert.equal(monitorCountdown(data, at(600)).display, '00:00');
 });
 
-test('admin AI reference uses ten minutes while explicitly preserving the learner five-minute timer', () => {
+test('admin AI reference matches the learner ten-minute deadline without resetting it', () => {
+  const data = snapshot();
+  Object.assign(data.session, { status: 'conversation_started', timer_started_at: start, timer_ends_at: new Date(at(600)).toISOString() });
+  const result = monitorCountdown(data, at(120));
+  assert.equal(result.display, '08:00');
+  assert.equal(result.state, 'running');
+  assert.equal(result.detail, '依受測者進入互動的時間起算。');
+  assert.equal(monitorCountdown(data, at(599)).display, '00:01');
+  assert.equal(monitorCountdown(data, at(600)).state, 'expired');
+  assert.equal(monitorCountdown(data, at(600)).display, '00:00');
+  assert.equal(data.session.timer_ends_at, new Date(at(600)).toISOString());
+});
+
+test('admin AI reference identifies a legacy five-minute timer without rewriting its deadline', () => {
   const data = snapshot();
   Object.assign(data.session, { status: 'conversation_started', timer_started_at: start, timer_ends_at: new Date(at(300)).toISOString() });
   const result = monitorCountdown(data, at(120));

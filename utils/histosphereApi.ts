@@ -596,7 +596,7 @@ export const resetAdminSessionTimer = (
   return fetcher<ExperimentSession>(`/api/admin/sessions/${sessionId}/timer`, {
     method: 'POST',
     headers: adminHeaders(adminKey),
-    body: { duration_minutes: 5 },
+    body: { duration_minutes: 10 },
   });
 };
 

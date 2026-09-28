@@ -259,7 +259,7 @@ class SessionService:
         return UserProgressResponse(progress=progress)
 
     def reset_timer(self, session_id: str) -> ExperimentSession:
-        """由 Admin 將可對話的 session 明確重置為新的五分鐘倒數。"""
+        """由 Admin 將可對話的 session 明確重置為新的十分鐘倒數。"""
         session = self.repository.get_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment session not found")
@@ -383,7 +383,7 @@ class SessionService:
         )
 
     def expire_due_sessions(self) -> int:
-        """Complete all due five-minute timers; used by the background worker."""
+        """Complete all due interaction timers; used by the background worker."""
         completed = 0
         for session in self.repository.list_sessions():
             previous_status = session.status

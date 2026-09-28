@@ -508,11 +508,11 @@ test('admin test mode uses the tab-scoped admin key instead of a learner JWT', a
   adminSession.clearAdminSession();
 });
 
-test('frontend api client resets the fixed five-minute session timer', async () => {
+test('frontend api client resets the fixed ten-minute session timer', async () => {
   const runningSession = {
     id: 'session-1',
     timer_started_at: '2026-07-11T00:00:00Z',
-    timer_ends_at: '2026-07-11T00:05:00Z',
+    timer_ends_at: '2026-07-11T00:10:00Z',
   };
   const { calls, fetcher } = createFetchRecorder({
     'POST /api/admin/sessions/session-1/timer': runningSession,
@@ -525,7 +525,7 @@ test('frontend api client resets the fixed five-minute session timer', async () 
       options: {
         method: 'POST',
         headers: { 'x-admin-key': 'test-admin' },
-        body: { duration_minutes: 5 },
+        body: { duration_minutes: 10 },
       },
     },
   ]);

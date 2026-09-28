@@ -177,11 +177,11 @@
                   type="button"
                   class="admin-button-secondary participant-record-button"
                   :disabled="item.session.status === 'archived' || !canResetTimer(item.session) || updatingTimerSessionId === item.session.id"
-                  :title="canResetTimer(item.session) ? '從現在重新開始五分鐘倒數' : '進入 Chat 後才會自動開始倒數'"
+                  :title="canResetTimer(item.session) ? '從現在重新開始十分鐘倒數' : '進入 Chat 後才會自動開始倒數'"
                   @click="$emit('reset-timer', item.session.id)"
                 >
                   <Icon :name="updatingTimerSessionId === item.session.id ? 'mdi:loading' : 'mdi:timer-refresh-outline'" class="h-4 w-4" :class="{ 'animate-spin': updatingTimerSessionId === item.session.id }" />
-                  重置 05:00
+                  重置 10:00
                 </button>
                 <button
                   type="button"

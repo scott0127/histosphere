@@ -780,7 +780,7 @@ def reset_session_timer(
     request: SessionTimerResetRequest,
     service: SessionService = Depends(get_session_service),
 ) -> ExperimentSession:
-    """Reset a Chat-ready session to the fixed five-minute countdown."""
+    """Reset a Chat-ready session to the fixed ten-minute countdown."""
     return service.reset_timer(session_id)
 
 

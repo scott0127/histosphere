@@ -315,7 +315,7 @@ class SessionClosureRequest(BaseModel):
 class SessionTimerResetRequest(BaseModel):
     """Admin-only reset of the fixed experiment countdown."""
 
-    duration_minutes: Literal[5] = 5
+    duration_minutes: Literal[10] = 10
 
 
 class AdminPromptDryRunRequest(BaseModel):

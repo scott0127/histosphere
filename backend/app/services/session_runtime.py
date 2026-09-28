@@ -4,7 +4,7 @@ from app.crud.protocols import RepositoryProtocol
 from app.models.domain import ExperimentSession, ResearchLog, utc_now
 
 
-EXPERIMENT_CHAT_DURATION_MINUTES = 5
+EXPERIMENT_CHAT_DURATION_MINUTES = 10
 
 
 def complete_session(
