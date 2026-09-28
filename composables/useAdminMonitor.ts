@@ -26,6 +26,7 @@ export const useAdminMonitor = (sessionId: Ref<string>) => {
   const syncError = ref('');
   const notice = ref('');
   const lastSyncedAt = ref<string | null>(null);
+  const serverClockOffsetMs = ref(0);
   const dirty = computed(() => JSON.stringify(drafts.value) !== savedSignature.value);
   const conflict = computed(() => Boolean(snapshot.value?.attempt
     && snapshot.value.attempt.review_version !== loadedVersion.value && dirty.value));
@@ -64,6 +65,8 @@ export const useAdminMonitor = (sessionId: Ref<string>) => {
         const result = await fetchAdminMonitor(key, id);
         if (disposed || version !== requestVersion || sessionId.value !== id || adminKey.value.trim() !== key) return;
         const previousAttempt = snapshot.value?.attempt?.id;
+        const serverTime = Date.parse(result.server_now || '');
+        serverClockOffsetMs.value = Number.isFinite(serverTime) ? serverTime - Date.now() : 0;
         snapshot.value = result;
         if (!saving.value && (!dirty.value || previousAttempt !== result.attempt?.id)) restoreDrafts();
         lastSyncedAt.value = new Date().toISOString();
@@ -197,6 +200,6 @@ export const useAdminMonitor = (sessionId: Ref<string>) => {
     window.removeEventListener('beforeunload', beforeUnload);
   });
 
-  return { adminKey, snapshot, drafts, questions, editable, loading, saving, connected, error: computed(() => error.value || syncError.value), notice, lastSyncedAt,
+  return { adminKey, snapshot, drafts, questions, editable, loading, saving, connected, error: computed(() => error.value || syncError.value), notice, lastSyncedAt, serverClockOffsetMs,
     dirty, conflict, reviewedCount, canApprove, connect, refresh, updateQuestion, saveQuestion, approve, retry, logout, restoreDrafts };
 };

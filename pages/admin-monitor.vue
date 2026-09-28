@@ -50,14 +50,12 @@
           <button type="button" class="monitor-text-button" @click="showReloadConfirm = true">重新載入審核</button>
         </div>
 
-        <section v-if="phase.id === 'task'" class="monitor-status-panel">
-          <span class="monitor-status-icon"><Icon name="mdi:pencil-outline" /></span>
-          <p class="monitor-eyebrow">Error-Elicitation Task</p>
-          <h2>受測者作答中</h2>
-          <p>已保存 {{ completedQuestions }}／{{ questions.length }} 題</p>
-          <p class="monitor-muted">最後保存 {{ shortTime(snapshot.attempt?.updated_at) }}</p>
-          <div class="monitor-progress-track"><span :style="{ width: `${questions.length ? completedQuestions / questions.length * 100 : 0}%` }" /></div>
-          <p class="monitor-muted">提交後，這裡會顯示待核對的完整作答。</p>
+        <section v-if="countdown && ['task', 'chat', 'posttest', 'complete', 'archived'].includes(phase.id)" class="monitor-countdown" :class="`is-${countdown.state}`" aria-labelledby="monitor-countdown-title">
+          <p v-if="countdown.durationLabel" class="monitor-eyebrow">{{ countdown.durationLabel }}</p>
+          <h2 id="monitor-countdown-title">{{ countdown.title }}</h2>
+          <p class="monitor-countdown-value" role="timer" aria-live="off" :aria-label="`${countdown.title} ${countdown.display}`">{{ countdown.display }}</p>
+          <p v-if="countdown.state === 'expired'" class="monitor-countdown-expired" role="status">參考時間已到，可提醒受測者。</p>
+          <p v-if="countdown.detail" class="monitor-countdown-detail">{{ countdown.detail }}</p>
         </section>
 
         <section v-else-if="['judging', 'preparing', 'ready', 'failed'].includes(phase.id)" class="monitor-status-panel" aria-live="polite">
@@ -99,23 +97,6 @@
           </footer>
         </section>
 
-        <section v-if="['chat', 'posttest', 'complete', 'archived'].includes(phase.id)" class="monitor-conversation-area">
-          <header class="monitor-review-heading"><div><h2>{{ phase.label }}</h2><p>{{ phase.id === 'chat' ? '查看已保存的對話與活動進度。' : '此階段以受測者頁面的操作繼續。' }}</p></div>
-            <div v-if="phase.id === 'chat'" class="monitor-timer"><span>互動剩餘</span><strong>{{ remainingTime }}</strong></div>
-          </header>
-          <p v-if="snapshot.posttest" class="monitor-posttest-status">後續評量：{{ posttestLabel }}</p>
-          <div class="monitor-transcript" aria-label="已保存的互動紀錄">
-            <p v-if="!snapshot.messages?.length" class="monitor-muted">尚無已保存的對話。</p>
-            <article v-for="message in snapshot.messages" :key="message.id" class="monitor-message" :class="{ 'is-learner': message.speaker_type === 'learner' }">
-              <header><strong>{{ message.speaker_type === 'learner' ? '受測者' : message.speaker_name || 'AI' }}</strong><time>{{ shortTime(message.created_at) }}</time></header>
-              <p>{{ message.content }}</p>
-            </article>
-          </div>
-          <details v-if="snapshot.attempt?.review_payload?.approved_at" class="monitor-final-review">
-            <summary>查看已確認的審核結果<span>{{ shortTime(snapshot.attempt.review_payload.approved_at) }}</span></summary>
-            <dl><template v-for="(draft, index) in drafts" :key="draft.question_id"><dt>第 {{ index + 1 }} 題</dt><dd>答案{{ draft.answer_correct ? '正確' : '不符合' }} · 理由{{ draft.reasoning_correct ? '正確' : '不符合' }}<p v-if="draft.override_reason">改判原因：{{ draft.override_reason }}</p></dd></template></dl>
-          </details>
-        </section>
       </template>
     </main>
     <ConfirmActionModal :show="showReloadConfirm" title="重新載入審核" message="這會捨棄此頁尚未保存的修改，載入伺服器上最新的審核結果。" confirm-label="重新載入" cancel-label="保留修改" @confirm="reloadDrafts" @cancel="showReloadConfirm = false" />
@@ -129,17 +110,17 @@ import ReviewQuestionPanel from '~/components/admin/monitor/ReviewQuestionPanel.
 import TaskStudentMaterials from '~/components/task-student/TaskStudentMaterials.vue';
 import ConfirmActionModal from '~/components/modals/ConfirmActionModal.vue';
 import { useAdminMonitor } from '~/composables/useAdminMonitor';
-import { buildTaskQuestionLayout, isTaskAnswerComplete } from '~/composables/useStudentTask';
+import { buildTaskQuestionLayout } from '~/composables/useStudentTask';
 import { monitorPhase, reviewTask } from '~/utils/taskReview';
+import { monitorCountdown } from '~/utils/monitorTiming';
 import { conditionModeLabel } from '~/utils/adminWorkspaceState';
 import type { RouteLocationRaw } from 'vue-router';
-import type { TaskStudentAnswer } from '~/types';
 import '~/assets/css/admin-monitor.css';
 
 useHead({ title: '施測監測 · Histosphere' });
 const route = useRoute();
 const sessionId = computed(() => typeof route.query.session === 'string' ? route.query.session : '');
-const { adminKey, snapshot, drafts, questions, editable, loading, saving, connected, error, notice, lastSyncedAt,
+const { adminKey, snapshot, drafts, questions, editable, loading, saving, connected, error, notice, lastSyncedAt, serverClockOffsetMs,
   dirty, conflict, reviewedCount, canApprove, connect, refresh, updateQuestion, saveQuestion, approve, retry, logout, restoreDrafts } = useAdminMonitor(sessionId);
 const selectedQuestionId = ref('');
 const showReloadConfirm = ref(false);
@@ -154,18 +135,7 @@ const selectedIndex = computed(() => Math.max(0, questions.value.findIndex(row =
 const selectedRow = computed(() => questions.value[selectedIndex.value]);
 const draftFor = (id: string) => drafts.value.find(item => item.question_id === id);
 const selectedDraft = computed(() => selectedRow.value ? draftFor(selectedRow.value.question.id) : undefined);
-const completedQuestions = computed(() => {
-  const answers = snapshot.value?.attempt?.response_payload?.answers;
-  if (!Array.isArray(answers)) return 0;
-  return questions.value.filter(row => isTaskAnswerComplete([row.question], answers as TaskStudentAnswer[], frozenTask.value || undefined)).length;
-});
-const remainingTime = computed(() => {
-  const deadline = snapshot.value?.session.timer_ends_at;
-  if (!deadline) return '尚未開始';
-  const seconds = Math.max(0, Math.ceil((Date.parse(deadline) - now.value) / 1000));
-  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
-});
-const posttestLabel = computed(() => ({ engagement: '互動體驗問卷', hat: '歷史思考作答', completed: '已完成' }[snapshot.value?.posttest?.stage || ''] || '進行中'));
+const countdown = computed(() => snapshot.value ? monitorCountdown(snapshot.value, now.value + serverClockOffsetMs.value) : null);
 const phaseDescription = computed(() => {
   if (phase.value.id === 'failed') return snapshot.value?.attempt?.pipeline_error?.message || snapshot.value?.attempt?.pipeline_error?.detail || '系統未完成處理，受測者會繼續等待。';
   if (phase.value.id === 'ready') return 'AI 開場已準備完成；受測者銜接互動後才開始計時。';

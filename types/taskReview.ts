@@ -32,7 +32,8 @@ export interface AdminMonitorSnapshot {
   stage: string;
   conversation?: { id: string } | null;
   messages: ChatMessage[];
-  posttest?: { stage?: string; status?: string; completed_at?: string; updated_at?: string } | null;
+  posttest?: { stage?: string; started_at?: string; submitted_at?: string | null; completed_at?: string; updated_at?: string } | null;
+  server_now?: string;
   updated_at: string;
 }
 

@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from app.core.research_reproducibility import get_session_task, stable_hash
 from app.crud.protocols import RepositoryProtocol
+from app.models.domain import utc_now
 
 
 class SessionMonitorService:
@@ -46,7 +47,8 @@ class SessionMonitorService:
         participant = self.repository.get_participant(session.participant_id) if session.participant_id else None
         if not participant and session.user_id and not session.is_admin_test:
             participant = self.repository.get_participant_by_auth_user(session.user_id)
-        return {**state,
+        # Synchronize reference countdowns without making time itself an SSE change.
+        return {**state, "server_now": utc_now().isoformat(),
                 "participant_code": participant.code if participant else ("ADMIN_TEST" if session.is_admin_test else "UNMAPPED"),
                 "event": self.repository.get_event(session.event_id),
                 "condition": self.repository.get_condition_by_key(session.condition_key_snapshot),

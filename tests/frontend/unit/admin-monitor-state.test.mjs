@@ -65,6 +65,21 @@ test('monitor preserves dirty review edits when an event refresh arrives and blo
   } finally { dispose(); }
 });
 
+test('monitor refresh aligns its countdown clock with the server without restarting a phase', async () => {
+  const { state, updateServer, dispose } = await setup();
+  const originalNow = Date.now;
+  const browserNow = Date.parse('2026-09-28T02:00:00Z');
+  try {
+    Date.now = () => browserNow;
+    updateServer(snapshot => { snapshot.server_now = '2026-09-28T02:05:00Z'; });
+    await state.refresh();
+    assert.equal(state.serverClockOffsetMs.value, 300_000);
+    updateServer(snapshot => { snapshot.server_now = 'invalid'; });
+    await state.refresh();
+    assert.equal(state.serverClockOffsetMs.value, 0);
+  } finally { Date.now = originalNow; dispose(); }
+});
+
 test('monitor requires explicit review of every question and editing invalidates a prior confirmation', async () => {
   const { state, calls, dispose } = await setup();
   try {

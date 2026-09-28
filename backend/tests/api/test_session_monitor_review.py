@@ -3,12 +3,14 @@
 import asyncio
 import json
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api import state_events
+from app.services import session_monitor
 from tests.api.test_error_elicitation_workflow import answers, initialize, judged
 from tests.task_review_helpers import ADMIN_HEADERS, review_and_approve
 
@@ -161,6 +163,26 @@ def test_sse_reconnect_emits_current_stage_without_private_verdicts(client, pend
     assert set(after) == {"attempt_id", "stage", "version"}
     assert set(after_admin) == {"session_id", "stage", "version"}
     assert client.app.state.repository.get_session(initialized["session_id"]).timer_started_at is None
+
+
+def test_monitor_server_time_advances_without_creating_an_sse_change(client, pending_review, monkeypatch):
+    initialized, _ = pending_review
+    sid = initialized["session_id"]
+    url = f"/api/admin/monitor/sessions/{sid}"
+    monitor = session_monitor.SessionMonitorService(client.app.state.repository)
+    now = datetime(2026, 9, 28, 6, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(session_monitor, "utc_now", lambda: now)
+
+    first = client.get(url, headers=ADMIN_HEADERS)
+    assert first.status_code == 200, first.text
+    assert datetime.fromisoformat(first.json()["server_now"]) == now
+    version = monitor.change_token(sid)
+
+    now += timedelta(seconds=10)
+    reloaded = client.get(url, headers=ADMIN_HEADERS)
+    assert datetime.fromisoformat(reloaded.json()["server_now"]) == now
+    assert reloaded.json()["updated_at"] == first.json()["updated_at"]
+    assert monitor.change_token(sid) == version
 
 
 def test_sse_stream_emits_changes_without_repeating_unchanged_state(monkeypatch):
